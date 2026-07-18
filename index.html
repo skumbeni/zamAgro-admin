@@ -505,21 +505,22 @@
             </div>
             <div class="settings-group">
               <div class="settings-group-title">Licence Prices (ZMW)</div>
+              <div class="setting-desc" style="margin-bottom:.75rem;">Fixed to match the public app — edit prices in the app's code (not here) if they ever need to change, so the two never drift apart again.</div>
               <div class="setting-row">
                 <div><div class="setting-label">Starter / mo</div></div>
-                <input class="setting-input" id="cfg-price-starter" type="text" placeholder="200"/>
+                <div class="mono">K200</div>
               </div>
               <div class="setting-row">
                 <div><div class="setting-label">Standard / mo</div></div>
-                <input class="setting-input" id="cfg-price-standard" type="text" placeholder="500"/>
+                <div class="mono">K300</div>
               </div>
               <div class="setting-row">
                 <div><div class="setting-label">Pro / mo</div></div>
-                <input class="setting-input" id="cfg-price-pro" type="text" placeholder="1000"/>
+                <div class="mono">K399</div>
               </div>
               <div class="setting-row">
                 <div><div class="setting-label">Lifetime (once-off)</div></div>
-                <input class="setting-input" id="cfg-price-lifetime" type="text" placeholder="3500"/>
+                <div class="mono">K2,500</div>
               </div>
             </div>
             <div class="settings-group">
@@ -578,9 +579,9 @@
       <select id="modal-sub-tier">
         <option value="trial">Trial (30 days free)</option>
         <option value="starter">Starter — K200/mo</option>
-        <option value="standard">Standard — K500/mo</option>
-        <option value="pro">Pro — K1,000/mo</option>
-        <option value="lifetime">Lifetime — K3,500 once-off</option>
+        <option value="standard">Standard — K300/mo</option>
+        <option value="pro">Pro — K399/mo</option>
+        <option value="lifetime">Lifetime — K2,500 once-off</option>
       </select>
     </div>
     <div class="form-row" id="modal-sub-expiry-row">
@@ -616,13 +617,18 @@ const FB = {
 };
 const OWNER_PANEL_KEY = 'zamagro_owner_panel_cfg';
 
-/* Panel-local config (prices, phone, etc.) stored in owner's localStorage */
+/* Panel-local config (phone, WhatsApp, etc.) stored in owner's localStorage — prices are
+   fixed below and no longer part of this, so they can't drift from the public app. */
 let panelCfg = JSON.parse(localStorage.getItem(OWNER_PANEL_KEY) || '{}');
+
+/* Fixed to match the public app's actual tier prices exactly — do not make these
+   editable from this panel again; that's what let admin and public pricing drift
+   apart before. If prices change, update them here AND in the public app together. */
 const PRICES = () => ({
-  starter:  parseFloat(panelCfg['price-starter']  || 200),
-  standard: parseFloat(panelCfg['price-standard'] || 500),
-  pro:      parseFloat(panelCfg['price-pro']       || 1000),
-  lifetime: parseFloat(panelCfg['price-lifetime']  || 3500),
+  starter:  200,
+  standard: 300,
+  pro:      399,
+  lifetime: 2500,
   trial: 0
 });
 
@@ -1294,19 +1300,11 @@ async function saveSubscription() {
 function loadSettingsForm() {
   document.getElementById('cfg-phone').value    = panelCfg.phone    || '';
   document.getElementById('cfg-whatsapp').value = panelCfg.whatsapp || '';
-  document.getElementById('cfg-price-starter').value  = panelCfg['price-starter']  || '200';
-  document.getElementById('cfg-price-standard').value = panelCfg['price-standard'] || '500';
-  document.getElementById('cfg-price-pro').value      = panelCfg['price-pro']      || '1000';
-  document.getElementById('cfg-price-lifetime').value = panelCfg['price-lifetime'] || '3500';
 }
 function saveSettings() {
   panelCfg = {
     phone:    document.getElementById('cfg-phone').value.trim(),
     whatsapp: document.getElementById('cfg-whatsapp').value.trim(),
-    'price-starter':  document.getElementById('cfg-price-starter').value,
-    'price-standard': document.getElementById('cfg-price-standard').value,
-    'price-pro':      document.getElementById('cfg-price-pro').value,
-    'price-lifetime': document.getElementById('cfg-price-lifetime').value,
   };
   localStorage.setItem(OWNER_PANEL_KEY, JSON.stringify(panelCfg));
   toast('Settings saved.', 'ok');
