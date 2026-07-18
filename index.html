@@ -750,19 +750,27 @@ async function maybeRefreshToken() {
   } catch(e) { console.warn('Token refresh failed', e); }
 }
 async function fbSet(path, data) {
+  await maybeRefreshToken();
   const r = await fetch(`${FB.databaseURL}/${path}.json?auth=${authToken}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!r.ok) throw new Error('Firebase write ' + r.status);
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`Firebase write ${r.status}${body ? ': ' + body : ''}`);
+  }
   return r.json();
 }
 async function fbPatch(path, data) {
+  await maybeRefreshToken();
   const r = await fetch(`${FB.databaseURL}/${path}.json?auth=${authToken}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!r.ok) throw new Error('Firebase patch ' + r.status);
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`Firebase patch ${r.status}${body ? ': ' + body : ''}`);
+  }
   return r.json();
 }
 
