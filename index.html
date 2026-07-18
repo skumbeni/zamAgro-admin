@@ -860,6 +860,31 @@ function showDataError(msg) {
   el.style.display = 'block';
 }
 
+function showRulesFixBanner(msg) {
+  let el = document.getElementById('data-error-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'data-error-banner';
+    el.style.cssText = 'background:#2a0d0d;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.85rem;line-height:1.6';
+    document.querySelector('.content').prepend(el);
+  }
+  const uid = window._ownerUid || 'YOUR_OWNER_UID';
+  el.innerHTML = `<strong>⚠ Permission Denied:</strong> ${msg}<br><br>
+  <strong>Fix:</strong> your database rules only let each business write its own <code>subscriptionRequests/&lcub;uid&rcub;</code> node — your admin account (a different uid) isn't allowed to update it. In Firebase Console → Realtime Database → Rules, add:<br>
+  <code style="display:block;margin-top:.5rem;background:#1a0808;padding:.6rem .8rem;border-radius:5px;font-size:.8rem;color:#ffaaaa;white-space:pre">
+"subscriptionRequests": {
+  "$uid": {
+    ".read": "auth != null",
+    ".write": "auth != null && (auth.uid === $uid || auth.uid === '${uid}')",
+    "$reqId": {
+      ".write": "auth != null && (auth.uid === $uid || auth.uid === '${uid}')"
+    }
+  }
+}</code>
+  Your admin UID: <strong style="user-select:all;cursor:pointer" title="Tap to select">${uid}</strong>`;
+  el.style.display = 'block';
+}
+
 async function retryLoad() {
   hideDataError();
   try {
@@ -1190,7 +1215,9 @@ async function saveSubscription() {
         if (r) r.status = 'done';
         renderRequestsTable(allRequests);
         updateReqBadge(allRequests.filter(r => r.status === 'pending').length);
-      } catch(e) {}
+      } catch(e) {
+        if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
+      }
       window._pendingDismissUid = null;
       window._pendingDismissReqId = null;
     }
@@ -1361,10 +1388,11 @@ async function dismissRequest(uid, reqId) {
     const pending = allRequests.filter(r => r.status === 'pending').length;
     updateReqBadge(pending);
     toast('Request dismissed.', 'ok');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
+  } catch(e) {
+    toast('Error: ' + e.message, 'err');
+    if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
+  }
 }
-
-/* ── TOAST ───────────────────────────────────────────────────── */
 let _toastTimer;
 function toast(msg, type='ok') {
   const el = document.getElementById('toast');
