@@ -392,6 +392,7 @@
               All Registered Businesses
               <div class="actions">
                 <input class="search-input" id="biz-search" placeholder="Search…" oninput="filterBusinesses()"/>
+                <button class="action-btn" id="archived-toggle-btn" onclick="toggleArchivedView()">View Archived</button>
                 <button class="action-btn" onclick="loadBusinesses()">↻ Refresh</button>
               </div>
             </div>
@@ -552,6 +553,19 @@
     </div>
   </div>
 </div>
+
+<!-- Archive/Unarchive -->
+<div class="modal-overlay" id="modal-archive">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-archive-title">Archive Business</div>
+    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-archive-desc"></p>
+    <div class="modal-actions">
+      <button class="action-btn" onclick="closeModal('modal-archive')">Cancel</button>
+      <button class="action-btn danger" id="modal-archive-confirm" onclick="confirmArchive()">Confirm</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Edit Subscription -->
 <div class="modal-overlay" id="modal-sub">
@@ -813,6 +827,7 @@ async function loadBusinesses() {
       activatedAt: lic.activatedAt || null,
       note: lic.note || '',
       suspended: s.suspended || false,
+      archived: s.archived || false,
       paymentLog: lic.paymentLog || []
     };
   });
@@ -1002,12 +1017,16 @@ function renderOverview() {
 }
 
 /* ── BUSINESSES TABLE ────────────────────────────────────────── */
+let showArchived = false;
+
 function renderBusinessTable(list) {
   const tbody = document.getElementById('biz-table');
-  if (!list.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No businesses found.</td></tr>'; return; }
-  tbody.innerHTML = list.map(b => {
+  const visible = list.filter(b => showArchived ? b.archived : !b.archived);
+  if (!visible.length) { tbody.innerHTML = `<tr><td colspan="6" class="empty">${showArchived ? 'No archived businesses.' : 'No businesses found.'}</td></tr>`; return; }
+  tbody.innerHTML = visible.map(b => {
     const st = licStatus(b);
     const isSusp = b.suspended;
+    const isArch = b.archived;
     return `<tr>
       <td>
         <div style="font-weight:600;font-size:.88rem">${b.companyName}</div>
@@ -1020,9 +1039,17 @@ function renderBusinessTable(list) {
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
         <button class="action-btn success" onclick="openSubModal('${b.uid}')">Manage Sub</button>
         <button class="action-btn ${isSusp?'':'danger'}" onclick="openSuspendModal('${b.uid}',${isSusp})">${isSusp?'Unsuspend':'Suspend'}</button>
+        <button class="action-btn ${isArch?'success':'danger'}" onclick="openArchiveModal('${b.uid}',${isArch})">${isArch?'Unarchive':'Archive'}</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+function toggleArchivedView() {
+  showArchived = !showArchived;
+  const btn = document.getElementById('archived-toggle-btn');
+  if (btn) btn.textContent = showArchived ? '← Back to Active' : 'View Archived';
+  filterBusinesses();
 }
 
 function filterBusinesses() {
@@ -1142,6 +1169,42 @@ async function confirmSuspend() {
     renderSubTable(allBusinesses);
     renderOverview();
     toast(`"${biz.companyName}" ${suspend ? 'suspended' : 'unsuspended'}.`, 'ok');
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+}
+
+/* ── ARCHIVE MODAL ───────────────────────────────────────────── */
+let _archiveTarget = null;
+let _archiveAction = null;
+function openArchiveModal(uid, isArchived) {
+  const biz = allBusinesses.find(b => b.uid === uid);
+  _archiveTarget = uid;
+  _archiveAction = isArchived ? 'unarchive' : 'archive';
+  document.getElementById('modal-archive-title').textContent = isArchived ? 'Unarchive Business' : 'Archive Business';
+  document.getElementById('modal-archive-desc').textContent = isArchived
+    ? `This will restore "${biz?.companyName}" to the active businesses list. It will not automatically un-suspend them if they were also suspended.`
+    : `This hides "${biz?.companyName}" from the active list and blocks their logins, same as suspending. Their data is kept and nothing is deleted — you can unarchive at any time. Use this for accounts you consider closed/churned, to keep them out of your active view.`;
+  const btn = document.getElementById('modal-archive-confirm');
+  btn.textContent = isArchived ? 'Unarchive' : 'Archive';
+  btn.className = 'action-btn ' + (isArchived ? 'success' : 'danger');
+  document.getElementById('modal-archive').classList.add('open');
+}
+async function confirmArchive() {
+  if (!_archiveTarget) return;
+  const biz = allBusinesses.find(b => b.uid === _archiveTarget);
+  const archive = _archiveAction === 'archive';
+  try {
+    // Archiving also sets suspended so login is blocked; unarchiving does NOT auto-unsuspend,
+    // since the two states are tracked independently and a business could have been suspended
+    // for an unrelated reason before being archived.
+    const patch = archive ? { archived: true, suspended: true } : { archived: false };
+    await fbPatch(`businesses/${_archiveTarget}/settings`, patch);
+    biz.archived = archive;
+    if (archive) biz.suspended = true;
+    closeModal('modal-archive');
+    renderBusinessTable(allBusinesses);
+    renderSubTable(allBusinesses);
+    renderOverview();
+    toast(`"${biz.companyName}" ${archive ? 'archived' : 'unarchived'}.`, 'ok');
   } catch(e) { toast('Error: ' + e.message, 'err'); }
 }
 
