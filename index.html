@@ -343,6 +343,7 @@
       </nav>
       <div class="sidebar-footer">
         <div id="sidebar-email" style="margin-bottom:.3rem;"></div>
+        <div id="sidebar-uid" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.uid || '').then(()=>{this.textContent='Copied!'; setTimeout(()=>{this.textContent='UID: '+this.dataset.uid;},1200);})" style="margin-bottom:.6rem;font-size:.7rem;color:#888;cursor:pointer;word-break:break-all;user-select:all;" title="Tap to copy"></div>
         <button class="btn-logout" onclick="doLogout()">Sign out</button>
       </div>
     </aside>
@@ -645,6 +646,8 @@ async function doLogin() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     document.getElementById('sidebar-email').textContent = email;
+    const uidEl = document.getElementById('sidebar-uid');
+    if (uidEl) { uidEl.textContent = 'UID: ' + window._ownerUid; uidEl.dataset.uid = window._ownerUid; }
     initPanel();
   } catch(e) {
     errEl.textContent = e.message.includes('INVALID') ? 'Incorrect email or password.' : e.message;
