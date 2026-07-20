@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="theme-color" content="#0a0f1e"/>
+<title>MDM Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#0a0f1e;
+  --surface:#0f1729;
+  --surface2:#141e30;
+  --border:#1e2d4a;
+  --green:#00e096;--green-dim:#003d2e;
+  --amber:#f5a623;--amber-dim:#3d2800;
+  --red:#e74c3c;--red-dim:#2d0a0a;
+  --blue:#3b9eff;--blue-dim:#0d2040;
+  --purple:#a78bfa;--purple-dim:#1e1540;
+  --text:#c8dff5;--muted:#4a6a8a;--white:#fff;
+  --fh:'Space Grotesk',sans-serif;
+  --fm:'JetBrains Mono',monospace;
+}
+html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--fh);}
+body{padding-bottom:40px;}
+
+/* ── LOGIN ── */
+#login-screen{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  background:var(--bg);z-index:999;padding:24px;
+}
+.login-logo{
+  width:72px;height:72px;background:var(--green);border-radius:18px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;font-weight:800;color:#0a0f1e;margin-bottom:20px;
+  box-shadow:0 0 40px rgba(0,224,150,.25);
+  animation:pulse 3s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{box-shadow:0 0 40px rgba(0,224,150,.25);}50%{box-shadow:0 0 60px rgba(0,224,150,.45);}}
+.login-title{font-size:26px;font-weight:700;color:var(--white);margin-bottom:4px;letter-spacing:-.5px;}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+.login-card{
+  width:100%;max-width:340px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:24px;
+}
+.fl{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px;}
+.fi{
+  width:100%;background:var(--bg);border:1.5px solid var(--border);
+  border-radius:10px;padding:12px 14px;color:var(--text);
+  font-size:15px;font-family:var(--fh);outline:none;
+  transition:.2s;-webkit-appearance:none;
+}
+.fi:focus{border-color:var(--green);}
+.fw{margin-bottom:16px;}
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  border:none;border-radius:11px;padding:13px 20px;
+  font-family:var(--fh);font-size:15px;font-weight:700;
+  cursor:pointer;transition:.15s;width:100%;
+  touch-action:manipulation;letter-spacing:.2px;
+}
+.bg{background:var(--green);color:#0a0f1e;} .bg:active{opacity:.85;transform:scale(.97);}
+.bo{background:transparent;color:var(--text);border:1.5px solid var(--border);}
+.bo:active{border-color:var(--green);color:var(--green);}
+.br{background:var(--red);color:#fff;} .br:active{opacity:.85;}
+.ba{background:var(--amber);color:#0a0f1e;} .ba:active{opacity:.85;}
+.err{
+  background:var(--red-dim);border:1px solid var(--red);
+  border-radius:8px;padding:9px 12px;font-size:13px;
+  color:var(--red);margin-bottom:12px;display:none;
+}
+
+/* ── MAIN ── */
+#main{display:none;max-width:480px;margin:0 auto;padding:16px;}
+
+/* Header */
+.top-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:12px 16px;margin-bottom:16px;
+}
+.top-logo{
+  width:36px;height:36px;background:var(--green);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:800;color:#0a0f1e;flex-shrink:0;
+}
+.top-title{font-size:17px;font-weight:700;color:var(--white);margin-left:10px;}
+.top-sub{font-size:11px;color:var(--muted);}
+.logout-btn{
+  background:none;border:1px solid var(--border);border-radius:8px;
+  padding:6px 12px;color:var(--muted);font-family:var(--fh);
+  font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+}
+
+/* Stats row */
+.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
+
+/* Applicant detail block (inside pending cards) */
+.applicant-block{
+  background:var(--blue-dim);border:1px solid rgba(59,158,255,.3);
+  border-radius:10px;padding:11px 13px;margin-bottom:11px;
+}
+.applicant-block-title{
+  font-size:9px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;
+  color:var(--blue);margin-bottom:8px;
+}
+.applicant-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+.applicant-row:last-child{margin-bottom:0;}
+.applicant-icon{font-size:13px;flex-shrink:0;width:18px;text-align:center;}
+.applicant-val{font-size:13px;font-weight:600;color:var(--white);line-height:1.4;}
+.applicant-sub{font-size:10px;color:var(--muted);}
+.plan-pill{
+  display:inline-block;border-radius:5px;padding:2px 8px;
+  font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;
+  background:rgba(59,158,255,.15);color:var(--blue);border:1px solid rgba(59,158,255,.4);
+  margin-left:4px;
+}
+.plan-pill.starter{background:rgba(0,224,150,.1);color:var(--green);border-color:rgba(0,224,150,.3);}
+.plan-pill.growth{background:rgba(245,166,35,.1);color:var(--amber);border-color:rgba(245,166,35,.3);}
+.plan-pill.pro{background:rgba(167,139,250,.1);color:var(--purple);border-color:rgba(167,139,250,.3);}
+.stat-box{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:10px 8px;text-align:center;
+}
+.stat-val{font-family:var(--fm);font-size:22px;font-weight:700;line-height:1;}
+.stat-lbl{font-size:9px;color:var(--muted);margin-top:4px;letter-spacing:.6px;text-transform:uppercase;}
+
+/* Search + refresh */
+.toolbar{display:flex;gap:8px;margin-bottom:14px;}
+.search-box{
+  flex:1;background:var(--surface);border:1.5px solid var(--border);
+  border-radius:10px;padding:10px 14px;color:var(--text);
+  font-family:var(--fh);font-size:14px;outline:none;
+}
+.search-box:focus{border-color:var(--blue);}
+.refresh-btn{
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:10px;padding:10px 14px;color:var(--muted);
+  font-size:18px;cursor:pointer;flex-shrink:0;
+}
+.refresh-btn:active{border-color:var(--green);color:var(--green);}
+
+/* Depot cards */
+.depot-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:14px;margin-bottom:10px;
+  transition:.2s;
+}
+.depot-card.status-active{border-left:3px solid var(--green);}
+.depot-card.status-trial{border-left:3px solid var(--purple);}
+.depot-card.status-trial_grace{border-left:3px solid var(--amber);}
+.depot-card.status-trial_expired,.depot-card.status-expired{border-left:3px solid var(--red);}
+.depot-card.status-expired_grace{border-left:3px solid var(--amber);}
+.depot-card.status-suspended{border-left:3px solid var(--amber);}
+.depot-card.status-pending_approval{border-left:3px solid var(--blue);}
+
+.dc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.dc-name{font-size:16px;font-weight:700;color:var(--white);line-height:1.2;}
+.dc-key{font-family:var(--fm);font-size:10px;color:var(--muted);margin-top:2px;}
+
+.badge{
+  border-radius:6px;padding:3px 9px;font-size:10px;
+  font-weight:800;letter-spacing:.6px;white-space:nowrap;flex-shrink:0;
+}
+.badge-active{background:var(--green-dim);color:var(--green);}
+.badge-trial{background:var(--purple-dim);color:var(--purple);}
+.badge-trial_grace{background:var(--amber-dim);color:var(--amber);}
+.badge-trial_expired,.badge-expired{background:var(--red-dim);color:var(--red);}
+.badge-expired_grace{background:var(--amber-dim);color:var(--amber);}
+.badge-suspended{background:var(--amber-dim);color:var(--amber);}
+.badge-pending_approval{background:var(--blue-dim);color:var(--blue);}
+.badge-unknown{background:var(--surface2);color:var(--muted);}
+
+.dc-meta{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px;
+  margin-bottom:12px;
+}
+.dc-meta-item{background:var(--surface2);border-radius:8px;padding:7px 10px;}
+.dc-meta-label{font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px;}
+.dc-meta-val{font-size:12px;font-weight:600;color:var(--text);}
+
+.dc-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.act-btn{
+  flex:1;min-width:0;border:none;border-radius:9px;
+  padding:9px 8px;font-family:var(--fh);font-size:12px;
+  font-weight:700;cursor:pointer;transition:.15s;
+  touch-action:manipulation;white-space:nowrap;
+}
+.act-activate{background:var(--green);color:#0a0f1e;}
+.act-activate:active{opacity:.85;}
+.act-approve{background:var(--blue);color:#fff;}
+.act-approve:active{opacity:.85;}
+.act-renew{background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);}
+.act-renew:active{background:var(--blue);color:#0a0f1e;}
+.act-suspend{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber);}
+.act-suspend:active{background:var(--amber);color:#0a0f1e;}
+.act-unsuspend{background:var(--green-dim);color:var(--green);border:1px solid var(--green);}
+.act-unsuspend:active{background:var(--green);color:#0a0f1e;}
+.act-delete{background:var(--red-dim);color:var(--red);border:1px solid var(--red);}
+.act-delete:active{background:var(--red);color:#fff;}
+
+/* ── SUB REQUESTS SECTION ── */
+.sub-req-section{margin-bottom:18px;}
+.sub-req-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.sub-req-title{font-size:13px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--blue);display:flex;align-items:center;gap:6px;}
+.sub-req-badge{background:var(--blue);color:#0a0f1e;border-radius:20px;font-size:11px;font-weight:800;padding:1px 8px;min-width:22px;text-align:center;}
+.sub-req-card{background:var(--surface);border:1.5px solid rgba(59,158,255,.4);border-left:4px solid var(--blue);border-radius:13px;padding:13px 14px;margin-bottom:10px;}
+.sub-req-key{font-family:var(--fm);font-size:10px;color:var(--muted);margin-bottom:2px;}
+.sub-req-name{font-size:16px;font-weight:700;color:var(--white);margin-bottom:4px;}
+.sub-req-rows{display:flex;flex-direction:column;gap:4px;margin:8px 0;}
+.sub-req-row{display:flex;align-items:flex-start;gap:8px;}
+.sub-req-icon{font-size:13px;width:18px;text-align:center;flex-shrink:0;padding-top:1px;}
+.sub-req-val{font-size:13px;font-weight:600;color:var(--white);}
+.sub-req-lbl{font-size:10px;color:var(--muted);}
+.sub-req-time{font-size:10px;color:var(--muted);font-family:var(--fm);margin-top:6px;}
+.sub-req-actions{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;}
+.sub-req-actions .act-btn{flex:1;min-width:100px;}
+
+/* Empty / loading state */
+.empty-state{
+  text-align:center;padding:40px 20px;
+  color:var(--muted);font-size:14px;line-height:2;
+}
+.empty-icon{font-size:40px;margin-bottom:12px;}
+
+/* Toast */
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;
+  color:var(--white);white-space:nowrap;z-index:9999;
+  opacity:0;transition:.3s;pointer-events:none;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);
+}
+#toast.show{opacity:1;}
+
+/* Confirm modal */
+#confirm-modal{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);
+  z-index:9000;display:none;align-items:flex-end;justify-content:center;
+  padding:20px;
+}
+#confirm-modal.show{display:flex;}
+.confirm-box{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:18px;padding:22px;width:100%;max-width:400px;
+}
+.confirm-title{font-size:18px;font-weight:700;color:var(--white);margin-bottom:8px;}
+.confirm-msg{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;}
+.confirm-actions{display:flex;gap:8px;}
+
+/* Spinner */
+.spin{display:inline-block;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* Section header */
+.sh{
+  font-size:10px;font-weight:700;color:var(--muted);
+  letter-spacing:1.2px;text-transform:uppercase;
+  margin:18px 0 10px;padding-left:2px;
+}
+
+/* ── FINANCIAL SUMMARY ── */
+.fin-panel{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;margin-bottom:16px;overflow:hidden;
+}
+.fin-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:13px 16px;cursor:pointer;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.fin-header:active{background:var(--surface2);}
+.fin-header-left{display:flex;align-items:center;gap:10px;}
+.fin-header-icon{
+  width:34px;height:34px;background:rgba(0,224,150,.12);
+  border:1px solid rgba(0,224,150,.25);border-radius:9px;
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+}
+.fin-header-title{font-size:15px;font-weight:700;color:var(--white);}
+.fin-header-sub{font-size:11px;color:var(--muted);margin-top:1px;}
+.fin-chevron{
+  font-size:12px;color:var(--muted);transition:transform .25s;
+  flex-shrink:0;
+}
+.fin-chevron.open{transform:rotate(180deg);}
+.fin-body{display:none;padding:0 14px 14px;}
+.fin-body.open{display:block;}
+
+/* MRR hero */
+.mrr-hero{
+  background:linear-gradient(135deg,rgba(0,224,150,.08),rgba(59,158,255,.06));
+  border:1px solid rgba(0,224,150,.2);border-radius:11px;
+  padding:14px 16px;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.mrr-left{}
+.mrr-label{font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+.mrr-val{font-family:var(--fm);font-size:30px;font-weight:700;color:var(--green);line-height:1;}
+.mrr-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+.mrr-right{text-align:right;}
+.mrr-arr-label{font-size:9px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+.mrr-arr-val{font-family:var(--fm);font-size:18px;font-weight:700;color:var(--blue);}
+
+/* Fin stats row */
+.fin-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px;}
+.fin-stat{background:var(--surface2);border-radius:10px;padding:10px 10px 9px;text-align:center;}
+.fin-stat-val{font-family:var(--fm);font-size:17px;font-weight:700;line-height:1;}
+.fin-stat-lbl{font-size:9px;color:var(--muted);margin-top:4px;letter-spacing:.6px;text-transform:uppercase;line-height:1.3;}
+
+/* Tier breakdown */
+.tier-list{display:flex;flex-direction:column;gap:7px;margin-bottom:12px;}
+.tier-row{
+  background:var(--surface2);border-radius:10px;
+  padding:10px 12px;display:flex;align-items:center;gap:10px;
+}
+.tier-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.tier-info{flex:1;min-width:0;}
+.tier-name{font-size:13px;font-weight:600;color:var(--white);}
+.tier-count{font-size:11px;color:var(--muted);margin-top:1px;}
+.tier-rev{font-family:var(--fm);font-size:14px;font-weight:700;flex-shrink:0;}
+.tier-bar-wrap{margin-top:6px;background:var(--bg);border-radius:3px;height:4px;overflow:hidden;}
+.tier-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
+
+/* At-risk / expiring */
+.fin-alert{
+  border-radius:10px;padding:10px 12px;
+  display:flex;align-items:flex-start;gap:10px;
+}
+.fin-alert.warn{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);}
+.fin-alert.ok{background:rgba(0,224,150,.07);border:1px solid rgba(0,224,150,.2);}
+.fin-alert-icon{font-size:18px;flex-shrink:0;margin-top:1px;}
+.fin-alert-text{}
+.fin-alert-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;}
+.fin-alert-sub{font-size:11px;color:var(--muted);line-height:1.5;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-logo">MDM</div>
+  <div class="login-title">Admin Panel</div>
+  <div class="login-sub">My Depot Master — Developer Access</div>
+  <div class="login-card">
+    <div id="login-err" class="err"></div>
+    <div class="fw">
+      <div class="fl">Admin Password</div>
+      <input class="fi" type="password" id="admin-pass" placeholder="Enter password" autocomplete="current-password"/>
+    </div>
+    <button class="btn bg" onclick="doAdminLogin()">🔐 Sign In</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:0">
+      <div class="top-logo">MDM</div>
+      <div style="margin-left:10px">
+        <div class="top-title">Admin Panel</div>
+        <div class="top-sub" id="last-refresh-label">Loading depots…</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">Sign Out</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" id="stat-total" style="color:var(--blue)">—</div>
+      <div class="stat-lbl">Total</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-active" style="color:var(--green)">—</div>
+      <div class="stat-lbl">Active</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-trial" style="color:var(--purple)">—</div>
+      <div class="stat-lbl">Trial</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="stat-expired" style="color:var(--red)">—</div>
+      <div class="stat-lbl">Expired/Grace</div>
+    </div>
+    <div class="stat-box" id="stat-pending-box" style="border-color:rgba(59,158,255,.4);background:var(--blue-dim)">
+      <div class="stat-val" id="stat-pending" style="color:var(--blue)">—</div>
+      <div class="stat-lbl" style="color:var(--blue)">Pending</div>
+    </div>
+  </div>
+
+  <!-- Financial Summary Panel -->
+  <div class="fin-panel">
+    <div class="fin-header" onclick="toggleFinPanel()">
+      <div class="fin-header-left">
+        <div class="fin-header-icon">💰</div>
+        <div>
+          <div class="fin-header-title">Subscription Revenue</div>
+          <div class="fin-header-sub" id="fin-header-sub">Tap to expand</div>
+        </div>
+      </div>
+      <div class="fin-chevron" id="fin-chevron">▼</div>
+    </div>
+    <div class="fin-body" id="fin-body">
+      <!-- MRR Hero -->
+      <div class="mrr-hero">
+        <div class="mrr-left">
+          <div class="mrr-label">Monthly Recurring Revenue</div>
+          <div class="mrr-val" id="fin-mrr">K0</div>
+          <div class="mrr-sub" id="fin-mrr-sub">0 paying depots</div>
+        </div>
+        <div class="mrr-right">
+          <div class="mrr-arr-label">Annual Run Rate</div>
+          <div class="mrr-arr-val" id="fin-arr">K0</div>
+        </div>
+      </div>
+
+      <!-- 3-stat row -->
+      <div class="fin-stats">
+        <div class="fin-stat">
+          <div class="fin-stat-val" id="fin-paying" style="color:var(--green)">0</div>
+          <div class="fin-stat-lbl">Paying<br>Depots</div>
+        </div>
+        <div class="fin-stat">
+          <div class="fin-stat-val" id="fin-trial-conv" style="color:var(--purple)">0</div>
+          <div class="fin-stat-lbl">Trial<br>(Potential)</div>
+        </div>
+        <div class="fin-stat">
+          <div class="fin-stat-val" id="fin-atrisk" style="color:var(--amber)">0</div>
+          <div class="fin-stat-lbl">Expiring<br>≤ 7 Days</div>
+        </div>
+      </div>
+
+      <!-- Per-tier breakdown -->
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;">Revenue by Plan</div>
+      <div class="tier-list" id="fin-tier-list"></div>
+
+      <!-- At-risk alert -->
+      <div id="fin-alert-wrap"></div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input class="search-box" type="text" id="search-input" placeholder="🔍  Search depot name or key…" oninput="renderDepots()"/>
+    <button class="refresh-btn" onclick="loadAll()" title="Refresh">↻</button>
+  </div>
+
+  <!-- Subscription Requests -->
+  <div class="sub-req-section" id="sub-req-section" style="display:none">
+    <div class="sub-req-header">
+      <div class="sub-req-title">📋 Subscription Applications <span class="sub-req-badge" id="sub-req-count">0</span></div>
+    </div>
+    <div id="sub-req-list"></div>
+  </div>
+
+  <!-- Depot list -->
+  <div id="depot-list"></div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Confirm Modal -->
+<div id="confirm-modal">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirm-title">Are you sure?</div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-actions">
+      <button class="btn bo" style="flex:1" onclick="closeConfirm()">Cancel</button>
+      <button class="btn" id="confirm-ok-btn" style="flex:1" onclick="confirmAction()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// CONFIG — your Firebase project
+// ══════════════════════════════════════════════════════
+const FB_URL   = 'https://realtime-database-be871-default-rtdb.firebaseio.com';
+
+// ── FIREBASE RULES NOTE ──────────────────────────────────────────────────────
+// Actual deployed rules (confirmed from Firebase Console, 28 Jun 2026):
+//
+//   "licenses": { ".read": true, "$depotKey": { ".read": true, ".write": <see below> } }
+//   "depots":   { "$depotKey": { ".read": true, ".write": true } }
+//   "usernames":{ "$username": { ".read": true, ".write": true } }
+//   "lockouts": { "$installId": { ".read": true, ".write": true } }
+//   "subscriptionRequests": { ".read": true, "$installId": { ".read": true, ".write": true } }
+//
+// depots/usernames/lockouts/subscriptionRequests are already unconditionally
+// writable/readable — no changes needed there for anything in this file
+// (activate/suspend/renew/approve/dismiss/delete-with-data all just work).
+//
+// REQUIRED FIX — licenses.$depotKey.write:
+// The rule that was deployed only allowed setting an existing license's
+// status to exactly 'pending_approval'. That silently rejected EVERY admin
+// action that touches an existing license: activateDepot, suspendDepot,
+// renewDepot, unsuspendDepot, approveDepot, approveSubRequest,
+// activateSubRequest, and deleteDepot (delete sends newData = null, which
+// also failed the same check). Change it to:
+//
+//   "licenses": {
+//     ".read": true,
+//     "$depotKey": {
+//       ".read": true,
+//       ".write": true
+//     }
+//   }
+//
+// This matches the same trust model already used everywhere else in this
+// database (anyone holding a depotKey can already rewrite its `depots` data
+// unconditionally, so this isn't introducing a new class of risk).
+// ────────────────────────────────────────────────────────────────────────────
+
+// SHA-256 hash of your admin password.
+// Current password is: mdmadmin2025
+// To change it: https://emn178.github.io/online-tools/sha256.html — hash your new password and paste below.
+const ADMIN_PASS_HASH = '36e0dda426008f32b5814fdd17da9d98eae8f94ead76620dfac54a5a3f073231';
+
+const TRIAL_MS      = 30 * 24 * 60 * 60 * 1000; // 30-day trial (matches app)
+const ONE_MONTH_MS  = 30 * 24 * 60 * 60 * 1000; // 1-month active period
+const SUB_GRACE_MS  =  3 * 24 * 60 * 60 * 1000; // 3-day grace (matches app)
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// FIX: esc() was used throughout (subscription request cards, applicant block)
+// but never defined in this file — caused a ReferenceError that silently
+// aborted rendering of the Subscription Applications list every time there
+// was at least one pending request.
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/`/g, '&#x60;');
+}
+
+// ══════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════
+let ALL_DEPOTS = []; // [{key, ...licenseData, effectiveStatus, daysLeft}]
+let _confirmFn = null;
+
+// ══════════════════════════════════════════════════════
+// FIREBASE REST HELPERS
+// ══════════════════════════════════════════════════════
+async function fbGet(path) {
+  const res = await fetch(FB_URL + '/' + path + '.json');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fbPatch(path, data) {
+  const res = await fetch(FB_URL + '/' + path + '.json', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fbDelete(path) {
+  const res = await fetch(FB_URL + '/' + path + '.json', { method: 'DELETE' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+}
+
+// ══════════════════════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════════════════════
+document.getElementById('admin-pass').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doAdminLogin();
+});
+
+async function doAdminLogin() {
+  const pass = document.getElementById('admin-pass').value;
+  const err  = document.getElementById('login-err');
+  const btn  = document.querySelector('#login-screen .btn');
+  btn.disabled = true; btn.textContent = '🔐 Checking…';
+  const hash = await sha256(pass);
+  btn.disabled = false; btn.textContent = '🔐 Sign In';
+  if (hash !== ADMIN_PASS_HASH) {
+    err.style.display = 'block';
+    err.textContent = '❌ Incorrect password.';
+    return;
+  }
+  err.style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main').style.display = 'block';
+  loadAll();
+}
+
+function doLogout() {
+  document.getElementById('admin-pass').value = '';
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+// ══════════════════════════════════════════════════════
+// LOAD DEPOTS
+// ══════════════════════════════════════════════════════
+async function loadDepots() {
+  document.getElementById('last-refresh-label').textContent = 'Loading…';
+  document.getElementById('depot-list').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon"><span class="spin">⏳</span></div>
+      Fetching depots from Firebase…
+    </div>`;
+  try {
+    const data = await fbGet('licenses');
+    if (!data) {
+      ALL_DEPOTS = [];
+    } else {
+      ALL_DEPOTS = Object.entries(data).map(([key, val]) => {
+        const raw          = val.status || 'trial';
+        const trialStart   = val.trialStart || val.createdAt || Date.now();
+        const activeUntil  = val.activeUntil || 0;
+        const eff          = computeStatus(raw, trialStart, activeUntil);
+        const trialDays = Math.max(0, Math.ceil(((trialStart + TRIAL_MS) - Date.now()) / (24*60*60*1000)));
+        const activeDays = activeUntil ? Math.max(0, Math.ceil((activeUntil - Date.now()) / (24*60*60*1000))) : 0;
+        return {
+          key,
+          ...val,
+          effectiveStatus: eff,
+          trialDaysLeft:   trialDays,
+          activeDaysLeft:  activeDays
+        };
+      });
+      // Sort: pending first, then expired/trial_expired, trial, active, suspended
+      const order = {pending_approval:0, trial_expired:1, expired:2, expired_grace:3, trial_grace:4, trial:5, active:6, suspended:7};
+      ALL_DEPOTS.sort((a,b) => (order[a.effectiveStatus]||5) - (order[b.effectiveStatus]||5));
+    }
+    renderDepots();
+    const now = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+    document.getElementById('last-refresh-label').textContent = 'Last updated ' + now;
+  } catch(e) {
+    document.getElementById('depot-list').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">❌</div>
+        Failed to load: ${e.message}<br>
+        <button class="btn bo" style="margin-top:14px;width:auto;padding:8px 20px" onclick="loadAll()">Try Again</button>
+      </div>`;
+    document.getElementById('last-refresh-label').textContent = 'Load failed';
+  }
+}
+
+function computeStatus(raw, trialStart, activeUntil) {
+  const now = Date.now();
+  if (raw === 'suspended')        return 'suspended';
+  if (raw === 'pending_approval') return 'pending_approval';
+  if (raw === 'trial') {
+    const ts = trialStart || now;
+    if (now <= ts + TRIAL_MS)                return 'trial';
+    if (now <= ts + TRIAL_MS + SUB_GRACE_MS) return 'trial_grace';
+    return 'trial_expired';
+  }
+  if (raw === 'active') {
+    if (!activeUntil || now <= activeUntil)          return 'active';
+    if (now <= activeUntil + SUB_GRACE_MS)           return 'expired_grace';
+    return 'expired';
+  }
+  return raw;
+}
+
+function daysUntil(ts) {
+  return Math.max(0, Math.ceil((ts - Date.now()) / (24*60*60*1000)));
+}
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('en-GB', {dateStyle:'short', timeStyle:'short'});
+}
+
+// ══════════════════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// FINANCIAL SUMMARY
+// ══════════════════════════════════════════════════════
+const TIER_PRICE = { free: 0, starter: 90, growth: 150, pro: 300, multisite: 600 };
+const TIER_COLOR = { free: '#4a6a8a', starter: '#00e096', growth: '#f5a623', pro: '#a78bfa', multisite: '#3b9eff' };
+const TIER_LABEL = { free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', multisite: 'Multi-Site' };
+
+let _finOpen = false;
+
+function toggleFinPanel() {
+  _finOpen = !_finOpen;
+  document.getElementById('fin-body').classList.toggle('open', _finOpen);
+  document.getElementById('fin-chevron').classList.toggle('open', _finOpen);
+}
+
+function updateFinancialSummary() {
+  const now = Date.now();
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+
+  const payingDepots = ALL_DEPOTS.filter(d => d.effectiveStatus === 'active');
+  const trialDepots  = ALL_DEPOTS.filter(d => ['trial','trial_grace'].includes(d.effectiveStatus));
+  const atRisk       = payingDepots.filter(d => d.activeUntil && (d.activeUntil - now) <= SEVEN_DAYS);
+
+  let mrr = 0;
+  const tierCounts = {};
+  for (const d of payingDepots) {
+    const tier = (d.tier || 'pro').toLowerCase();
+    const price = TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : TIER_PRICE.pro;
+    mrr += price;
+    if (!tierCounts[tier]) tierCounts[tier] = { count: 0, revenue: 0 };
+    tierCounts[tier].count++;
+    tierCounts[tier].revenue += price;
+  }
+
+  const trialPotential = trialDepots.reduce((s, d) => {
+    const tier = (d.requestedPlan || d.tier || 'pro').toLowerCase();
+    return s + (TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : TIER_PRICE.pro);
+  }, 0);
+
+  const arr = mrr * 12;
+
+  document.getElementById('fin-mrr').textContent = 'K' + mrr.toLocaleString();
+  document.getElementById('fin-mrr-sub').textContent = payingDepots.length + ' paying depot' + (payingDepots.length !== 1 ? 's' : '');
+  document.getElementById('fin-arr').textContent = 'K' + arr.toLocaleString();
+  document.getElementById('fin-paying').textContent = payingDepots.length;
+  document.getElementById('fin-trial-conv').textContent = trialDepots.length;
+  document.getElementById('fin-atrisk').textContent = atRisk.length;
+  document.getElementById('fin-header-sub').textContent =
+    'MRR: K' + mrr.toLocaleString() + '  ·  ' + payingDepots.length + ' active';
+
+  const tiers = Object.entries(tierCounts).sort((a,b) => (TIER_PRICE[b[0]]||0) - (TIER_PRICE[a[0]]||0));
+  const tierListEl = document.getElementById('fin-tier-list');
+  if (!tiers.length) {
+    tierListEl.innerHTML = '<div style="font-size:13px;color:var(--muted);text-align:center;padding:10px 0;">No paying depots yet</div>';
+  } else {
+    tierListEl.innerHTML = tiers.map(([tier, data]) => {
+      const pct   = mrr > 0 ? Math.round((data.revenue / mrr) * 100) : 0;
+      const color = TIER_COLOR[tier] || '#4a6a8a';
+      const price = TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : 0;
+      return `
+      <div class="tier-row">
+        <div class="tier-dot" style="background:${color}"></div>
+        <div class="tier-info">
+          <div class="tier-name">${TIER_LABEL[tier] || tier} <span style="font-size:10px;color:var(--muted);font-weight:400">· K${price}/mo</span></div>
+          <div class="tier-bar-wrap"><div class="tier-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+          <div class="tier-count">${data.count} depot${data.count !== 1 ? 's' : ''} · ${pct}% of MRR</div>
+        </div>
+        <div class="tier-rev" style="color:${color}">K${data.revenue.toLocaleString()}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const alertWrap = document.getElementById('fin-alert-wrap');
+  if (atRisk.length > 0) {
+    const atRiskMRR = atRisk.reduce((s,d) => s + (TIER_PRICE[(d.tier||'pro').toLowerCase()] !== undefined ? TIER_PRICE[(d.tier||'pro').toLowerCase()] : TIER_PRICE.pro), 0);
+    alertWrap.innerHTML = `
+    <div class="fin-alert warn" style="margin-top:10px">
+      <div class="fin-alert-icon">\u26a0\ufe0f</div>
+      <div class="fin-alert-text">
+        <div class="fin-alert-title">${atRisk.length} depot${atRisk.length !== 1 ? 's' : ''} expiring within 7 days</div>
+        <div class="fin-alert-sub">K${atRiskMRR.toLocaleString()} at risk — renew to retain revenue${trialDepots.length > 0 ? ` · K${trialPotential.toLocaleString()} potential from ${trialDepots.length} trial${trialDepots.length !== 1 ? 's' : ''}` : ''}.</div>
+      </div>
+    </div>`;
+  } else if (trialDepots.length > 0) {
+    alertWrap.innerHTML = `
+    <div class="fin-alert ok" style="margin-top:10px">
+      <div class="fin-alert-icon">\u23f3</div>
+      <div class="fin-alert-text">
+        <div class="fin-alert-title">${trialDepots.length} trial depot${trialDepots.length !== 1 ? 's' : ''} in progress</div>
+        <div class="fin-alert-sub">K${trialPotential.toLocaleString()} potential MRR if converted to paid plans.</div>
+      </div>
+    </div>`;
+  } else {
+    alertWrap.innerHTML = '';
+  }
+}
+
+function updateStats() {
+  const total   = ALL_DEPOTS.length;
+  const active  = ALL_DEPOTS.filter(d => d.effectiveStatus === 'active').length;
+  const trial   = ALL_DEPOTS.filter(d => d.effectiveStatus === 'trial').length;
+  const expired = ALL_DEPOTS.filter(d => ['trial_expired','expired','trial_grace','expired_grace'].includes(d.effectiveStatus)).length;
+  // PENDING = depots awaiting first approval, PLUS pending subscription/upgrade
+  // requests from existing depots (don't double-count a depot that's both).
+  const pendingApprovalKeys = new Set(ALL_DEPOTS.filter(d => d.effectiveStatus === 'pending_approval').map(d => d.key));
+  const subReqExtra = ALL_SUB_REQS.filter(r => !pendingApprovalKeys.has(r.installId)).length;
+  const pending = pendingApprovalKeys.size + subReqExtra;
+  document.getElementById('stat-total').textContent   = total;
+  document.getElementById('stat-active').textContent  = active;
+  document.getElementById('stat-trial').textContent   = trial;
+  document.getElementById('stat-expired').textContent = expired;
+  document.getElementById('stat-pending').textContent = pending;
+  // Pulse the pending box if there are applications waiting
+  const pendingBox = document.getElementById('stat-pending-box');
+  pendingBox.style.animation = pending > 0 ? 'pulse 2.5s ease-in-out infinite' : 'none';
+  updateFinancialSummary();
+}
+
+// ══════════════════════════════════════════════════════
+// RENDER DEPOT CARDS
+// ══════════════════════════════════════════════════════
+function renderDepots() {
+  const q = (document.getElementById('search-input').value || '').toLowerCase();
+  const list = q
+    ? ALL_DEPOTS.filter(d =>
+        (d.key||'').toLowerCase().includes(q) ||
+        (d.depotName||'').toLowerCase().includes(q) ||
+        (d.contactName||'').toLowerCase().includes(q) ||
+        (d.contactPhone||'').toLowerCase().includes(q) ||
+        (d.transactionId||'').toLowerCase().includes(q) ||
+        (d.district||'').toLowerCase().includes(q))
+    : ALL_DEPOTS;
+
+  if (!list.length) {
+    document.getElementById('depot-list').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        ${ALL_DEPOTS.length === 0 ? 'No depots registered yet.<br>Users will appear here after first login.' : 'No depots match your search.'}
+      </div>`;
+    return;
+  }
+
+  document.getElementById('depot-list').innerHTML = list.map(d => buildCard(d)).join('');
+}
+
+function buildCard(d) {
+  const eff = d.effectiveStatus;
+  const badgeLabels = {
+    active: '✅ ACTIVE', trial: '⏳ TRIAL',
+    trial_grace: '⚠️ TRIAL GRACE', trial_expired: '⌛ TRIAL ENDED',
+    expired_grace: '⚠️ GRACE PERIOD', expired: '🔒 EXPIRED',
+    suspended: '⛔ SUSPENDED', pending_approval: '🔵 PENDING APPROVAL',
+    unknown: '❓ UNKNOWN'
+  };
+  const badge = `<span class="badge badge-${eff}">${badgeLabels[eff]||eff.toUpperCase()}</span>`;
+
+  // Meta info
+  let metaItems = [];
+  if (eff === 'trial') {
+    metaItems.push({label:'Trial Days Left', val: `<span style="color:var(--purple)">${d.trialDaysLeft} days</span>`});
+    metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
+  } else if (eff === 'trial_grace') {
+    const graceEnds = (d.trialStart||0) + TRIAL_MS + SUB_GRACE_MS;
+    metaItems.push({label:'Grace Ends',      val: `<span style="color:var(--amber)">${fmtDate(graceEnds)}</span>`});
+    metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
+  } else if (eff === 'pending_approval') {
+    metaItems.push({label:'Applied On',      val: fmtDateTime(d.createdAt)});
+    metaItems.push({label:'Location',        val: [d.district, d.country].filter(Boolean).join(', ') || '—'});
+  } else if (eff === 'trial_expired') {
+    metaItems.push({label:'Trial Ended',     val: `<span style="color:var(--red)">${fmtDate((d.trialStart||0) + TRIAL_MS)}</span>`});
+    metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
+  } else if (eff === 'active') {
+    metaItems.push({label:'Days Remaining',  val: `<span style="color:var(--green)">${d.activeDaysLeft} days</span>`});
+    metaItems.push({label:'Expires',         val: fmtDate(d.activeUntil)});
+  } else if (eff === 'expired_grace') {
+    const graceEnds = (d.activeUntil||0) + SUB_GRACE_MS;
+    metaItems.push({label:'Grace Ends',      val: `<span style="color:var(--amber)">${fmtDate(graceEnds)}</span>`});
+    metaItems.push({label:'Sub Expired',     val: `<span style="color:var(--red)">${fmtDate(d.activeUntil)}</span>`});
+  } else if (eff === 'expired') {
+    metaItems.push({label:'Expired On',      val: `<span style="color:var(--red)">${fmtDate(d.activeUntil)}</span>`});
+    metaItems.push({label:'Activated On',    val: fmtDate(d.activatedOn)});
+  } else if (eff === 'suspended') {
+    metaItems.push({label:'Status',          val: `<span style="color:var(--amber)">Suspended</span>`});
+    metaItems.push({label:'Activated On',    val: fmtDate(d.activatedOn)});
+  }
+  metaItems.push({label:'Registered',       val: fmtDate(d.createdAt)});
+  if (d.activatedOn) metaItems.push({label:'Last Activated', val: fmtDate(d.activatedOn)});
+
+  const metaHTML = metaItems.map(m =>
+    `<div class="dc-meta-item">
+      <div class="dc-meta-label">${m.label}</div>
+      <div class="dc-meta-val">${m.val}</div>
+    </div>`
+  ).join('');
+
+  // Action buttons
+  let actions = '';
+  const k = d.key;
+  if (eff === 'pending_approval') {
+    actions += `<button class="act-btn act-approve" onclick="approveDepot('${k}')">⏳ Approve → Trial</button>`;
+    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">⚡ Approve → Active</button>`;
+  }
+  if (eff === 'trial' || eff === 'trial_grace' || eff === 'trial_expired') {
+    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">✅ Activate</button>`;
+  }
+  if (eff === 'active') {
+    actions += `<button class="act-btn act-renew" onclick="renewDepot('${k}')">🔄 Renew</button>`;
+    actions += `<button class="act-btn act-suspend" onclick="suspendDepot('${k}')">⛔ Suspend</button>`;
+  }
+  if (eff === 'expired' || eff === 'expired_grace') {
+    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">✅ Reactivate</button>`;
+  }
+  if (eff === 'suspended') {
+    actions += `<button class="act-btn act-unsuspend" onclick="unsuspendDepot('${k}')">✅ Unsuspend</button>`;
+  }
+  actions += `<button class="act-btn act-delete" onclick="deleteDepot('${k}')">🗑</button>`;
+
+  // Build applicant info block for pending cards
+  let applicantBlock = '';
+  // Pull from matching subscriptionRequest if available, fallback to license fields.
+  // FIX: this used to only show for eff === 'pending_approval', but most upgrade
+  // requests come from depots already in trial/active status — so the block
+  // never appeared even though a request was sitting in ALL_SUB_REQS.
+  const req = ALL_SUB_REQS.find(r => r.installId === k);
+  if (eff === 'pending_approval' || req) {
+    const planLabel = {starter:'Starter — K90/mo', growth:'Growth — K150/mo', pro:'Pro — K300/mo'};
+    const r          = req || {};
+    const planClass  = r.requestedPlan || d.requestedPlan || '';
+    const planText   = planLabel[planClass] || (planClass ? planClass.toUpperCase() : '—');
+    const phone      = r.phone || r.contactPhone || d.contactPhone || '';
+    const txid       = r.transactionId || d.transactionId || '';
+    const method     = r.paymentMethod || '';
+    applicantBlock = `
+    <div class="applicant-block">
+      <div class="applicant-block-title">📋 Subscription Application</div>
+      ${phone ? `<div class="applicant-row">
+        <span class="applicant-icon">📞</span>
+        <div><div class="applicant-val"><a href="tel:${esc(phone)}" style="color:var(--white);text-decoration:none">${esc(phone)}</a></div><div class="applicant-sub">Phone — tap to call</div></div>
+      </div>` : ''}
+      <div class="applicant-row">
+        <span class="applicant-icon">📦</span>
+        <div><div class="applicant-val">Requested Plan <span class="plan-pill ${planClass}">${planText}</span></div></div>
+      </div>
+      ${method ? `<div class="applicant-row">
+        <span class="applicant-icon">💳</span>
+        <div><div class="applicant-val">${esc(method)}</div><div class="applicant-sub">Payment Method</div></div>
+      </div>` : ''}
+      ${txid ? `<div class="applicant-row">
+        <span class="applicant-icon">🧾</span>
+        <div><div class="applicant-val" style="font-family:monospace">${esc(txid)}</div><div class="applicant-sub">Transaction ID / Reference</div></div>
+      </div>` : `<div class="applicant-row">
+        <span class="applicant-icon">⚠️</span>
+        <div><div class="applicant-val" style="color:var(--amber)">No Transaction ID</div><div class="applicant-sub">Submitted without payment proof</div></div>
+      </div>`}
+    </div>`;
+  }
+
+  return `
+  <div class="depot-card status-${eff}" id="card-${k}">
+    <div class="dc-top">
+      <div>
+        <div class="dc-name">${d.depotName || '(Unnamed Depot)'}</div>
+        <div class="dc-key">${k}</div>
+      </div>
+      ${badge}
+    </div>
+    ${applicantBlock}
+    <div class="dc-meta">${metaHTML}</div>
+    <div class="dc-actions">${actions}</div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// ACTIONS
+// ══════════════════════════════════════════════════════
+function approveDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  showConfirm(
+    '🔵 Approve → 14-Day Trial',
+    `Approve <strong style="color:var(--white)">${name}</strong> for a <strong style="color:var(--purple)">14-day trial</strong>?<br><br>
+     The user will be able to log in immediately. Status will be set to <strong style="color:var(--purple)">TRIAL</strong>.`,
+    'act-renew',
+    async () => {
+      const now = Date.now();
+      await fbPatch('licenses/' + key, {
+        status: 'trial',
+        trialStart: now,
+        approvedOn: now
+      });
+      toast('✅ Depot approved for 14-day trial');
+      await loadAll();
+    }
+  );
+}
+
+function activateDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  const expiry = fmtDate(Date.now() + ONE_MONTH_MS);
+  showConfirm(
+    '✅ Activate Depot',
+    `Activate <strong style="color:var(--white)">${name}</strong>?<br><br>
+     Status will be set to <strong style="color:var(--green)">ACTIVE</strong> for <strong style="color:var(--white)">1 month</strong> (expires ${expiry}).`,
+    'act-activate',
+    async () => {
+      const now = Date.now();
+      await fbPatch('licenses/' + key, {
+        status: 'active',
+        activeUntil: now + ONE_MONTH_MS,
+        activatedOn: now
+      });
+      toast('✅ Depot activated — expires ' + expiry);
+      await loadAll();
+    }
+  );
+}
+
+function renewDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  // Extend from current expiry if still active, else from now
+  const base = (d?.activeUntil && d.activeUntil > Date.now()) ? d.activeUntil : Date.now();
+  const newExpiry = fmtDate(base + ONE_MONTH_MS);
+  showConfirm(
+    '🔄 Renew Subscription',
+    `Renew <strong style="color:var(--white)">${name}</strong>?<br><br>
+     Active period extended by <strong style="color:var(--white)">1 month</strong>. New expiry: <strong style="color:var(--green)">${newExpiry}</strong>`,
+    'act-renew',
+    async () => {
+      await fbPatch('licenses/' + key, {
+        status: 'active',
+        activeUntil: base + ONE_MONTH_MS,
+        renewedOn: Date.now()
+      });
+      toast('🔄 Subscription renewed until ' + newExpiry);
+      await loadAll();
+    }
+  );
+}
+
+function suspendDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  showConfirm(
+    '⛔ Suspend Depot',
+    `Suspend <strong style="color:var(--white)">${name}</strong>?<br><br>
+     The depot will be <strong style="color:var(--amber)">locked immediately</strong>. Data is kept. You can unsuspend at any time.`,
+    'act-suspend',
+    async () => {
+      await fbPatch('licenses/' + key, {
+        status: 'suspended',
+        suspendedMsg: 'Your depot has been suspended. Please contact the developer.',
+        suspendedOn: Date.now()
+      });
+      toast('⛔ Depot suspended');
+      await loadAll();
+    }
+  );
+}
+
+function unsuspendDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  showConfirm(
+    '✅ Unsuspend Depot',
+    `Restore access for <strong style="color:var(--white)">${name}</strong>?<br><br>
+     Status will return to <strong style="color:var(--green)">ACTIVE</strong>.`,
+    'act-activate',
+    async () => {
+      const now = Date.now();
+      const base = (d?.activeUntil && d.activeUntil > now) ? d.activeUntil : now + ONE_MONTH_MS;
+      await fbPatch('licenses/' + key, {
+        status: 'active',
+        activeUntil: base,
+        activatedOn: now,
+        suspendedMsg: null
+      });
+      toast('✅ Depot unsuspended');
+      await loadAll();
+    }
+  );
+}
+
+function deleteDepot(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = d?.depotName || key;
+  showConfirm(
+    '🗑 Permanently Delete Account',
+    `This will permanently delete <strong style="color:var(--white)">${esc(name)}</strong> and <strong style="color:var(--red)">ALL of its app data</strong> — sales, purchases, expenses, staff, stock, login credentials, everything.<br><br>
+     <span style="color:var(--red)">⚠️ This cannot be undone.</span><br><br>
+     Type the depot key to confirm:<br>
+     <div style="font-family:var(--fm);color:var(--blue);margin:4px 0 8px">${esc(key)}</div>
+     <input type="text" id="delete-confirm-input" placeholder="Type the key above" autocomplete="off"
+       style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--white);font-family:var(--fm);font-size:13px;box-sizing:border-box"/>`,
+    'act-delete',
+    async () => {
+      const typed = (document.getElementById('delete-confirm-input')?.value || '').trim();
+      if (typed !== key) {
+        throw new Error('Key did not match — nothing was deleted.');
+      }
+
+      // Find usernames mapped to this depot so the global usernames/ index
+      // doesn't end up with stale entries pointing at a deleted depot.
+      let usernames = [];
+      try {
+        const auth = await fbGet('depots/' + key + '/auth');
+        if (auth && typeof auth === 'object') usernames = Object.keys(auth);
+      } catch(e) { /* non-fatal — proceed without username cleanup */ }
+
+      const results = await Promise.allSettled([
+        fbDelete('depots/' + key),               // app data: data/meta/auth
+        fbDelete('licenses/' + key),              // license record
+        fbDelete('subscriptionRequests/' + key),  // any pending applications
+        ...usernames.map(u => fbDelete('usernames/' + u))
+      ]);
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length) throw new Error(failed.length + ' of ' + results.length + ' delete steps failed — check Firebase rules.');
+
+      toast('🗑 Account and all data permanently deleted');
+      await loadAll();
+    }
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// CONFIRM MODAL
+// ══════════════════════════════════════════════════════
+function showConfirm(title, msg, btnClass, fn) {
+  _confirmFn = fn;
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').innerHTML = msg;
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.className = 'btn act-btn ' + btnClass;
+  btn.style.flex = '1';
+  btn.textContent = 'Confirm';
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function closeConfirm() {
+  _confirmFn = null;
+  document.getElementById('confirm-modal').classList.remove('show');
+}
+
+async function confirmAction() {
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> Working…';
+  try {
+    if (_confirmFn) await _confirmFn();
+  } catch(e) {
+    toast('❌ Error: ' + e.message);
+  }
+  btn.disabled = false;
+  closeConfirm();
+}
+
+// ══════════════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════════════
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ══════════════════════════════════════════════════════
+// SUBSCRIPTION REQUESTS
+// ══════════════════════════════════════════════════════
+let ALL_SUB_REQS = []; // [{installId, reqKey, ...payload}]
+
+async function loadSubRequests() {
+  try {
+    const data = await fbGet('subscriptionRequests');
+    if (!data) { ALL_SUB_REQS = []; return; }
+    ALL_SUB_REQS = [];
+    Object.entries(data).forEach(([installId, tsMap]) => {
+      if (!tsMap || typeof tsMap !== 'object') return;
+      // Each installId can have multiple timestamped requests — take the latest
+      const entries = Object.entries(tsMap).sort((a,b) => Number(b[0]) - Number(a[0]));
+      if (!entries.length) return;
+      const [reqKey, payload] = entries[0];
+      // Only show pending (not yet actioned)
+      if (payload.status && payload.status !== 'pending') return;
+      ALL_SUB_REQS.push({ installId, reqKey, ...payload });
+    });
+    // Sort newest first
+    ALL_SUB_REQS.sort((a,b) => (b.submittedAt||0) - (a.submittedAt||0));
+  } catch(e) {
+    // Surface the error visibly so rules/network issues aren't invisible
+    ALL_SUB_REQS = [];
+    const section = document.getElementById('sub-req-section');
+    const list = document.getElementById('sub-req-list');
+    if (section && list) {
+      section.style.display = 'block';
+      document.getElementById('sub-req-count').textContent = '!';
+      list.innerHTML = `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:10px;padding:11px 13px;font-size:13px;color:var(--red);">
+        ⚠️ Failed to load subscription requests: ${e.message}<br>
+        <span style="color:var(--muted);font-size:11px">Check Firebase rules — subscriptionRequests node needs .read: true</span>
+      </div>`;
+    }
+  }
+}
+
+function renderSubRequests() {
+  const section = document.getElementById('sub-req-section');
+  const list    = document.getElementById('sub-req-list');
+  const badge   = document.getElementById('sub-req-count');
+  if (!ALL_SUB_REQS.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  badge.textContent = ALL_SUB_REQS.length;
+
+  const planLabel = {starter:'Starter — K90/mo', growth:'Growth — K150/mo', pro:'Pro — K300/mo'};
+  const planClass = {starter:'starter', growth:'growth', pro:'pro'};
+
+  list.innerHTML = ALL_SUB_REQS.map(r => {
+    const name  = r.depotName || r.installId || '(Unnamed)';
+    const plan  = r.requestedPlan || '';
+    const pText = planLabel[plan] || (plan ? plan.toUpperCase() : '—');
+    const pCls  = planClass[plan] || '';
+    const phone = r.phone || r.contactPhone || '';
+    const txid  = r.transactionId || r.txid || '';
+    const method= r.paymentMethod || '';
+    const date  = r.submittedAt ? new Date(r.submittedAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}) : '—';
+    const id    = r.installId;
+
+    return `
+    <div class="sub-req-card" id="sreq-${esc(id)}">
+      <div class="sub-req-key">${esc(id)}</div>
+      <div class="sub-req-name">${esc(name)}</div>
+      <div class="sub-req-rows">
+        <div class="sub-req-row">
+          <span class="sub-req-icon">📦</span>
+          <div><div class="sub-req-val">Requested Plan <span class="plan-pill ${pCls}">${pText}</span></div></div>
+        </div>
+        ${phone ? `<div class="sub-req-row">
+          <span class="sub-req-icon">📞</span>
+          <div><div class="sub-req-val"><a href="tel:${esc(phone)}" style="color:var(--white);text-decoration:none">${esc(phone)}</a></div><div class="sub-req-lbl">Phone — tap to call</div></div>
+        </div>` : ''}
+        ${method ? `<div class="sub-req-row">
+          <span class="sub-req-icon">💳</span>
+          <div><div class="sub-req-val">${esc(method)}</div><div class="sub-req-lbl">Payment Method</div></div>
+        </div>` : ''}
+        ${txid ? `<div class="sub-req-row">
+          <span class="sub-req-icon">🧾</span>
+          <div><div class="sub-req-val" style="font-family:var(--fm)">${esc(txid)}</div><div class="sub-req-lbl">Transaction ID / Reference</div></div>
+        </div>` : `<div class="sub-req-row">
+          <span class="sub-req-icon">⚠️</span>
+          <div><div class="sub-req-val" style="color:var(--amber)">No Transaction ID</div><div class="sub-req-lbl">Submitted without payment proof</div></div>
+        </div>`}
+      </div>
+      <div class="sub-req-time">Submitted: ${date}</div>
+      <div class="sub-req-actions">
+        <button class="act-btn act-approve" onclick="approveSubRequest('${esc(id)}','${esc(r.reqKey)}')">⏳ → Trial</button>
+        <button class="act-btn act-activate" onclick="activateSubRequest('${esc(id)}','${esc(r.reqKey)}','${esc(plan)}')">⚡ → Active</button>
+        <button class="act-btn act-delete" onclick="dismissSubRequest('${esc(id)}','${esc(r.reqKey)}')">✕ Dismiss</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function _markSubReqDone(installId, reqKey, newStatus) {
+  // Mark request as actioned so it stops appearing
+  await fbPatch('subscriptionRequests/' + installId + '/' + reqKey, { status: newStatus });
+}
+
+function approveSubRequest(installId, reqKey) {
+  const r = ALL_SUB_REQS.find(x => x.installId === installId);
+  const name = r?.depotName || installId;
+  showConfirm(
+    '🔵 Approve → Trial',
+    `Approve <strong style="color:var(--white)">${name}</strong> for a <strong style="color:var(--purple)">14-day trial</strong>?<br><br>
+     Status will be set to <strong style="color:var(--purple)">TRIAL</strong>. The subscription request will be marked as actioned.`,
+    'act-approve',
+    async () => {
+      const now = Date.now();
+      // Ensure a license record exists, then set to trial
+      await fbPatch('licenses/' + installId, {
+        status: 'trial',
+        depotName: r?.depotName || '',
+        contactPhone: r?.phone || r?.contactPhone || '',
+        requestedPlan: r?.requestedPlan || 'pro',
+        trialStart: now,
+        approvedOn: now
+      });
+      await _markSubReqDone(installId, reqKey, 'approved_trial');
+      toast('✅ Approved → Trial');
+      await loadAll();
+    }
+  );
+}
+
+function activateSubRequest(installId, reqKey, plan) {
+  const r = ALL_SUB_REQS.find(x => x.installId === installId);
+  const name = r?.depotName || installId;
+  showConfirm(
+    '⚡ Approve → Active',
+    `Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:var(--green)">${(plan||'pro').toUpperCase()}</strong> plan for 1 month?<br><br>
+     Status will be set to <strong style="color:var(--green)">ACTIVE</strong>.`,
+    'act-activate',
+    async () => {
+      const now = Date.now();
+      await fbPatch('licenses/' + installId, {
+        status: 'active',
+        tier: plan || 'pro',
+        depotName: r?.depotName || '',
+        contactPhone: r?.phone || r?.contactPhone || '',
+        requestedPlan: plan || 'pro',
+        activeUntil: now + 30 * 24 * 60 * 60 * 1000,
+        activatedOn: now
+      });
+      await _markSubReqDone(installId, reqKey, 'approved_active');
+      toast('✅ Activated on ' + (plan||'pro').toUpperCase() + ' plan');
+      await loadAll();
+    }
+  );
+}
+
+function dismissSubRequest(installId, reqKey) {
+  const r = ALL_SUB_REQS.find(x => x.installId === installId);
+  const name = r?.depotName || installId;
+  showConfirm(
+    '✕ Dismiss Request',
+    `Dismiss the subscription application from <strong style="color:var(--white)">${name}</strong>?<br><br>
+     <span style="color:var(--muted)">The license record will NOT be changed. Use this to clear spam or duplicate requests.</span>`,
+    'act-delete',
+    async () => {
+      await _markSubReqDone(installId, reqKey, 'dismissed');
+      toast('Request dismissed');
+      await loadAll();
+    }
+  );
+}
+
+// ══════════════════════════════════════════════════════
+// COMBINED LOAD (depots + subscription requests)
+// ══════════════════════════════════════════════════════
+async function loadAll() {
+  // Run both independently — a failure in one should not block the other
+  await Promise.allSettled([loadDepots(), loadSubRequests()]);
+  updateStats();
+  renderSubRequests();
+}
+
+// Close confirm on backdrop click
+document.getElementById('confirm-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('confirm-modal')) closeConfirm();
+});
+</script>
+</body>
+</html>

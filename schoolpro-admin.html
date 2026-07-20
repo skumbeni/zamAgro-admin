@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>School Pro — Operator Panel</title>
+<style>
+:root{
+  --primary:#2C3E50; --accent:#E74C3C; --accent-light:#F1948A;
+  --success:#27AE60; --success-light:#82E0AA;
+  --warning:#F39C12; --warning-light:#F9E79F;
+  --info:#2E86C1; --info-light:#AED6F1;
+  --bg:#F8F9FA; --bg-card:#FFFFFF; --bg-sidebar:#2C3E50;
+  --text:#2C3E50; --text-light:#7F8C8D; --border:#D5D8DC;
+  --shadow:rgba(0,0,0,0.1); --radius:12px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+button{cursor:pointer;font-family:inherit;border:none;outline:none}
+input,select{font-family:inherit;outline:none;border:1px solid var(--border);border-radius:6px;padding:9px 12px;background:#fff;color:var(--text);font-size:14px}
+
+/* ---------- Login screen ---------- */
+#loginScreen{position:fixed;inset:0;background:var(--bg-sidebar);display:flex;align-items:center;justify-content:center;z-index:100}
+.login-box{background:var(--bg-card);border-radius:20px;padding:40px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.35)}
+.login-box h1{font-size:20px;margin:0 0 4px}
+.login-box p.sub{color:var(--text-light);font-size:13px;margin:0 0 24px}
+.login-box label{display:block;font-size:12px;font-weight:600;color:var(--text-light);margin:14px 0 6px}
+.login-box input{width:100%}
+.login-box .btn-primary{width:100%;margin-top:22px}
+#loginError{color:var(--accent);font-size:13px;min-height:18px;margin-top:10px}
+
+/* ---------- Buttons ---------- */
+.btn{padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;transition:opacity .15s}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.5;cursor:default}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-accent{background:var(--accent);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-outline{background:transparent;color:var(--primary);border:1px solid var(--border)}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:6px}
+
+/* ---------- Layout ---------- */
+#app{display:none;max-width:1200px;margin:0 auto;padding:20px}
+header.topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px}
+header.topbar h1{font-size:22px;margin:0}
+header.topbar .op-email{font-size:12px;color:var(--text-light)}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+
+.card{background:var(--bg-card);border-radius:var(--radius);padding:20px;box-shadow:0 2px 10px var(--shadow);margin-bottom:20px}
+.card h2{font-size:15px;margin:0 0 16px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light)}
+
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--bg-card);border-radius:var(--radius);padding:18px;box-shadow:0 2px 10px var(--shadow);border-left:4px solid var(--primary)}
+.stat-card.accent{border-left-color:var(--accent)}
+.stat-card.success{border-left-color:var(--success)}
+.stat-card.warning{border-left-color:var(--warning)}
+.stat-card.info{border-left-color:var(--info)}
+.stat-card .v{font-size:24px;font-weight:700}
+.stat-card .l{font-size:12px;color:var(--text-light);margin-top:2px}
+
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);border-bottom:2px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:hover td{background:#FAFBFC}
+
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.badge-active{background:#D5F5E3;color:#27AE60}
+.badge-expiring{background:#FDEBD0;color:#E67E22}
+.badge-expired{background:#FADBD8;color:#E74C3C}
+.badge-trial{background:#EAECEE;color:#7F8C8D}
+
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.toolbar input[type=text]{flex:1;min-width:180px}
+
+.empty-state{text-align:center;padding:40px 20px;color:var(--text-light)}
+
+/* ---------- Modal ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+.modal-box{background:#fff;border-radius:16px;padding:28px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-box h3{margin:0 0 4px}
+.modal-box .sub{color:var(--text-light);font-size:12px;margin-bottom:18px}
+.modal-box label{display:block;font-size:12px;font-weight:600;color:var(--text-light);margin:12px 0 6px}
+.modal-box input,.modal-box select{width:100%}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.modal-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;display:none;z-index:300;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ==================== LOGIN ==================== -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h1>School Pro — Operator Panel</h1>
+    <p class="sub">Subscription management &amp; financial summary. Operator access only.</p>
+    <label>Email</label>
+    <input type="email" id="opEmail" placeholder="you@nexlite.digital" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="opPass" placeholder="Password" autocomplete="current-password">
+    <button class="btn btn-primary" id="loginBtn" onclick="operatorLogin()">Log In</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div id="app">
+  <header class="topbar">
+    <div>
+      <h1>School Pro — Operator Panel</h1>
+      <div class="op-email" id="opEmailLabel"></div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-outline btn-sm" onclick="loadAllData()">↻ Refresh</button>
+      <button class="btn btn-outline btn-sm" onclick="exportCsv()">⬇ Export CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="operatorLogout()">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- Financial Summary -->
+  <div class="card">
+    <h2>Financial Summary</h2>
+    <div class="stat-grid">
+      <div class="stat-card success">
+        <div class="v" id="statMRR">K0</div>
+        <div class="l">Monthly Recurring Revenue</div>
+      </div>
+      <div class="stat-card success">
+        <div class="v" id="statARR">K0</div>
+        <div class="l">Annual Run Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="v" id="statActive">0</div>
+        <div class="l">Active Subscriptions</div>
+      </div>
+      <div class="stat-card warning">
+        <div class="v" id="statExpiring">0</div>
+        <div class="l">Expiring ≤ 7 Days</div>
+      </div>
+      <div class="stat-card accent">
+        <div class="v" id="statExpired">0</div>
+        <div class="l">Expired</div>
+      </div>
+      <div class="stat-card info">
+        <div class="v" id="statTrial">0</div>
+        <div class="l">Trial / No Subscription</div>
+      </div>
+      <div class="stat-card">
+        <div class="v" id="statTotal">0</div>
+        <div class="l">Total Schools</div>
+      </div>
+    </div>
+
+    <table id="tierTable">
+      <thead>
+        <tr><th>Tier</th><th>Active</th><th>Monthly Revenue</th><th>Annual Equivalent</th></tr>
+      </thead>
+      <tbody id="tierTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Pending Applications -->
+  <div class="card" id="applicationsCard" style="display:none">
+    <h2>Pending Subscription Applications</h2>
+    <div style="overflow-x:auto">
+      <table id="applicationsTable">
+        <thead>
+          <tr>
+            <th>School</th><th>Plan</th><th>Cycle</th><th>Transaction ID</th><th>Submitted</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="applicationsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Schools -->
+  <div class="card">
+    <h2>Schools</h2>
+    <div class="toolbar">
+      <input type="text" id="searchBox" placeholder="Search school or email…" oninput="renderSchoolsTable()">
+      <select id="statusFilter" onchange="renderSchoolsTable()">
+        <option value="all">All statuses</option>
+        <option value="active">Active</option>
+        <option value="expiring">Expiring ≤ 7 days</option>
+        <option value="expired">Expired</option>
+        <option value="trial">Trial / No subscription</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto">
+      <table id="schoolsTable">
+        <thead>
+          <tr>
+            <th>School</th><th>Email</th><th>Tier</th><th>Cycle</th><th>Price</th>
+            <th>Expires</th><th>Status</th><th>Students</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="schoolsTableBody"></tbody>
+      </table>
+      <div class="empty-state" id="schoolsEmpty" style="display:none">No schools match this filter.</div>
+      <div class="empty-state" id="schoolsLoading">Loading schools…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MANAGE SUBSCRIPTION MODAL ==================== -->
+<div class="modal-overlay" id="manageModal">
+  <div class="modal-box">
+    <h3 id="mmSchoolName">School</h3>
+    <div class="sub" id="mmSchoolMeta"></div>
+
+    <label>Tier</label>
+    <select id="mmTier" onchange="_mmSyncPrice()">
+      <option value="Starter">Starter — K199/mo · 150 students</option>
+      <option value="Basic">Basic — K299/mo · 400 students</option>
+      <option value="Standard">Standard — K449/mo · 1200 students</option>
+      <option value="Premium">Premium — K599/mo · Unlimited</option>
+    </select>
+
+    <div class="modal-row2">
+      <div>
+        <label>Billing cycle</label>
+        <select id="mmCycle" onchange="_mmSyncPrice()">
+          <option value="monthly">Monthly</option>
+          <option value="annual">Annual</option>
+        </select>
+      </div>
+      <div>
+        <label>Price paid (K)</label>
+        <input type="number" id="mmPrice" min="0">
+      </div>
+    </div>
+
+    <label>New expiry date</label>
+    <input type="date" id="mmExpiry">
+
+    <div class="modal-row2">
+      <div>
+        <label>Payment reference</label>
+        <input type="text" id="mmPayRef" placeholder="e.g. MTN-84213">
+      </div>
+      <div>
+        <label>Activated by</label>
+        <input type="text" id="mmActivatedBy" placeholder="Your name">
+      </div>
+    </div>
+
+    <label>Notes (optional)</label>
+    <input type="text" id="mmNotes" placeholder="e.g. Renewed via mobile money">
+
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeManageModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="deactivateSubscription()">Deactivate</button>
+      <button class="btn btn-success" id="mmSaveBtn" onclick="saveSubscriptionFromModal()">Activate / Renew</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ==================== FIREBASE ====================
+  REQUIRED FIREBASE RULES ADDITION — paste alongside the existing rules:
+
+  "schoolsDirectory": {
+    ".read": "auth != null && auth.uid === 'd3ttBuJuTiY0EZUATKZxFbFbck12'",
+    "$adminUid": {
+      ".write": "auth != null && auth.uid === $adminUid",
+      "$schoolId": { ".write": "auth != null && auth.uid === $adminUid" }
+    }
+  }
+
+  This lets each school write ONLY its own directory entry (already handled
+  by index.html), while only the operator UID can read the full directory
+  to enumerate every school. Subscription read/write for "schools/$uid/..."
+  should already be covered by the existing operator cross-school rule.
+-->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+  import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+  import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDjCuVE0G5zkQQd0itOmXujj8Jy7m6gPAU",
+    authDomain: "school-pro-ultimate.firebaseapp.com",
+    databaseURL: "https://school-pro-ultimate-default-rtdb.firebaseio.com",
+    projectId: "school-pro-ultimate",
+    storageBucket: "school-pro-ultimate.firebasestorage.app",
+    messagingSenderId: "351105459639",
+    appId: "1:351105459639:web:5a00c805d66c271a71b432"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const db   = getDatabase(app);
+  const auth = getAuth(app);
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+
+  window._fbDb = db;
+  window._fbAuth = auth;
+  window._fbRef = ref;
+  window._fbGet = get;
+  window._fbSet = set;
+  window._fbUpdate = update;
+  window._fbSignIn = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
+  window._fbSignOut = () => signOut(auth);
+  window._fbOnAuthStateChanged = cb => onAuthStateChanged(auth, cb);
+  window._fbReady = true;
+  window.dispatchEvent(new Event('firebaseReady'));
+</script>
+
+<script>
+// ==================== CONSTANTS ====================
+const OPERATOR_UID = 'd3ttBuJuTiY0EZUATKZxFbFbck12';
+
+const TIERS = {
+  Starter:  { monthly: 199, annual: 1990, students: 150  },
+  Basic:    { monthly: 299, annual: 2990, students: 400  },
+  Standard: { monthly: 449, annual: 4290, students: 1200 },
+  Premium:  { monthly: 599, annual: 5490, students: Infinity }
+};
+
+let _schools = []; // flattened: {adminUid, schoolId, schoolName, email, createdAt, lastLogin, sub, studentCount}
+let _activeManageEntry = null;
+
+// ==================== TOAST ====================
+function showToast(msg, type){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = type === 'error' ? '#E74C3C' : '#2C3E50';
+  el.style.display = 'block';
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+
+// ==================== AUTH ====================
+async function operatorLogin(){
+  const email = document.getElementById('opEmail').value.trim();
+  const pass  = document.getElementById('opPass').value;
+  const errEl = document.getElementById('loginError');
+  const btn   = document.getElementById('loginBtn');
+  errEl.textContent = '';
+  if (!email || !pass) { errEl.textContent = 'Enter email and password'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Signing in…';
+  try {
+    const cred = await Promise.race([
+      window._fbSignIn(email, pass),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out. If you opened this file directly (content:// or file://), try hosting it on your GitHub Pages site instead — Firebase sign-in often gets blocked from local file origins.')), 10000))
+    ]);
+    if (cred.user.uid !== OPERATOR_UID) {
+      await window._fbSignOut();
+      errEl.textContent = 'This account is not authorized for the operator panel.';
+      return;
+    }
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('opEmailLabel').textContent = cred.user.email;
+    document.getElementById('mmActivatedBy').value = cred.user.email.split('@')[0];
+    loadAllData();
+  } catch(err) {
+    const msg = (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found')
+      ? 'Invalid email or password'
+      : err.code === 'auth/network-request-failed' ? 'No internet connection, or this page is blocked from reaching the network (try hosting it on https instead of opening the file directly).'
+      : (err.message || 'Login failed');
+    errEl.textContent = msg;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+}
+
+function operatorLogout(){
+  window._fbSignOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('opPass').value = '';
+}
+
+// ==================== DATA LOADING ====================
+async function loadAllData(){
+  document.getElementById('schoolsLoading').style.display = 'block';
+  document.getElementById('schoolsTableBody').innerHTML = '';
+  try {
+    const dirSnap = await window._fbGet(window._fbRef(window._fbDb, 'schoolsDirectory'));
+    const dir = dirSnap.exists() ? dirSnap.val() : {};
+
+    const flat = [];
+    Object.keys(dir).forEach(adminUid => {
+      const schools = dir[adminUid] || {};
+      Object.keys(schools).forEach(schoolId => {
+        const entry = schools[schoolId] || {};
+        flat.push({
+          adminUid, schoolId,
+          schoolName: entry.schoolName || '(unnamed)',
+          email: entry.email || '—',
+          createdAt: entry.createdAt || null,
+          lastLogin: entry.lastLogin || null
+        });
+      });
+    });
+
+    // Fetch subscription + student count + pending application for each school in parallel.
+    // Read errors (e.g. permission-denied from misconfigured rules) are tracked separately
+    // from "no application exists" so a rules problem doesn't look like an empty inbox.
+    let appReadErrors = 0;
+    let appReadErrorSample = null;
+    await Promise.all(flat.map(async s => {
+      const base = 'schools/' + s.adminUid + '/' + s.schoolId;
+      const [subSnap, countSnap, appResult] = await Promise.all([
+        window._fbGet(window._fbRef(window._fbDb, base + '/subscription')).catch(() => null),
+        window._fbGet(window._fbRef(window._fbDb, base + '/students/_count')).catch(() => null),
+        window._fbGet(window._fbRef(window._fbDb, base + '/subscriptionApplication'))
+          .then(snap => ({ snap, err: null }))
+          .catch(err => ({ snap: null, err }))
+      ]);
+      s.sub = (subSnap && subSnap.exists()) ? subSnap.val() : null;
+      s.studentCount = (countSnap && countSnap.exists()) ? countSnap.val() : 0;
+      if (appResult.err) {
+        appReadErrors++;
+        appReadErrorSample = appResult.err.code || appResult.err.message || String(appResult.err);
+        console.warn('Failed to read subscriptionApplication for', s.schoolName, base, appReadErrorSample);
+        s.application = null;
+      } else {
+        s.application = (appResult.snap && appResult.snap.exists()) ? appResult.snap.val() : null;
+      }
+    }));
+
+    _schools = flat;
+    renderFinancialSummary();
+    renderSchoolsTable();
+    renderApplicationsTable();
+
+    if (appReadErrors > 0) {
+      showToast('Could not read applications for ' + appReadErrors + ' school(s) — check Firebase rules for "subscriptionApplication" (' + appReadErrorSample + '). Applications may be missing below.', 'error');
+    }
+  } catch(err) {
+    showToast('Failed to load schools: ' + (err.message || err), 'error');
+  } finally {
+    document.getElementById('schoolsLoading').style.display = 'none';
+  }
+}
+
+// ==================== STATUS / MATH HELPERS ====================
+function schoolStatus(sub){
+  if (!sub || !sub.tier) return 'trial';
+  const expiry = new Date(sub.expiry);
+  if (isNaN(expiry.getTime())) return 'trial';
+  const now = new Date();
+  if (now > expiry) return 'expired';
+  const daysLeft = Math.ceil((expiry - now) / 86400000);
+  if (daysLeft <= 7) return 'expiring';
+  return 'active';
+}
+
+function monthlyEquivalent(sub){
+  if (!sub || !sub.price) return 0;
+  return sub.cycle === 'annual' ? sub.price / 12 : sub.price;
+}
+
+// ==================== FINANCIAL SUMMARY ====================
+function renderFinancialSummary(){
+  let mrr = 0, activeCount = 0, expiringCount = 0, expiredCount = 0, trialCount = 0;
+  const tierStats = {}; // tier -> { count, monthly }
+  Object.keys(TIERS).forEach(t => tierStats[t] = { count: 0, monthly: 0 });
+
+  _schools.forEach(s => {
+    const status = schoolStatus(s.sub);
+    if (status === 'active' || status === 'expiring') {
+      activeCount++;
+      const me = monthlyEquivalent(s.sub);
+      mrr += me;
+      if (status === 'expiring') expiringCount++;
+      const tierName = s.sub && s.sub.tier;
+      if (tierName && tierStats[tierName]) {
+        tierStats[tierName].count++;
+        tierStats[tierName].monthly += me;
+      }
+    } else if (status === 'expired') {
+      expiredCount++;
+    } else {
+      trialCount++;
+    }
+  });
+
+  document.getElementById('statMRR').textContent = 'K' + Math.round(mrr).toLocaleString();
+  document.getElementById('statARR').textContent = 'K' + Math.round(mrr * 12).toLocaleString();
+  document.getElementById('statActive').textContent = activeCount;
+  document.getElementById('statExpiring').textContent = expiringCount;
+  document.getElementById('statExpired').textContent = expiredCount;
+  document.getElementById('statTrial').textContent = trialCount;
+  document.getElementById('statTotal').textContent = _schools.length;
+
+  const tbody = document.getElementById('tierTableBody');
+  tbody.innerHTML = Object.keys(TIERS).map(t => {
+    const st = tierStats[t];
+    return `<tr>
+      <td><strong>${t}</strong></td>
+      <td>${st.count}</td>
+      <td>K${Math.round(st.monthly).toLocaleString()}</td>
+      <td>K${Math.round(st.monthly * 12).toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ==================== SCHOOLS TABLE ====================
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderSchoolsTable(){
+  const q = (document.getElementById('searchBox').value || '').toLowerCase().trim();
+  const filter = document.getElementById('statusFilter').value;
+
+  const rows = _schools
+    .map(s => ({ s, status: schoolStatus(s.sub) }))
+    .filter(({ s, status }) => {
+      if (filter !== 'all' && status !== filter) return false;
+      if (!q) return true;
+      return (s.schoolName || '').toLowerCase().includes(q) || (s.email || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => (a.s.schoolName || '').localeCompare(b.s.schoolName || ''));
+
+  const badgeClass = { active: 'badge-active', expiring: 'badge-expiring', expired: 'badge-expired', trial: 'badge-trial' };
+  const badgeLabel = { active: 'Active', expiring: 'Expiring soon', expired: 'Expired', trial: 'Trial' };
+
+  document.getElementById('schoolsTableBody').innerHTML = rows.map(({ s, status }) => {
+    const sub = s.sub;
+    const expiryStr = sub && sub.expiry ? new Date(sub.expiry).toLocaleDateString() : '—';
+    return `<tr>
+      <td><strong>${esc(s.schoolName)}</strong></td>
+      <td>${esc(s.email)}</td>
+      <td>${sub ? esc(sub.tier) : '—'}</td>
+      <td>${sub ? esc(sub.cycle) : '—'}</td>
+      <td>${sub && sub.price ? 'K' + sub.price.toLocaleString() : '—'}</td>
+      <td>${expiryStr}</td>
+      <td><span class="badge ${badgeClass[status]}">${badgeLabel[status]}</span></td>
+      <td>${s.studentCount ? s.studentCount.toLocaleString() : 0}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="openManageModal('${s.adminUid}','${s.schoolId}')">Manage</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('schoolsEmpty').style.display = rows.length ? 'none' : 'block';
+}
+
+// ==================== PENDING APPLICATIONS ====================
+function renderApplicationsTable(){
+  const withApps = _schools.filter(s => s.application);
+  const card = document.getElementById('applicationsCard');
+  card.style.display = withApps.length ? 'block' : 'none';
+  if (!withApps.length) return;
+
+  const rows = withApps.slice().sort((a, b) => (b.application.submittedAt || 0) - (a.application.submittedAt || 0));
+  document.getElementById('applicationsTableBody').innerHTML = rows.map(s => {
+    const app = s.application;
+    const submitted = app.submittedAt ? new Date(app.submittedAt).toLocaleString() : '—';
+    return `<tr>
+      <td><strong>${esc(s.schoolName)}</strong></td>
+      <td>${esc(app.plan || '—')}</td>
+      <td>${esc(app.cycle || '—')}</td>
+      <td>${esc(app.txn || '—')}</td>
+      <td>${submitted}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-success btn-sm" onclick="openManageModal('${s.adminUid}','${s.schoolId}')">Review</button>
+        <button class="btn btn-outline btn-sm" onclick="dismissApplication('${s.adminUid}','${s.schoolId}')">Dismiss</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function _clearApplication(adminUid, schoolId){
+  try {
+    const path = 'schools/' + adminUid + '/' + schoolId + '/subscriptionApplication';
+    await window._fbSet(window._fbRef(window._fbDb, path), null);
+    const entry = _schools.find(s => s.adminUid === adminUid && s.schoolId === schoolId);
+    if (entry) entry.application = null;
+    renderApplicationsTable();
+  } catch(err) {
+    showToast('Failed to clear application: ' + (err.message || err), 'error');
+  }
+}
+
+async function dismissApplication(adminUid, schoolId){
+  if (!confirm('Dismiss this application without activating a subscription?')) return;
+  await _clearApplication(adminUid, schoolId);
+  showToast('Application dismissed');
+}
+
+// ==================== MANAGE MODAL ====================
+function openManageModal(adminUid, schoolId){
+  const entry = _schools.find(s => s.adminUid === adminUid && s.schoolId === schoolId);
+  if (!entry) return;
+  _activeManageEntry = entry;
+
+  document.getElementById('mmSchoolName').textContent = entry.schoolName;
+  document.getElementById('mmSchoolMeta').textContent = entry.email +
+    (entry.createdAt ? ' · joined ' + new Date(entry.createdAt).toLocaleDateString() : '');
+
+  const sub = entry.sub;
+  const app = entry.application;
+  document.getElementById('mmTier').value = (app && TIERS[app.plan]) ? app.plan : ((sub && TIERS[sub.tier]) ? sub.tier : 'Starter');
+  document.getElementById('mmCycle').value = app ? (app.cycle === 'Annual' ? 'annual' : 'monthly') : ((sub && sub.cycle === 'annual') ? 'annual' : 'monthly');
+  _mmSyncPrice(sub && sub.price);
+
+  // Default new expiry: extend one cycle from current expiry if still valid,
+  // otherwise one cycle from today.
+  const base = (sub && sub.expiry && new Date(sub.expiry) > new Date()) ? new Date(sub.expiry) : new Date();
+  const cycle = document.getElementById('mmCycle').value;
+  const next = new Date(base);
+  if (cycle === 'annual') next.setFullYear(next.getFullYear() + 1);
+  else next.setMonth(next.getMonth() + 1);
+  document.getElementById('mmExpiry').value = next.toISOString().slice(0, 10);
+
+  document.getElementById('mmPayRef').value = (app && app.txn) ? app.txn : '';
+  document.getElementById('mmNotes').value = '';
+
+  document.getElementById('manageModal').style.display = 'flex';
+}
+
+function closeManageModal(){
+  document.getElementById('manageModal').style.display = 'none';
+  _activeManageEntry = null;
+}
+
+function _mmSyncPrice(existingPrice){
+  const tier = document.getElementById('mmTier').value;
+  const cycle = document.getElementById('mmCycle').value;
+  const priceEl = document.getElementById('mmPrice');
+  if (typeof existingPrice === 'number' && existingPrice > 0) {
+    priceEl.value = existingPrice;
+    return;
+  }
+  priceEl.value = TIERS[tier][cycle];
+}
+
+async function saveSubscriptionFromModal(){
+  if (!_activeManageEntry) return;
+  const tier = document.getElementById('mmTier').value;
+  const cycle = document.getElementById('mmCycle').value;
+  const price = parseFloat(document.getElementById('mmPrice').value) || 0;
+  const expiryDate = document.getElementById('mmExpiry').value;
+  const payRef = document.getElementById('mmPayRef').value.trim();
+  const activatedBy = document.getElementById('mmActivatedBy').value.trim() || 'Operator';
+  const notes = document.getElementById('mmNotes').value.trim();
+
+  if (!expiryDate) { showToast('Pick an expiry date', 'error'); return; }
+
+  const btn = document.getElementById('mmSaveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Saving…';
+
+  try {
+    const existing = _activeManageEntry.sub;
+    const history = (existing && Array.isArray(existing.paymentHistory)) ? existing.paymentHistory.slice() : [];
+    history.push({ ref: payRef || '(none)', notes, tier, price, date: Date.now() });
+
+    const newSub = {
+      tier, cycle, price,
+      expiry: new Date(expiryDate + 'T23:59:59').toISOString(),
+      activatedBy,
+      payRef, payNotes: notes,
+      paymentHistory: history,
+      _ts: Date.now()
+    };
+
+    const path = 'schools/' + _activeManageEntry.adminUid + '/' + _activeManageEntry.schoolId + '/subscription';
+    await window._fbSet(window._fbRef(window._fbDb, path), newSub);
+
+    _activeManageEntry.sub = newSub;
+    if (_activeManageEntry.application) {
+      await _clearApplication(_activeManageEntry.adminUid, _activeManageEntry.schoolId);
+    }
+    showToast('Subscription saved for ' + _activeManageEntry.schoolName);
+    closeManageModal();
+    renderFinancialSummary();
+    renderSchoolsTable();
+  } catch(err) {
+    showToast('Save failed: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Activate / Renew';
+  }
+}
+
+async function deactivateSubscription(){
+  if (!_activeManageEntry) return;
+  if (!confirm('Deactivate subscription for ' + _activeManageEntry.schoolName + '? This marks it expired immediately; the school keeps its data.')) return;
+
+  try {
+    const existing = _activeManageEntry.sub || {};
+    const updated = Object.assign({}, existing, {
+      expiry: new Date(Date.now() - 86400000).toISOString(),
+      _ts: Date.now()
+    });
+    const path = 'schools/' + _activeManageEntry.adminUid + '/' + _activeManageEntry.schoolId + '/subscription';
+    await window._fbSet(window._fbRef(window._fbDb, path), updated);
+
+    _activeManageEntry.sub = updated;
+    showToast('Deactivated ' + _activeManageEntry.schoolName);
+    closeManageModal();
+    renderFinancialSummary();
+    renderSchoolsTable();
+  } catch(err) {
+    showToast('Failed: ' + (err.message || err), 'error');
+  }
+}
+
+// ==================== CSV EXPORT ====================
+function exportCsv(){
+  const rows = [['School', 'Email', 'Tier', 'Cycle', 'Price', 'Expiry', 'Status', 'Students', 'Admin UID', 'School ID']];
+  _schools.forEach(s => {
+    const status = schoolStatus(s.sub);
+    rows.push([
+      s.schoolName, s.email,
+      s.sub ? s.sub.tier : '', s.sub ? s.sub.cycle : '',
+      s.sub && s.sub.price ? s.sub.price : '',
+      s.sub && s.sub.expiry ? new Date(s.sub.expiry).toLocaleDateString() : '',
+      status, s.studentCount || 0, s.adminUid, s.schoolId
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'schoolpro-subscriptions-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ==================== BOOT ====================
+window.addEventListener('firebaseReady', () => {
+  window._fbOnAuthStateChanged(user => {
+    if (user && user.uid === OPERATOR_UID) {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('opEmailLabel').textContent = user.email;
+      document.getElementById('mmActivatedBy').value = (user.email || 'Operator').split('@')[0];
+      loadAllData();
+    }
+  });
+});
+
+document.getElementById('opPass')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') operatorLogin();
+});
+</script>
+</body>
+</html>
