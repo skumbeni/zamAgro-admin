@@ -28,6 +28,9 @@ input,select{font-family:inherit;outline:none;border:1px solid var(--border);bor
 .login-box input{width:100%}
 .login-box .btn-primary{width:100%;margin-top:22px}
 #loginError{color:var(--accent);font-size:13px;min-height:18px;margin-top:10px}
+.login-box .link-btn{background:none;border:none;padding:0;margin-top:16px;color:var(--text-light);font-size:12px;cursor:pointer;text-decoration:underline;display:block;width:100%;text-align:center}
+.login-box .link-btn:hover{color:var(--text)}
+#resetOk{color:#2ecc71;font-size:13px;min-height:18px;margin-top:10px;line-height:1.5}
 
 /* ---------- Buttons ---------- */
 .btn{padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;transition:opacity .15s}
@@ -93,7 +96,7 @@ tr:hover td{background:#FAFBFC}
 
 <!-- ==================== LOGIN ==================== -->
 <div id="loginScreen">
-  <div class="login-box">
+  <div class="login-box" id="loginBox">
     <h1>School Pro — Operator Panel</h1>
     <p class="sub">Subscription management &amp; financial summary. Operator access only.</p>
     <label>Email</label>
@@ -102,6 +105,18 @@ tr:hover td{background:#FAFBFC}
     <input type="password" id="opPass" placeholder="Password" autocomplete="current-password">
     <button class="btn btn-primary" id="loginBtn" onclick="operatorLogin()">Log In</button>
     <div id="loginError"></div>
+    <button class="link-btn" id="forgotBtn" onclick="showResetBox()">Forgot password?</button>
+  </div>
+
+  <div class="login-box" id="resetBox" style="display:none">
+    <h1>Reset password</h1>
+    <p class="sub">Enter the operator email and we'll send a password reset link.</p>
+    <label>Email</label>
+    <input type="email" id="resetEmail" placeholder="you@nexlite.digital" autocomplete="username">
+    <button class="btn btn-primary" id="resetBtn" onclick="operatorResetPassword()">Send Reset Link</button>
+    <div id="resetError"></div>
+    <div id="resetOk"></div>
+    <button class="link-btn" onclick="showLoginBox()">Back to login</button>
   </div>
 </div>
 
@@ -279,7 +294,7 @@ tr:hover td{background:#FAFBFC}
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
   import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
-  import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+  import { getAuth, setPersistence, browserLocalPersistence, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDjCuVE0G5zkQQd0itOmXujj8Jy7m6gPAU",
@@ -304,6 +319,7 @@ tr:hover td{background:#FAFBFC}
   window._fbUpdate = update;
   window._fbSignIn = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
   window._fbSignOut = () => signOut(auth);
+  window._fbSendReset = email => sendPasswordResetEmail(auth, email);
   window._fbOnAuthStateChanged = cb => onAuthStateChanged(auth, cb);
   window._fbReady = true;
   window.dispatchEvent(new Event('firebaseReady'));
@@ -376,6 +392,54 @@ function operatorLogout(){
   document.getElementById('app').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('opPass').value = '';
+  showLoginBox();
+}
+
+function showResetBox(){
+  document.getElementById('loginBox').style.display = 'none';
+  document.getElementById('resetBox').style.display = 'block';
+  document.getElementById('resetError').textContent = '';
+  document.getElementById('resetOk').textContent = '';
+  const opEmail = document.getElementById('opEmail').value.trim();
+  if (opEmail) document.getElementById('resetEmail').value = opEmail;
+}
+
+function showLoginBox(){
+  document.getElementById('resetBox').style.display = 'none';
+  document.getElementById('loginBox').style.display = 'block';
+  document.getElementById('resetEmail').value = '';
+  document.getElementById('resetError').textContent = '';
+  document.getElementById('resetOk').textContent = '';
+}
+
+async function operatorResetPassword(){
+  const email = document.getElementById('resetEmail').value.trim();
+  const errEl = document.getElementById('resetError');
+  const okEl  = document.getElementById('resetOk');
+  const btn   = document.getElementById('resetBtn');
+  errEl.textContent = ''; okEl.textContent = '';
+  if (!email) { errEl.textContent = 'Enter the operator email'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Sending…';
+  try {
+    await window._fbSendReset(email);
+    okEl.textContent = 'If that email has an account, a reset link is on its way. Check your inbox (and spam folder).';
+    document.getElementById('resetEmail').value = '';
+  } catch(err) {
+    // Firebase returns auth/user-not-found for unregistered emails — show
+    // the same neutral message so the panel doesn't reveal which emails exist.
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-email') {
+      okEl.textContent = 'If that email has an account, a reset link is on its way. Check your inbox (and spam folder).';
+    } else if (err.code === 'auth/network-request-failed') {
+      errEl.textContent = 'No internet connection, or this page is blocked from reaching the network.';
+    } else {
+      errEl.textContent = err.message || 'Could not send reset email';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Reset Link';
+  }
 }
 
 // ==================== DATA LOADING ====================
@@ -744,6 +808,10 @@ window.addEventListener('firebaseReady', () => {
 
 document.getElementById('opPass')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') operatorLogin();
+});
+
+document.getElementById('resetEmail')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') operatorResetPassword();
 });
 </script>
 </body>
