@@ -95,6 +95,12 @@
   }
   .btn:disabled{opacity:.5; cursor:default;}
   .error-msg{color:var(--red); font-size:12px; margin-top:10px;}
+  .ok-msg{color:var(--teal); font-size:12px; margin-top:10px; line-height:1.5;}
+  .link-btn{
+    background:none; border:none; padding:0; margin-top:14px; color:var(--sub);
+    font-size:12px; cursor:pointer; text-decoration:underline; display:block; text-align:center; width:100%;
+  }
+  .link-btn:hover{color:var(--teal);}
   .modal-bg{
     position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex;
     align-items:center; justify-content:center; padding:20px; z-index:10;
@@ -181,6 +187,16 @@ async function signIn(email, password){
   return authState;
 }
 
+async function sendPasswordReset(email){
+  const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FIREBASE_API_KEY}`, {
+    method:'POST',
+    body: JSON.stringify({ requestType:'PASSWORD_RESET', email })
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error?.message || 'Could not send reset email');
+  return data;
+}
+
 async function refreshIdToken(){
   const res = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`, {
     method:'POST',
@@ -264,7 +280,7 @@ function render(){
 function renderLogin(){
   return `
     <div class="login-wrap">
-      <div class="login-box">
+      <div class="login-box" id="li_box">
         <div class="mark">CM</div>
         <h1>Operator sign-in</h1>
         <p>Chilimba Master — cross-group management</p>
@@ -272,6 +288,23 @@ function renderLogin(){
         <div class="field"><label>Password</label><input id="li_password" type="password" autocomplete="current-password"></div>
         <button class="btn" id="li_submit">Sign in</button>
         <div class="error-msg" id="li_error"></div>
+        <button class="link-btn" id="li_forgot">Forgot password?</button>
+      </div>
+    </div>`;
+}
+
+function renderResetPassword(prefillEmail){
+  return `
+    <div class="login-wrap">
+      <div class="login-box" id="rp_box">
+        <div class="mark">CM</div>
+        <h1>Reset password</h1>
+        <p>Enter your account email and we'll send a password reset link.</p>
+        <div class="field"><label>Email</label><input id="rp_email" type="email" autocomplete="username" value="${(prefillEmail||'').replace(/"/g,'&quot;')}"></div>
+        <button class="btn" id="rp_submit">Send reset link</button>
+        <div class="error-msg" id="rp_error"></div>
+        <div class="ok-msg" id="rp_ok"></div>
+        <button class="link-btn" id="rp_back">Back to sign in</button>
       </div>
     </div>`;
 }
@@ -295,6 +328,41 @@ function bindLogin(){
   };
   submit.onclick = doLogin;
   document.getElementById('li_password').onkeydown = (e)=>{ if(e.key==='Enter') doLogin(); };
+  document.getElementById('li_forgot').onclick = ()=>{
+    const emailVal = document.getElementById('li_email').value.trim();
+    document.getElementById('app').innerHTML = renderResetPassword(emailVal);
+    bindResetPassword();
+  };
+}
+
+function bindResetPassword(){
+  const submit = document.getElementById('rp_submit');
+  const errEl = document.getElementById('rp_error');
+  const okEl = document.getElementById('rp_ok');
+  const doReset = async ()=>{
+    const email = document.getElementById('rp_email').value.trim();
+    errEl.textContent = ''; okEl.textContent = '';
+    if(!FIREBASE_API_KEY){ errEl.textContent = 'FIREBASE_API_KEY is not set in this file yet.'; return; }
+    if(!email){ errEl.textContent = 'Enter your email first.'; return; }
+    submit.disabled = true; submit.textContent = 'Sending…';
+    try{
+      await sendPasswordReset(email);
+      okEl.textContent = 'If that email has an account, a reset link is on its way. Check your inbox (and spam folder).';
+      document.getElementById('rp_email').value = '';
+    }catch(e){
+      // Firebase returns EMAIL_NOT_FOUND for unregistered emails — don't
+      // reveal which emails exist, just show the same neutral message.
+      if(/EMAIL_NOT_FOUND/i.test(e.message)){
+        okEl.textContent = 'If that email has an account, a reset link is on its way. Check your inbox (and spam folder).';
+      } else {
+        errEl.textContent = e.message;
+      }
+    }
+    submit.disabled = false; submit.textContent = 'Send reset link';
+  };
+  submit.onclick = doReset;
+  document.getElementById('rp_email').onkeydown = (e)=>{ if(e.key==='Enter') doReset(); };
+  document.getElementById('rp_back').onclick = ()=>{ render(); };
 }
 
 async function bootDashboard(){
