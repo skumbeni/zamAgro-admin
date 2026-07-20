@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chilimba Master — Operator Panel</title>
+<style>
+  :root{
+    --bg:#0f1613; --card:#161f1b; --card2:#1b2620; --border:#28362f;
+    --text:#eef2ef; --sub:#8ea69b; --teal:#2fae8b; --gold:#e0b04a;
+    --red:#e2645a; --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 24px; border-bottom:1px solid var(--border); background:var(--card);
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand .mark{
+    width:34px; height:34px; border-radius:8px; background:var(--teal);
+    display:flex; align-items:center; justify-content:center; font-weight:700; color:#06120e;
+  }
+  .brand h1{font-size:15px; margin:0; font-weight:600;}
+  .brand p{margin:0; font-size:12px; color:var(--sub);}
+  .signout{
+    background:none; border:1px solid var(--border); color:var(--sub);
+    border-radius:8px; padding:7px 12px; font-size:12px; cursor:pointer;
+  }
+  .signout:hover{color:var(--text); border-color:var(--sub);}
+  main{max-width:1080px; margin:0 auto; padding:24px;}
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px;}
+  .stat{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px;}
+  .stat .num{font-size:24px; font-weight:700; letter-spacing:-0.02em;}
+  .stat .label{font-size:12px; color:var(--sub); margin-top:2px;}
+  .stat.gold .num{color:var(--gold);}
+  .stat.teal .num{color:var(--teal);}
+  .stat.red .num{color:var(--red);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    margin-bottom:18px; overflow:hidden;
+  }
+  .card h2{
+    font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--sub);
+    margin:0; padding:14px 16px; border-bottom:1px solid var(--border);
+  }
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--sub); padding:10px 16px; border-bottom:1px solid var(--border);
+  }
+  td{padding:11px 16px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tr.clickable{cursor:pointer;}
+  tr.clickable:hover{background:var(--card2);}
+  .pill{
+    display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:600;
+  }
+  .pill.free{background:#2a352f; color:var(--sub);}
+  .pill.starter{background:#1f3a3a; color:#5fc9c9;}
+  .pill.growth{background:#243a24; color:#7fce7f;}
+  .pill.pro{background:#3a3320; color:var(--gold);}
+  .pending-badge{
+    background:var(--red); color:#fff; font-size:10px; font-weight:700;
+    border-radius:99px; padding:1px 7px; margin-left:6px;
+  }
+  .empty{padding:28px 16px; color:var(--sub); font-size:13px; text-align:center;}
+  .login-wrap{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-box{
+    width:100%; max-width:340px; background:var(--card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:28px;
+  }
+  .login-box .mark{
+    width:44px; height:44px; border-radius:10px; background:var(--teal); color:#06120e;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px;
+    margin-bottom:16px;
+  }
+  .login-box h1{font-size:17px; margin:0 0 4px;}
+  .login-box p{font-size:13px; color:var(--sub); margin:0 0 20px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--sub); margin-bottom:5px;}
+  .field input{
+    width:100%; padding:10px 11px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card2); color:var(--text); font-size:14px;
+  }
+  .field input:focus{outline:none; border-color:var(--teal);}
+  .btn{
+    width:100%; padding:11px; border-radius:8px; border:none; background:var(--teal);
+    color:#06120e; font-weight:600; font-size:14px; cursor:pointer; margin-top:6px;
+  }
+  .btn:disabled{opacity:.5; cursor:default;}
+  .error-msg{color:var(--red); font-size:12px; margin-top:10px;}
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex;
+    align-items:center; justify-content:center; padding:20px; z-index:10;
+  }
+  .modal{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px; width:100%; max-width:380px;
+  }
+  .modal h3{margin:0 0 14px; font-size:15px;}
+  .modal .row{display:flex; gap:8px; margin-top:14px;}
+  .modal .row button{flex:1;}
+  .btn.secondary{background:var(--card2); color:var(--text); border:1px solid var(--border);}
+  .close-x{
+    background:none; border:none; color:var(--sub); font-size:20px; float:right;
+    cursor:pointer; line-height:1;
+  }
+  select{
+    width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card2); color:var(--text); font-size:14px;
+  }
+  .app-detail-list{padding:16px;}
+  .app-line{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .app-line:last-child{border-bottom:none;}
+  .app-line .name{font-weight:600; font-size:13px;}
+  .app-line .sub{font-size:12px; color:var(--sub); margin-top:2px;}
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#1e2a24; border:1px solid var(--border); color:var(--text);
+    padding:10px 18px; border-radius:8px; font-size:13px; opacity:0;
+    transition:.2s; pointer-events:none; z-index:20;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =======================================================================
+   CONFIG — fill these in once for the shared project.
+   FIREBASE_API_KEY comes from the Firebase console (Project settings →
+   General → Web API key). DB_URL is the same shared Realtime Database
+   URL every group's index.html now points at.
+   ======================================================================= */
+const FIREBASE_API_KEY = 'AIzaSyBKE2cazUq28eIsiCY4Ni1swTJnQ5--wNo';
+const DB_URL = 'https://chilimba-master-default-rtdb.firebaseio.com';
+
+const TIER_LABELS = { free:'Free', starter:'Starter', growth:'Growth', pro:'Pro' };
+const TIER_PRICES = { free:0, starter:90, growth:150, pro:300 };
+
+const AUTH_KEY = 'chilimba_admin_auth';
+let authState = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+let groups = {};       // groupId -> registry entry
+let openApps = {};     // groupId -> [subscriptionApplications]
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._h);
+  toast._h = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+function fmtK(n){
+  n = Number(n)||0;
+  return 'K' + n.toLocaleString(undefined,{minimumFractionDigits:0, maximumFractionDigits:0});
+}
+
+/* ---------------------- Firebase Auth (REST, no SDK) ---------------------- */
+async function signIn(email, password){
+  const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`, {
+    method:'POST',
+    body: JSON.stringify({ email, password, returnSecureToken:true })
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error?.message || 'Sign-in failed');
+  authState = { idToken:data.idToken, refreshToken:data.refreshToken, email:data.email, expiresAt: Date.now() + (Number(data.expiresIn)*1000) };
+  localStorage.setItem(AUTH_KEY, JSON.stringify(authState));
+  return authState;
+}
+
+async function refreshIdToken(){
+  const res = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:`grant_type=refresh_token&refresh_token=${authState.refreshToken}`
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error('Session expired — sign in again.');
+  authState.idToken = data.id_token;
+  authState.expiresAt = Date.now() + (Number(data.expires_in)*1000);
+  localStorage.setItem(AUTH_KEY, JSON.stringify(authState));
+}
+
+async function ensureFreshToken(){
+  if(!authState) throw new Error('Not signed in');
+  if(Date.now() > authState.expiresAt - 60000) await refreshIdToken();
+}
+
+function signOut(){
+  authState = null;
+  localStorage.removeItem(AUTH_KEY);
+  render();
+}
+
+/* ---------------------- Realtime Database REST, authenticated ---------------------- */
+async function dbGet(path){
+  await ensureFreshToken();
+  const res = await fetch(`${DB_URL.replace(/\/$/,'')}/${path}.json?auth=${authState.idToken}`);
+  if(!res.ok) throw new Error('Read failed: ' + res.status);
+  return res.json();
+}
+
+async function dbSet(path, value){
+  await ensureFreshToken();
+  const res = await fetch(`${DB_URL.replace(/\/$/,'')}/${path}.json?auth=${authState.idToken}`, {
+    method:'PUT', body: JSON.stringify(value)
+  });
+  if(!res.ok) throw new Error('Write failed: ' + res.status);
+  return res.json();
+}
+
+/* ---------------------- data loading ---------------------- */
+async function loadRegistry(){
+  const reg = await dbGet('groupRegistry');
+  groups = reg || {};
+}
+
+// Only fetched per-group, on demand, for groups flagged with pending
+// applications — keeps the dashboard load cheap even with many groups.
+async function loadApplications(groupId){
+  const apps = await dbGet(`groups/${groupId}/subscriptionApplications`);
+  openApps[groupId] = Object.values(apps || {}).filter(a=>a.status==='pending');
+  return openApps[groupId];
+}
+
+async function setGroupTier(groupId, tier){
+  await dbSet(`groups/${groupId}/settings/tier`, tier);
+  await dbSet(`groupRegistry/${groupId}/tier`, tier);
+  if(groups[groupId]) groups[groupId].tier = tier;
+}
+
+async function resolveApplication(groupId, appId, status){
+  await dbSet(`groups/${groupId}/subscriptionApplications/${appId}/status`, status);
+  if(status === 'approved'){
+    const app = (openApps[groupId]||[]).find(a=>a.id===appId);
+    if(app) await setGroupTier(groupId, app.requestedTier);
+  }
+  openApps[groupId] = (openApps[groupId]||[]).filter(a=>a.id!==appId);
+  const pendingLeft = openApps[groupId].length;
+  await dbSet(`groupRegistry/${groupId}/pendingApplications`, pendingLeft);
+  if(groups[groupId]) groups[groupId].pendingApplications = pendingLeft;
+}
+
+/* ---------------------- rendering ---------------------- */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = authState ? renderDashboard() : renderLogin();
+  if(authState) bindDashboard(); else bindLogin();
+}
+
+function renderLogin(){
+  return `
+    <div class="login-wrap">
+      <div class="login-box">
+        <div class="mark">CM</div>
+        <h1>Operator sign-in</h1>
+        <p>Chilimba Master — cross-group management</p>
+        <div class="field"><label>Email</label><input id="li_email" type="email" autocomplete="username"></div>
+        <div class="field"><label>Password</label><input id="li_password" type="password" autocomplete="current-password"></div>
+        <button class="btn" id="li_submit">Sign in</button>
+        <div class="error-msg" id="li_error"></div>
+      </div>
+    </div>`;
+}
+
+function bindLogin(){
+  const submit = document.getElementById('li_submit');
+  const doLogin = async ()=>{
+    const email = document.getElementById('li_email').value.trim();
+    const password = document.getElementById('li_password').value;
+    const errEl = document.getElementById('li_error');
+    errEl.textContent = '';
+    if(!FIREBASE_API_KEY){ errEl.textContent = 'FIREBASE_API_KEY is not set in this file yet.'; return; }
+    submit.disabled = true; submit.textContent = 'Signing in…';
+    try{
+      await signIn(email, password);
+      await bootDashboard();
+    }catch(e){
+      errEl.textContent = e.message;
+    }
+    submit.disabled = false; submit.textContent = 'Sign in';
+  };
+  submit.onclick = doLogin;
+  document.getElementById('li_password').onkeydown = (e)=>{ if(e.key==='Enter') doLogin(); };
+}
+
+async function bootDashboard(){
+  render(); // show shell immediately
+  try{
+    await loadRegistry();
+    // Pre-fetch application details only for groups that flagged pending ones.
+    await Promise.all(Object.keys(groups)
+      .filter(gid => (groups[gid].pendingApplications||0) > 0)
+      .map(gid => loadApplications(gid).catch(e=>{
+        console.error('Failed to load applications for', gid, e);
+        toast(`Couldn't load application details for ${groups[gid].name}: ${e.message}`);
+      })));
+  }catch(e){
+    toast(e.message);
+  }
+  render();
+}
+
+function renderDashboard(){
+  const list = Object.values(groups).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const mrr = list.reduce((sum,g)=> sum + (TIER_PRICES[g.tier] ?? 0), 0);
+  const totalMembers = list.reduce((sum,g)=> sum + (g.memberCount||0), 0);
+  const pendingTotal = list.reduce((sum,g)=> sum + (g.pendingApplications||0), 0);
+  const allApps = [];
+  list.forEach(g=> (openApps[g.groupId]||[]).forEach(a=> allApps.push(Object.assign({groupName:g.name}, a))));
+
+  return `
+    <div class="topbar">
+      <div class="brand">
+        <div class="mark">CM</div>
+        <div><h1>Chilimba Master</h1><p>Operator panel · ${authState.email}</p></div>
+      </div>
+      <button class="signout" id="signout_btn">Sign out</button>
+    </div>
+    <main>
+      <div class="stats">
+        <div class="stat gold"><div class="num">${fmtK(mrr)}</div><div class="label">MRR</div></div>
+        <div class="stat gold"><div class="num">${fmtK(mrr*12)}</div><div class="label">ARR</div></div>
+        <div class="stat teal"><div class="num">${list.length}</div><div class="label">Groups</div></div>
+        <div class="stat"><div class="num">${totalMembers}</div><div class="label">Total members</div></div>
+        <div class="stat ${pendingTotal ? 'red' : ''}"><div class="num">${pendingTotal}</div><div class="label">Pending applications</div></div>
+      </div>
+
+      ${allApps.length ? `
+      <div class="card">
+        <h2>Pending subscription applications</h2>
+        <div class="app-detail-list">
+          ${allApps.map(a=>`
+            <div class="app-line">
+              <div>
+                <div class="name">${escapeHtml(a.groupName)} → ${TIER_LABELS[a.requestedTier]||a.requestedTier}</div>
+                <div class="sub">${escapeHtml(a.submittedByName||'')} · ${escapeHtml(a.method||'')} · K${a.amount||0} · ${escapeHtml(a.transactionId||'no reference')} · ${a.date||''}</div>
+              </div>
+              <div class="row" style="display:flex; gap:6px;">
+                <button class="btn secondary" style="width:auto; padding:7px 12px; font-size:12px;" data-reject-app="${a.groupId}|${a.id}">Reject</button>
+                <button class="btn" style="width:auto; padding:7px 12px; font-size:12px;" data-approve-app="${a.groupId}|${a.id}">Approve</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <div class="card">
+        <h2>All groups (${list.length})</h2>
+        ${list.length ? `
+        <table>
+          <tr><th>Group</th><th>Plan</th><th>Members</th><th>Contribution</th><th>Updated</th></tr>
+          ${list.map(g=>`
+            <tr class="clickable" data-open-group="${g.groupId}">
+              <td>${escapeHtml(g.name)}${g.pendingApplications ? `<span class="pending-badge">${g.pendingApplications}</span>` : ''}<div class="sub" style="font-size:11px; color:var(--sub); font-family:monospace;">${escapeHtml(g.groupId)}</div></td>
+              <td><span class="pill ${g.tier}">${TIER_LABELS[g.tier]||g.tier}</span></td>
+              <td>${g.memberCount ?? '—'}</td>
+              <td>${g.contribution ? fmtK(g.contribution)+' / '+(g.frequency||'') : '—'}</td>
+              <td>${g.updatedAt ? new Date(g.updatedAt).toLocaleDateString() : '—'}</td>
+            </tr>`).join('')}
+        </table>` : `<div class="empty">No groups have synced yet. Once a group's app.html loads with DB_URL configured, it appears here.</div>`}
+      </div>
+    </main>`;
+}
+
+function escapeHtml(str){
+  return String(str||'').replace(/[&<>"']/g, ch=>({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[ch]));
+}
+
+function bindDashboard(){
+  const signoutBtn = document.getElementById('signout_btn');
+  if(signoutBtn) signoutBtn.onclick = signOut;
+
+  document.querySelectorAll('[data-open-group]').forEach(row=>{
+    row.onclick = ()=> openTierModal(row.dataset.openGroup);
+  });
+
+  document.querySelectorAll('[data-approve-app]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const [groupId, appId] = btn.dataset.approveApp.split('|');
+      btn.disabled = true;
+      try{
+        await resolveApplication(groupId, appId, 'approved');
+        toast('Application approved — plan updated');
+        render();
+      }catch(e){ toast(e.message); btn.disabled = false; }
+    };
+  });
+  document.querySelectorAll('[data-reject-app]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const [groupId, appId] = btn.dataset.rejectApp.split('|');
+      btn.disabled = true;
+      try{
+        await resolveApplication(groupId, appId, 'rejected');
+        toast('Application rejected');
+        render();
+      }catch(e){ toast(e.message); btn.disabled = false; }
+    };
+  });
+}
+
+function openTierModal(groupId){
+  const g = groups[groupId];
+  if(!g) return;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <button class="close-x">&times;</button>
+      <h3>${escapeHtml(g.name)}</h3>
+      <div class="field"><label>Plan</label>
+        <select id="tier_select">
+          ${Object.keys(TIER_LABELS).map(t=>`<option value="${t}" ${t===g.tier?'selected':''}>${TIER_LABELS[t]} (K${TIER_PRICES[t]}/mo)</option>`).join('')}
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn secondary" id="tier_cancel">Cancel</button>
+        <button class="btn" id="tier_save">Save plan</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('.close-x').onclick = ()=>bg.remove();
+  bg.querySelector('#tier_cancel').onclick = ()=>bg.remove();
+  bg.querySelector('#tier_save').onclick = async ()=>{
+    const newTier = bg.querySelector('#tier_select').value;
+    try{
+      await setGroupTier(groupId, newTier);
+      toast('Plan updated to ' + TIER_LABELS[newTier]);
+      bg.remove();
+      render();
+    }catch(e){ toast(e.message); }
+  };
+}
+
+/* ---------------------- boot ---------------------- */
+(async function boot(){
+  if(authState){
+    render();
+    try{ await bootDashboard(); }
+    catch(e){ toast(e.message); }
+  } else {
+    render();
+  }
+})();
+</script>
+</body>
+</html>

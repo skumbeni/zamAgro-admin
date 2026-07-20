@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>ZamAgro Track — Owner Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover"/>
+<title>NEXLITE — Admin</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -13,1458 +13,248 @@
     --surface2: #1a2e1e;
     --border:   #2a4030;
     --green:    #2fbe6a;
-    --green-dim:#1a7042;
     --amber:    #f5a623;
     --red:      #e05252;
-    --blue:     #4a9eff;
-    --text:     #e8f0ea;
     --muted:    #6b8f74;
+    --text:     #e8f0ea;
     --mono:     'IBM Plex Mono', monospace;
     --sans:     'Inter', sans-serif;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
 
-  /* ── LOGIN SCREEN ─────────────────────────────── */
-  #login-screen {
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at 40% 30%, #1a3820 0%, #0b1a0e 70%);
-  }
-  .login-box {
-    width: 380px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 2.5rem; text-align: center;
-  }
-  .login-logo { font-family: var(--mono); font-size: 1.1rem; color: var(--green); margin-bottom: .3rem; letter-spacing: 2px; }
-  .login-sub  { font-size: .78rem; color: var(--muted); margin-bottom: 2rem; letter-spacing: 1px; text-transform: uppercase; }
-  .login-box input {
-    width: 100%; padding: .75rem 1rem; margin-bottom: 1rem;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); font-family: var(--mono); font-size: .9rem; outline: none;
-    transition: border-color .2s;
-  }
-  .login-box input:focus { border-color: var(--green); }
-  .btn-login {
-    width: 100%; padding: .8rem; background: var(--green); color: #0b1a0e;
-    border: none; border-radius: 8px; font-family: var(--sans); font-weight: 700;
-    font-size: .95rem; cursor: pointer; transition: opacity .2s;
-  }
-  .btn-login:hover { opacity: .85; }
-  .login-err { color: var(--red); font-size: .82rem; margin-top: .75rem; display: none; }
-  .login-ok  { color: var(--green); font-size: .82rem; margin-top: .75rem; display: none; line-height: 1.4; }
-  .login-forgot { color: var(--muted); font-size: .78rem; margin-top: 1rem; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-  .login-forgot:hover { color: var(--green); }
+  .shell { display: flex; height: 100vh; }
 
-  /* ── SHELL ────────────────────────────────────── */
-  #app { display: none; height: 100vh; overflow: hidden; }
-  .shell { display: flex; height: 100%; }
-
-  /* ── SIDEBAR ──────────────────────────────────── */
+  /* ── SIDEBAR ─────────────────────────────────── */
   .sidebar {
     width: 220px; flex-shrink: 0; background: var(--surface);
     border-right: 1px solid var(--border); display: flex; flex-direction: column;
-    padding: 1.5rem 0;
+    padding: 1.4rem 0; transition: transform .2s ease;
   }
   .sidebar-logo {
     font-family: var(--mono); color: var(--green); font-size: .85rem;
-    letter-spacing: 2px; padding: 0 1.2rem 1.5rem; border-bottom: 1px solid var(--border);
+    letter-spacing: 2px; padding: 0 1.2rem 1.3rem; border-bottom: 1px solid var(--border);
   }
   .sidebar-logo span { display: block; font-size: .65rem; color: var(--muted); letter-spacing: 1px; margin-top: 2px; }
-  nav { flex: 1; padding: 1rem 0; }
-  .nav-item {
+  nav { flex: 1; padding: 1rem 0; overflow-y: auto; }
+  .nav-section-label {
+    padding: .6rem 1.2rem .3rem; font-size: .68rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .app-item {
     display: flex; align-items: center; gap: .7rem;
-    padding: .65rem 1.2rem; cursor: pointer; font-size: .88rem;
+    padding: .7rem 1.2rem; cursor: pointer; font-size: .88rem;
     color: var(--muted); border-left: 3px solid transparent; transition: all .15s;
   }
-  .nav-item:hover { color: var(--text); background: var(--surface2); }
-  .nav-item.active { color: var(--green); border-left-color: var(--green); background: var(--surface2); }
-  .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+  .app-item:hover { color: var(--text); background: var(--surface2); }
+  .app-item.active { color: var(--green); border-left-color: var(--green); background: var(--surface2); }
+  .app-item.disabled { opacity: .4; cursor: default; }
+  .app-item.disabled:hover { background: none; color: var(--muted); }
+  .app-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .app-item .name { flex: 1; }
+  .app-item .soon {
+    font-size: .62rem; font-family: var(--mono); color: var(--muted);
+    background: var(--bg); padding: 1px 6px; border-radius: 20px; border: 1px solid var(--border);
+  }
   .sidebar-footer {
-    padding: 1rem 1.2rem; border-top: 1px solid var(--border);
-    font-size: .75rem; color: var(--muted); font-family: var(--mono);
+    padding: 1rem 1.2rem 0; border-top: 1px solid var(--border);
+    font-size: .72rem; color: var(--muted); font-family: var(--mono);
   }
-  .btn-logout {
-    margin-top: .5rem; width: 100%; padding: .5rem; background: transparent;
-    border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
-    font-size: .78rem; cursor: pointer; transition: all .15s;
-  }
-  .btn-logout:hover { border-color: var(--red); color: var(--red); }
 
-  /* ── MAIN CONTENT ─────────────────────────────── */
-  .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  /* ── MAIN AREA ───────────────────────────────── */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .topbar {
-    padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--surface); position: sticky; top: 0; z-index: 10;
-  }
-  .topbar-title { font-size: 1.05rem; font-weight: 600; }
-  .topbar-meta { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
-  .content { padding: 2rem; flex: 1; }
-
-  /* VIEWS */
-  .view { display: none; }
-  .view.active { display: block; }
-
-  /* ── STAT CARDS ───────────────────────────────── */
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-  .stat-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 1.2rem 1.4rem;
-  }
-  .stat-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: .4rem; }
-  .stat-value { font-family: var(--mono); font-size: 1.7rem; font-weight: 600; color: var(--green); }
-  .stat-sub   { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
-
-  /* ── TABLE ────────────────────────────────────── */
-  .panel-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; overflow: visible; margin-bottom: 1.5rem;
-  }
-  .panel-card-header {
     padding: .9rem 1.4rem; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: .85rem; font-weight: 600;
+    display: flex; align-items: center; gap: 1rem;
+    background: var(--surface); flex-shrink: 0;
   }
-  .panel-card-header .actions { display: flex; gap: .5rem; }
-  .search-input {
-    padding: .4rem .8rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: .8rem; font-family: var(--sans);
-    outline: none; width: 200px; transition: border-color .2s;
-  }
-  .search-input:focus { border-color: var(--green); }
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 10px 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 560px; }
-  thead th {
-    padding: .7rem 1.2rem; text-align: left; font-size: .7rem;
-    color: var(--muted); text-transform: uppercase; letter-spacing: .8px;
-    border-bottom: 1px solid var(--border); white-space: nowrap;
-  }
-  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: var(--surface2); }
-  tbody td { padding: .75rem 1.2rem; vertical-align: middle; }
-  .mono { font-family: var(--mono); font-size: .8rem; }
-
-  /* BADGES */
-  .badge {
-    display: inline-flex; align-items: center; padding: 2px 9px;
-    border-radius: 20px; font-size: .72rem; font-weight: 700; letter-spacing: .3px;
-  }
-  .badge-trial    { background: #2a1f0d; color: #f5a623; }
-  .badge-starter  { background: #0d2014; color: #2fbe6a; }
-  .badge-standard { background: #0d1a2a; color: #4a9eff; }
-  .badge-pro      { background: #0d1a2a; color: #a78bfa; }
-  .badge-lifetime { background: #1a0d2a; color: #c084fc; }
-  .badge-active   { background: #0d2014; color: #2fbe6a; }
-  .badge-expired  { background: #2a0d0d; color: #e05252; }
-  .badge-suspended{ background: #2a1a0d; color: #f5a623; }
-
-  /* ACTIONS */
-  .action-btn {
-    padding: 3px 10px; border-radius: 5px; font-size: .75rem; cursor: pointer;
-    border: 1px solid var(--border); background: transparent; color: var(--text);
-    transition: all .15s; font-family: var(--sans);
-  }
-  .action-btn:hover { background: var(--surface2); }
-  .action-btn.danger { border-color: var(--red); color: var(--red); }
-  .action-btn.danger:hover { background: #2a0d0d; }
-  .action-btn.success { border-color: var(--green); color: var(--green); }
-  .action-btn.success:hover { background: #0d2014; }
-  .action-btn.primary { border-color: var(--green); color: #0b1a0e; background: var(--green); }
-  .action-btn.primary:hover { opacity: .85; }
-
-  /* ── MODAL ────────────────────────────────────── */
-  .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
-    display: flex; align-items: center; justify-content: center; display: none;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal-box {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 2rem; width: 460px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
-  }
-  .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--green); }
-  .form-row { margin-bottom: 1rem; }
-  .form-row label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: .35rem; text-transform: uppercase; letter-spacing: .5px; }
-  .form-row select, .form-row input[type=date], .form-row input[type=text] {
-    width: 100%; padding: .6rem .9rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 7px; color: var(--text); font-family: var(--sans); font-size: .88rem; outline: none;
-  }
-  .form-row select:focus, .form-row input:focus { border-color: var(--green); }
-  .modal-actions { display: flex; gap: .75rem; margin-top: 1.5rem; justify-content: flex-end; }
-  .modal-err { color: var(--red); font-size: .8rem; margin-top: .5rem; display: none; }
-
-  /* ── FINANCIALS ───────────────────────────────── */
-  .finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
-  @media (max-width: 700px) { .finance-grid { grid-template-columns: 1fr; } }
-  .revenue-bar-wrap { margin: .5rem 0; }
-  .revenue-bar-label { display: flex; justify-content: space-between; font-size: .78rem; margin-bottom: .3rem; color: var(--muted); }
-  .revenue-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-  .revenue-bar-fill  { height: 100%; border-radius: 3px; transition: width .4s ease; }
-
-  /* ── SETTINGS ─────────────────────────────────── */
-  .settings-group { margin-bottom: 2rem; }
-  .settings-group-title { font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
-  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: .75rem 0; border-bottom: 1px solid #1a2e1e; }
-  .setting-row:last-child { border-bottom: none; }
-  .setting-label { font-size: .88rem; }
-  .setting-desc  { font-size: .75rem; color: var(--muted); margin-top: .15rem; }
-  .setting-input {
-    padding: .45rem .8rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: .85rem; font-family: var(--mono);
-    outline: none; width: 220px; transition: border-color .2s;
-  }
-  .setting-input:focus { border-color: var(--green); }
-  .save-btn {
-    padding: .55rem 1.4rem; background: var(--green); color: #0b1a0e;
-    border: none; border-radius: 7px; font-weight: 700; font-size: .88rem;
-    cursor: pointer; transition: opacity .2s;
-  }
-  .save-btn:hover { opacity: .85; }
-
-
-  /* ── HAMBURGER / MOBILE ───────────────────────────────────── */
   .ham-btn {
-    display: none; background: none; border: none; cursor: pointer;
-    padding: .3rem; color: var(--text); flex-direction: column;
-    gap: 5px; justify-content: center; align-items: center;
+    display: none; width: 34px; height: 34px; border-radius: 8px; background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text); font-size: 1rem; cursor: pointer;
+    align-items: center; justify-content: center; flex-shrink: 0;
   }
-  .ham-btn span {
-    display: block; width: 22px; height: 2px; background: currentColor;
-    border-radius: 2px; transition: all .25s;
+  .topbar-title { font-size: .95rem; font-weight: 600; flex: 1; }
+  .topbar-title .dim { color: var(--muted); font-weight: 400; }
+
+  .frame-wrap { flex: 1; position: relative; min-height: 0; }
+  iframe { width: 100%; height: 100%; border: none; display: block; background: var(--bg); }
+
+  /* ── HOME GRID ───────────────────────────────── */
+  .home { padding: 2rem; overflow-y: auto; height: 100%; }
+  .home h1 { font-size: 1.3rem; margin-bottom: .3rem; }
+  .home p.sub { color: var(--muted); font-size: .88rem; margin-bottom: 1.8rem; }
+  .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  .app-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.3rem; cursor: pointer; transition: border-color .15s, transform .15s;
   }
-  .ham-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-  .ham-btn.open span:nth-child(2) { opacity: 0; }
-  .ham-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-  .sidebar-backdrop {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
-    z-index: 49;
+  .app-card:hover { border-color: var(--green); transform: translateY(-2px); }
+  .app-card.disabled { cursor: default; opacity: .45; }
+  .app-card.disabled:hover { border-color: var(--border); transform: none; }
+  .app-card .mark {
+    width: 40px; height: 40px; border-radius: 9px; display: flex; align-items: center;
+    justify-content: center; font-family: var(--mono); font-weight: 700; font-size: .95rem;
+    color: #06120e; margin-bottom: .9rem;
+  }
+  .app-card h3 { font-size: .95rem; margin-bottom: .25rem; }
+  .app-card p { font-size: .78rem; color: var(--muted); line-height: 1.4; }
+  .app-card .tag {
+    display: inline-block; margin-top: .8rem; font-size: .68rem; font-family: var(--mono);
+    padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted);
   }
 
-  /* Ham always visible; sidebar overlay on mobile, collapsible on desktop */
-  .ham-btn { display: flex; }
+  .sidebar-backdrop { display: none; }
 
-  @media (min-width: 681px) {
+  @media (max-width: 720px) {
     .sidebar {
-      transition: width .25s ease, transform .25s ease;
+      position: fixed; z-index: 30; top: 0; left: 0; height: 100vh;
+      transform: translateX(-100%);
     }
-    .sidebar.collapsed {
-      width: 0; overflow: hidden; border: none;
+    .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.4); }
+    .ham-btn { display: flex; }
+    .sidebar-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 20;
     }
-  }
-
-  @media (max-width: 680px) {
-    .sidebar {
-      position: fixed; top: 0; left: 0; height: 100vh; z-index: 50;
-      transform: translateX(-100%); transition: transform .25s ease;
-    }
-    .sidebar.open { transform: translateX(0); }
     .sidebar-backdrop.open { display: block; }
-    .topbar { padding: 1rem 1.2rem; }
   }
-
-  /* loading */
-  .loading { color: var(--muted); font-family: var(--mono); font-size: .82rem; padding: 2rem; text-align: center; }
-  .empty   { color: var(--muted); font-size: .85rem; padding: 2rem; text-align: center; }
-
-  /* toast */
-  #toast {
-    position: fixed; bottom: 2rem; right: 2rem; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1.2rem;
-    font-size: .85rem; z-index: 200; opacity: 0; transition: opacity .25s;
-    pointer-events: none;
-  }
-  #toast.show { opacity: 1; }
-  #toast.ok   { border-color: var(--green); color: var(--green); }
-  #toast.err  { border-color: var(--red);   color: var(--red); }
-
-  /* subscription payment log */
-  .payment-row { display: flex; align-items: center; gap: 1rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .85rem; }
-  .payment-row:last-child { border-bottom: none; }
-  .payment-amount { font-family: var(--mono); color: var(--green); font-weight: 600; min-width: 90px; }
-  .payment-meta   { color: var(--muted); font-size: .75rem; }
 </style>
 </head>
 <body>
 
-<!-- ════ LOGIN ════ -->
-<div id="login-screen">
-  <div class="login-box">
-    <div class="login-logo">🌱 ZAMAGRO</div>
-    <div class="login-sub">Owner Management Panel</div>
+<div class="shell">
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">NEXLITE<span>Admin Console</span></div>
+    <nav id="nav-list"></nav>
+    <div class="sidebar-footer">Chongo Goodson Samuel</div>
+  </aside>
 
-    <div id="login-fields">
-      <input type="email" id="login-email" placeholder="Email address" autocomplete="email"/>
-      <input type="password" id="login-pw" placeholder="Password" autocomplete="current-password"
-             onkeydown="if(event.key==='Enter')doLogin()"/>
-      <button class="btn-login" onclick="doLogin()">Sign In</button>
-      <div class="login-err" id="login-err"></div>
-      <div class="login-forgot" onclick="showForgotForm()">Forgot password?</div>
+  <div class="main">
+    <div class="topbar">
+      <button class="ham-btn" id="ham-btn" onclick="toggleSidebar()">☰</button>
+      <div class="topbar-title" id="topbar-title">NEXLITE <span class="dim">— Admin Console</span></div>
     </div>
-
-    <div id="forgot-fields" style="display:none">
-      <input type="email" id="forgot-email" placeholder="Email address" autocomplete="email"
-             onkeydown="if(event.key==='Enter')sendPasswordReset(document.getElementById('forgot-btn'))"/>
-      <button class="btn-login" id="forgot-btn" onclick="sendPasswordReset(this)">Send Reset Link</button>
-      <div class="login-err" id="forgot-err"></div>
-      <div class="login-ok" id="forgot-ok"></div>
-      <div class="login-forgot" onclick="showLoginForm()">← Back to sign in</div>
+    <div class="frame-wrap" id="frame-wrap">
+      <!-- home or iframe injected here -->
     </div>
   </div>
 </div>
-
-<!-- ════ APP SHELL ════ -->
-<div id="app">
-  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
-  <div class="shell">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-logo">🌱 ZAMAGRO<span>OWNER PANEL</span></div>
-      <nav>
-        <div class="nav-item active" data-view="overview" onclick="switchView('overview',this)">
-          <span class="nav-icon">📊</span> Overview
-        </div>
-        <div class="nav-item" data-view="businesses" onclick="switchView('businesses',this)">
-          <span class="nav-icon">🏪</span> Businesses
-        </div>
-        <div class="nav-item" data-view="subscriptions" onclick="switchView('subscriptions',this)">
-          <span class="nav-icon">🎫</span> Subscriptions
-        </div>
-        <div class="nav-item" data-view="financials" onclick="switchView('financials',this)">
-          <span class="nav-icon">💰</span> Financials
-        </div>
-        <div class="nav-item" data-view="requests" onclick="switchView('requests',this)">
-          <span class="nav-icon">📨</span> Requests <span id="req-badge" style="display:none;background:var(--red);color:#fff;border-radius:20px;font-size:.65rem;font-weight:700;padding:1px 6px;margin-left:4px;"></span>
-        </div>
-        <div class="nav-item" data-view="settings" onclick="switchView('settings',this)">
-          <span class="nav-icon">⚙️</span> Settings
-        </div>
-      </nav>
-      <div class="sidebar-footer">
-        <div id="sidebar-email" style="margin-bottom:.3rem;"></div>
-        <div id="sidebar-uid" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.uid || '').then(()=>{this.textContent='Copied!'; setTimeout(()=>{this.textContent='UID: '+this.dataset.uid;},1200);})" style="margin-bottom:.6rem;font-size:.7rem;color:#888;cursor:pointer;word-break:break-all;user-select:all;" title="Tap to copy"></div>
-        <button class="btn-logout" onclick="doLogout()">Sign out</button>
-      </div>
-    </aside>
-
-    <!-- Main -->
-    <div class="main">
-      <div class="topbar">
-        <button class="ham-btn" id="ham-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>
-        <span class="topbar-title" id="topbar-title">Overview</span>
-        <span class="topbar-meta" id="topbar-clock"></span>
-      </div>
-      <div class="content">
-
-        <!-- ── OVERVIEW ── -->
-        <div id="view-overview" class="view active">
-          <div class="stat-grid" id="stat-grid">
-            <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value" id="s-total">—</div></div>
-            <div class="stat-card"><div class="stat-label">Active Licences</div><div class="stat-value" id="s-active" style="color:var(--green)">—</div></div>
-            <div class="stat-card"><div class="stat-label">Expired</div><div class="stat-value" id="s-expired" style="color:var(--red)">—</div></div>
-            <div class="stat-card"><div class="stat-label">On Trial</div><div class="stat-value" id="s-trial" style="color:var(--amber)">—</div></div>
-            <div class="stat-card"><div class="stat-label">Suspended</div><div class="stat-value" id="s-suspended" style="color:var(--amber)">—</div></div>
-            <div class="stat-card"><div class="stat-label">MRR (est.)</div><div class="stat-value" id="s-mrr" style="color:var(--blue)">—</div><div class="stat-sub">Monthly recurring</div></div>
-          </div>
-
-          <div class="panel-card">
-            <div class="panel-card-header">Recent Activations</div>
-            <div class="table-scroll"><table>
-              <thead><tr><th>Business</th><th>Plan</th><th>Activated</th><th>Expiry</th></tr></thead>
-              <tbody id="recent-activations"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
-            </table></div>
-          </div>
-
-          <div class="panel-card">
-            <div class="panel-card-header">Expiring Soon (next 14 days)</div>
-            <div class="table-scroll"><table>
-              <thead><tr><th>Business</th><th>Plan</th><th>Expires</th><th>Action</th></tr></thead>
-              <tbody id="expiring-soon"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
-            </table></div>
-          </div>
-        </div>
-
-        <!-- ── BUSINESSES ── -->
-        <div id="view-businesses" class="view">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              All Registered Businesses
-              <div class="actions">
-                <input class="search-input" id="biz-search" placeholder="Search…" oninput="filterBusinesses()"/>
-                <button class="action-btn" id="archived-toggle-btn" onclick="toggleArchivedView()">View Archived</button>
-                <button class="action-btn" onclick="loadBusinesses()">↻ Refresh</button>
-              </div>
-            </div>
-            <div class="table-scroll"><table>
-              <thead>
-                <tr>
-                  <th>Business / UID</th>
-                  <th>Admin</th>
-                  <th>Plan</th>
-                  <th>Status</th>
-                  <th>Expiry</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="biz-table"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
-            </table></div>
-          </div>
-        </div>
-
-        <!-- ── SUBSCRIPTIONS ── -->
-        <div id="view-subscriptions" class="view">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              Subscription Management
-              <div class="actions">
-                <input class="search-input" id="sub-search" placeholder="Search…" oninput="filterSubscriptions()"/>
-              </div>
-            </div>
-            <div class="table-scroll"><table>
-              <thead>
-                <tr>
-                  <th>Business</th>
-                  <th>Current Plan</th>
-                  <th>Status</th>
-                  <th>Activated</th>
-                  <th>Expires</th>
-                  <th>Manage</th>
-                </tr>
-              </thead>
-              <tbody id="sub-table"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
-            </table></div>
-          </div>
-        </div>
-
-        <!-- ── FINANCIALS ── -->
-        <div id="view-financials" class="view">
-          <div class="stat-grid">
-            <div class="stat-card"><div class="stat-label">Est. MRR</div><div class="stat-value" id="f-mrr">—</div><div class="stat-sub">Active recurring plans</div></div>
-            <div class="stat-card"><div class="stat-label">Lifetime Revenue (total)</div><div class="stat-value" id="f-total" style="color:var(--amber)">—</div><div class="stat-sub">All recorded payments</div></div>
-            <div class="stat-card"><div class="stat-label">Lifetime Licences</div><div class="stat-value" id="f-lifetime-count" style="color:var(--blue)">—</div><div class="stat-sub">One-off @ K3,500</div></div>
-            <div class="stat-card"><div class="stat-label">Active Subs</div><div class="stat-value" id="f-active-count" style="color:var(--green)">—</div></div>
-          </div>
-
-          <div class="finance-grid">
-            <div class="panel-card">
-              <div class="panel-card-header">Revenue by Plan</div>
-              <div style="padding:1.2rem 1.4rem" id="plan-breakdown"></div>
-            </div>
-            <div class="panel-card">
-              <div class="panel-card-header">Payment Log</div>
-              <div style="padding:1rem 1.4rem;max-height:340px;overflow-y:auto" id="payment-log">
-                <div class="loading">Loading…</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── REQUESTS ── -->
-        <div id="view-requests" class="view">
-          <div class="panel-card">
-            <div class="panel-card-header">
-              Subscription Requests
-              <div class="actions">
-                <button class="action-btn" onclick="loadRequests()">↻ Refresh</button>
-              </div>
-            </div>
-            <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Business</th>
-                  <th>Phone</th>
-                  <th>Current Plan</th>
-                  <th>Requesting</th>
-                  <th>Txn ID</th>
-                  <th>Note</th>
-                  <th>Date</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="req-table"><tr><td colspan="7" class="loading">Loading…</td></tr></tbody>
-            </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── SETTINGS ── -->
-        <div id="view-settings" class="view">
-          <div class="panel-card" style="padding:1.5rem">
-            <div class="settings-group">
-              <div class="settings-group-title">App Identity</div>
-              <div class="setting-row">
-                <div><div class="setting-label">Support Phone</div><div class="setting-desc">Shown on landing & expired overlay</div></div>
-                <input class="setting-input" id="cfg-phone" placeholder="e.g. 0977 638 790"/>
-              </div>
-              <div class="setting-row">
-                <div><div class="setting-label">WhatsApp Number</div><div class="setting-desc">Used for renewal CTA links</div></div>
-                <input class="setting-input" id="cfg-whatsapp" placeholder="260977638790"/>
-              </div>
-            </div>
-            <div class="settings-group">
-              <div class="settings-group-title">Licence Prices (ZMW)</div>
-              <div class="setting-desc" style="margin-bottom:.75rem;">Fixed to match the public app — edit prices in the app's code (not here) if they ever need to change, so the two never drift apart again.</div>
-              <div class="setting-row">
-                <div><div class="setting-label">Starter / mo</div></div>
-                <div class="mono">K200</div>
-              </div>
-              <div class="setting-row">
-                <div><div class="setting-label">Standard / mo</div></div>
-                <div class="mono">K300</div>
-              </div>
-              <div class="setting-row">
-                <div><div class="setting-label">Pro / mo</div></div>
-                <div class="mono">K399</div>
-              </div>
-              <div class="setting-row">
-                <div><div class="setting-label">Lifetime (once-off)</div></div>
-                <div class="mono">K2,500</div>
-              </div>
-            </div>
-            <div class="settings-group">
-              <div class="settings-group-title">Panel Security</div>
-              <div class="setting-row">
-                <div><div class="setting-label">Change Password</div><div class="setting-desc">Update your Firebase Auth password</div></div>
-                <button class="action-btn" onclick="changePassword()">Change…</button>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem;">
-              <button class="save-btn" onclick="saveSettings()">Save Settings</button>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /content -->
-    </div><!-- /main -->
-  </div>
-</div>
-
-<!-- ════ MODALS ════ -->
-
-<!-- Suspend/Unsuspend -->
-<div class="modal-overlay" id="modal-suspend">
-  <div class="modal-box">
-    <div class="modal-title" id="modal-suspend-title">Suspend Business</div>
-    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-suspend-desc"></p>
-    <div class="modal-actions">
-      <button class="action-btn" onclick="closeModal('modal-suspend')">Cancel</button>
-      <button class="action-btn danger" id="modal-suspend-confirm" onclick="confirmSuspend()">Confirm</button>
-    </div>
-  </div>
-</div>
-
-<!-- Archive/Unarchive -->
-<div class="modal-overlay" id="modal-archive">
-  <div class="modal-box">
-    <div class="modal-title" id="modal-archive-title">Archive Business</div>
-    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-archive-desc"></p>
-    <div class="modal-actions">
-      <button class="action-btn" onclick="closeModal('modal-archive')">Cancel</button>
-      <button class="action-btn danger" id="modal-archive-confirm" onclick="confirmArchive()">Confirm</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- Edit Subscription -->
-<div class="modal-overlay" id="modal-sub">
-  <div class="modal-box">
-    <div class="modal-title">Manage Subscription</div>
-    <div style="font-size:.82rem;color:var(--muted);margin-bottom:1.2rem;" id="modal-sub-biz"></div>
-    <input type="hidden" id="modal-sub-uid"/>
-    <div class="form-row">
-      <label>Plan</label>
-      <select id="modal-sub-tier">
-        <option value="trial">Trial (30 days free)</option>
-        <option value="starter">Starter — K200/mo</option>
-        <option value="standard">Standard — K300/mo</option>
-        <option value="pro">Pro — K399/mo</option>
-        <option value="lifetime">Lifetime — K2,500 once-off</option>
-      </select>
-    </div>
-    <div class="form-row" id="modal-sub-expiry-row">
-      <label>Expiry Date</label>
-      <input type="date" id="modal-sub-expiry"/>
-    </div>
-    <div class="form-row">
-      <label>Transaction ID <span style="color:var(--danger)">*</span></label>
-      <input type="text" id="modal-sub-txnid" placeholder="e.g. ABCD123456" style="font-family:monospace;letter-spacing:.5px;" autocomplete="off"/>
-      <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem;">From Mobile Money confirmation SMS. Required.</div>
-    </div>
-    <div class="form-row">
-      <label>Note (optional)</label>
-      <input type="text" id="modal-sub-note" placeholder="e.g. Paid via Airtel Money — K500"/>
-    </div>
-    <div class="modal-err" id="modal-sub-err"></div>
-    <div class="modal-actions">
-      <button class="action-btn" onclick="closeModal('modal-sub')">Cancel</button>
-      <button class="action-btn primary" onclick="saveSubscription()">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- Toast -->
-<div id="toast"></div>
 
 <script>
-/* ── CONFIG ──────────────────────────────────────────────────── */
-const FB = {
-  apiKey:      "AIzaSyA4tRJYDsQK8FJn47AI971X35ZMv3j-C80",
-  databaseURL: "https://zamagro-tracker-default-rtdb.firebaseio.com",
-  projectId:   "zamagro-tracker"
-};
-const OWNER_PANEL_KEY = 'zamagro_owner_panel_cfg';
-
-/* Panel-local config (phone, WhatsApp, etc.) stored in owner's localStorage — prices are
-   fixed below and no longer part of this, so they can't drift from the public app. */
-let panelCfg = JSON.parse(localStorage.getItem(OWNER_PANEL_KEY) || '{}');
-
-/* Fixed to match the public app's actual tier prices exactly — do not make these
-   editable from this panel again; that's what let admin and public pricing drift
-   apart before. If prices change, update them here AND in the public app together. */
-const PRICES = () => ({
-  starter:  200,
-  standard: 300,
-  pro:      399,
-  lifetime: 2500,
-  trial: 0
-});
-
-/* ── AUTH STATE ──────────────────────────────────────────────── */
-let authToken = null;
-let authEmail = null;
-let allBusinesses = [];   // cached list
-
-/* ── CLOCK ───────────────────────────────────────────────────── */
-setInterval(() => {
-  const el = document.getElementById('topbar-clock');
-  if (el) el.textContent = new Date().toLocaleString('en-ZM', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: 'short', year: 'numeric' });
-}, 1000);
-
-/* ── LOGIN ───────────────────────────────────────────────────── */
-async function doLogin() {
-  const email = document.getElementById('login-email').value.trim();
-  const pw    = document.getElementById('login-pw').value;
-  const errEl = document.getElementById('login-err');
-  errEl.style.display = 'none';
-  if (!email || !pw) { errEl.textContent = 'Enter email and password.'; errEl.style.display = 'block'; return; }
-
-  try {
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pw, returnSecureToken: true })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error?.message || 'Login failed');
-    authToken = d.idToken;
-    authEmail = email;
-    window._ownerUid = d.localId;
-    window._refreshToken = d.refreshToken;
-    window._tokenExpiry = Date.now() + parseInt(d.expiresIn) * 1000;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('sidebar-email').textContent = email;
-    const uidEl = document.getElementById('sidebar-uid');
-    if (uidEl) { uidEl.textContent = 'UID: ' + window._ownerUid; uidEl.dataset.uid = window._ownerUid; }
-    initPanel();
-  } catch(e) {
-    errEl.textContent = e.message.includes('INVALID') ? 'Incorrect email or password.' : e.message;
-    errEl.style.display = 'block';
+/* ── APP REGISTRY ───────────────────────────────────────────────
+   Add a new app by adding one entry here and dropping its admin
+   panel HTML file next to this one. Nothing else needs to change. */
+const APPS = [
+  {
+    id: 'chilimba',
+    name: 'Chilimba Master',
+    desc: 'Rotating savings group app — groups, tiers, and subscription requests.',
+    color: '#2fae8b',
+    initials: 'CM',
+    src: 'chilimba-admin.html',
+    available: true
+  },
+  {
+    id: 'zamagro',
+    name: 'ZamAgro Track',
+    desc: 'Agro-shop management — businesses, tiers, and payment requests.',
+    color: '#2fbe6a',
+    initials: 'ZT',
+    src: 'zamagro-admin.html',
+    available: false // send the ZamAgro Track owner panel file to enable
+  },
+  {
+    id: 'mdm',
+    name: 'MyDepotMaster',
+    desc: 'Depot and inventory management.',
+    color: '#4a9eff',
+    initials: 'MD',
+    src: 'mdm-admin.html',
+    available: false
+  },
+  {
+    id: 'motoconnect',
+    name: 'MotoConnect Zambia',
+    desc: 'Transport directory and rider management.',
+    color: '#f5a623',
+    initials: 'MC',
+    src: 'motoconnect-admin.html',
+    available: false
+  },
+  {
+    id: 'schoolpro',
+    name: 'School Pro',
+    desc: 'Multi-tenant school administration (EduGenius).',
+    color: '#a78bfa',
+    initials: 'SP',
+    src: 'schoolpro-admin.html',
+    available: false
   }
+];
+
+let activeApp = null;
+
+function renderNav() {
+  const nav = document.getElementById('nav-list');
+  nav.innerHTML = `<div class="nav-section-label">Apps</div>` + APPS.map(a => `
+    <div class="app-item ${a.id === activeApp ? 'active' : ''} ${a.available ? '' : 'disabled'}"
+         data-app="${a.id}" ${a.available ? `onclick="openApp('${a.id}')"` : ''}>
+      <span class="app-dot" style="background:${a.color}"></span>
+      <span class="name">${a.name}</span>
+      ${a.available ? '' : '<span class="soon">Add file</span>'}
+    </div>`).join('');
 }
 
-function doLogout() {
-  authToken = null; authEmail = null; allBusinesses = [];
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('login-pw').value = '';
-}
-
-/* ── FORGOT PASSWORD ─────────────────────────────────────────── */
-function showForgotForm() {
-  document.getElementById('login-fields').style.display = 'none';
-  document.getElementById('forgot-fields').style.display = 'block';
-  document.getElementById('forgot-email').value = document.getElementById('login-email').value.trim();
-  document.getElementById('forgot-err').style.display = 'none';
-  document.getElementById('forgot-ok').style.display = 'none';
-  document.getElementById('forgot-email').focus();
-}
-function showLoginForm() {
-  document.getElementById('forgot-fields').style.display = 'none';
-  document.getElementById('login-fields').style.display = 'block';
-}
-async function sendPasswordReset(btn) {
-  const email = document.getElementById('forgot-email').value.trim();
-  const errEl = document.getElementById('forgot-err');
-  const okEl  = document.getElementById('forgot-ok');
-  errEl.style.display = 'none';
-  okEl.style.display  = 'none';
-  if (!email) { errEl.textContent = 'Enter your email address.'; errEl.style.display = 'block'; return; }
-
-  const origText = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Sending…';
-  try {
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FB.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requestType: 'PASSWORD_RESET', email })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error?.message || 'Failed to send reset email.');
-    okEl.textContent = `Reset link sent to ${email}. Check your inbox (and spam folder) and follow the link to set a new password.`;
-    okEl.style.display = 'block';
-  } catch(e) {
-    let msg = e.message || 'Something went wrong.';
-    if (msg.includes('EMAIL_NOT_FOUND')) msg = 'No account found with that email.';
-    else if (msg.includes('TOO_MANY_ATTEMPTS')) msg = 'Too many attempts. Try again later.';
-    errEl.textContent = msg;
-    errEl.style.display = 'block';
-  } finally {
-    btn.disabled = false; btn.textContent = origText;
-  }
-}
-
-/* ── NAVIGATION ──────────────────────────────────────────────── */
-const VIEW_TITLES = { overview:'Overview', businesses:'Businesses', subscriptions:'Subscriptions', financials:'Financials', requests:'Subscription Requests', settings:'Settings' };
-function switchView(id, el) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('view-' + id).classList.add('active');
-  el.classList.add('active');
-  document.getElementById('topbar-title').textContent = VIEW_TITLES[id];
-  if (id === 'overview') renderOverview();
-  if (id === 'businesses') renderBusinessTable(allBusinesses);
-  if (id === 'subscriptions') renderSubTable(allBusinesses);
-  if (id === 'financials') renderFinancials();
-  if (id === 'settings') loadSettingsForm();
-  if (id === 'requests') loadRequests();
-}
-
-/* ── FIREBASE HELPERS ────────────────────────────────────────── */
-async function fbGet(path) {
-  // Refresh token if needed (Firebase idToken expires in 1 hour)
-  await maybeRefreshToken();
-  const url = `${FB.databaseURL}/${path}.json?auth=${authToken}`;
-  const r = await fetch(url);
-  if (!r.ok) {
-    const body = await r.text();
-    console.error('fbGet failed', r.status, body, 'path:', path);
-    throw new Error(r.status + ': ' + body);
-  }
-  return r.json();
-}
-
-async function maybeRefreshToken() {
-  // idToken lasts 3600s; refresh if we stored expiry and it's close
-  if (!window._tokenExpiry || Date.now() < window._tokenExpiry - 60000) return;
-  if (!window._refreshToken) return;
-  try {
-    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `grant_type=refresh_token&refresh_token=${window._refreshToken}`
-    });
-    const d = await r.json();
-    if (d.id_token) {
-      authToken = d.id_token;
-      window._refreshToken = d.refresh_token;
-      window._tokenExpiry = Date.now() + parseInt(d.expires_in) * 1000;
-    }
-  } catch(e) { console.warn('Token refresh failed', e); }
-}
-async function fbSet(path, data) {
-  await maybeRefreshToken();
-  const r = await fetch(`${FB.databaseURL}/${path}.json?auth=${authToken}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Firebase write ${r.status}${body ? ': ' + body : ''}`);
-  }
-  return r.json();
-}
-async function fbPatch(path, data) {
-  await maybeRefreshToken();
-  const r = await fetch(`${FB.databaseURL}/${path}.json?auth=${authToken}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`Firebase patch ${r.status}${body ? ': ' + body : ''}`);
-  }
-  return r.json();
-}
-
-/* ── LOAD DATA ───────────────────────────────────────────────── */
-async function loadBusinesses() {
-  // Try reading the root businesses node (requires owner .read rule in Firebase)
-  let raw = null;
-  try {
-    raw = await fbGet('businesses');
-  } catch(e) {
-    console.error('businesses read error:', e);
-    showDataError('Reading /businesses failed: ' + e.message + '<br>UID in use: <strong>' + (window._ownerUid||'?') + '</strong>');
-    return;
-  }
-
-  if (!raw) {
-    // Fallback: resolve all UIDs from /usernames directory then fetch each individually
-    try {
-      raw = await fetchAllViaUsernames();
-    } catch(e) {
-      showDataError('Could not load businesses: ' + e.message);
-      return;
-    }
-  }
-
-  if (!raw || typeof raw !== 'object') { allBusinesses = []; return; }
-
-  allBusinesses = Object.entries(raw).map(([uid, biz]) => {
-    const s = (biz && biz.settings) || {};
-    const lic = s.licenseData || {};
-    return {
-      uid,
-      companyName: s.companyName || '(unnamed)',
-      adminUsername: s.adminUsername || '—',
-      tier: lic.tier || 'trial',
-      expiry: lic.expiry || null,
-      activatedAt: lic.activatedAt || null,
-      note: lic.note || '',
-      suspended: s.suspended || false,
-      archived: s.archived || false,
-      paymentLog: lic.paymentLog || []
-    };
-  });
-  allBusinesses.sort((a,b) => (b.activatedAt||0) - (a.activatedAt||0));
-  hideDataError();
-}
-
-// Fallback: read /usernames to get all UIDs, then fetch each business settings node
-async function fetchAllViaUsernames() {
-  const usernames = await fbGet('usernames');
-  if (!usernames) return {};
-  // Collect unique UIDs from directory entries
-  const uids = new Set();
-  Object.values(usernames).forEach(entry => {
-    if (entry && entry.uid) uids.add(entry.uid);
-  });
-  const result = {};
-  await Promise.all([...uids].map(async uid => {
-    try {
-      const settings = await fbGet(`businesses/${uid}/settings`);
-      if (settings) result[uid] = { settings };
-    } catch(e) { /* skip inaccessible */ }
-  }));
-  return result;
-}
-
-function showDataError(msg) {
-  let el = document.getElementById('data-error-banner');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'data-error-banner';
-    el.style.cssText = 'background:#2a0d0d;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.85rem;line-height:1.6';
-    document.querySelector('.content').prepend(el);
-  }
-  el.innerHTML = `<strong>⚠ Data Error:</strong> ${msg}<br><br>
-  <strong>Fix:</strong> In Firebase Console → Realtime Database → Rules, add this rule so your owner account can read all businesses:<br>
-  <code style="display:block;margin-top:.5rem;background:#1a0808;padding:.6rem .8rem;border-radius:5px;font-size:.8rem;color:#ffaaaa">
-  "businesses": {<br>
-  &nbsp;&nbsp;".read": "auth != null && auth.uid === '${window._ownerUid||'YOUR_OWNER_UID'}'",<br>
-  &nbsp;&nbsp;"$uid": { ... existing rules ... }<br>
-  }
-  </code>
-  Your UID: <strong style="user-select:all;cursor:pointer" title="Tap to select">${window._ownerUid||'not found'}</strong><br><br>
-  <button onclick="retryLoad()" style="margin-top:.5rem;padding:.45rem 1rem;background:var(--green);color:#0b1a0e;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">↻ Retry</button>`;
-  // Show owner UID for easy copying
-  const uidEl = document.getElementById('owner-uid-display');
-  if (uidEl && window._ownerUid) uidEl.textContent = window._ownerUid;
-  el.style.display = 'block';
-}
-
-function showRulesFixBanner(msg) {
-  let el = document.getElementById('data-error-banner');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'data-error-banner';
-    el.style.cssText = 'background:#2a0d0d;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.85rem;line-height:1.6';
-    document.querySelector('.content').prepend(el);
-  }
-  const uid = window._ownerUid || 'YOUR_OWNER_UID';
-  el.innerHTML = `<strong>⚠ Permission Denied:</strong> ${msg}<br><br>
-  <strong>Fix:</strong> your database rules only let each business write its own <code>subscriptionRequests/&lcub;uid&rcub;</code> node — your admin account (a different uid) isn't allowed to update it. In Firebase Console → Realtime Database → Rules, add:<br>
-  <code style="display:block;margin-top:.5rem;background:#1a0808;padding:.6rem .8rem;border-radius:5px;font-size:.8rem;color:#ffaaaa;white-space:pre">
-"subscriptionRequests": {
-  "$uid": {
-    ".read": "auth != null",
-    ".write": "auth != null && (auth.uid === $uid || auth.uid === '${uid}')",
-    "$reqId": {
-      ".write": "auth != null && (auth.uid === $uid || auth.uid === '${uid}')"
-    }
-  }
-}</code>
-  Your admin UID: <strong style="user-select:all;cursor:pointer" title="Tap to select">${uid}</strong>`;
-  el.style.display = 'block';
-}
-
-async function retryLoad() {
-  hideDataError();
-  try {
-    await loadBusinesses();
-    renderOverview();
-    renderBusinessTable(allBusinesses);
-    renderSubTable(allBusinesses);
-    renderFinancials();
-    if (allBusinesses.length) toast('Data loaded — ' + allBusinesses.length + ' businesses.', 'ok');
-  } catch(e) {
-    toast('Still failing: ' + e.message, 'err');
-  }
-}
-
-function hideDataError() {
-  const el = document.getElementById('data-error-banner');
-  if (el) el.remove();
-}
-
-async function initPanel() {
-  try {
-    await loadBusinesses();
-    renderOverview();
-    renderBusinessTable(allBusinesses);
-    renderSubTable(allBusinesses);
-    renderFinancials();
-    await loadRequests();
-  } catch(e) {
-    toast('Failed to load data: ' + e.message, 'err');
-  }
-}
-
-/* ── HELPERS ─────────────────────────────────────────────────── */
-function fmtDate(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleDateString('en-ZM', { day:'2-digit', month:'short', year:'numeric' });
-}
-function daysLeft(ts) {
-  if (!ts) return null;
-  return Math.ceil((ts - Date.now()) / 86400000);
-}
-function licStatus(biz) {
-  if (biz.suspended) return 'suspended';
-  if (biz.tier === 'lifetime') return 'active';
-  if (!biz.expiry) return 'trial';
-  return daysLeft(biz.expiry) > 0 ? 'active' : 'expired';
-}
-function tierBadge(tier) {
-  const labels = { trial:'Trial', starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
-  return `<span class="badge badge-${tier}">${labels[tier]||tier}</span>`;
-}
-function statusBadge(status) {
-  const map = { active:'badge-active', expired:'badge-expired', suspended:'badge-suspended', trial:'badge-trial' };
-  const labels = { active:'Active', expired:'Expired', suspended:'Suspended', trial:'Trial' };
-  return `<span class="badge ${map[status]||''}">${labels[status]||status}</span>`;
-}
-function K(n) { return 'K' + Number(n).toLocaleString(); }
-
-/* ── OVERVIEW ────────────────────────────────────────────────── */
-function renderOverview() {
-  const total = allBusinesses.length;
-  let active=0, expired=0, trial=0, suspended=0, mrr=0;
-  const prices = PRICES();
-  const recent = [], expiring = [];
-  const now = Date.now();
-
-  allBusinesses.forEach(b => {
-    const st = licStatus(b);
-    if (st === 'suspended') suspended++;
-    else if (st === 'active') {
-      active++;
-      if (b.tier !== 'lifetime') mrr += (prices[b.tier]||0);
-    }
-    else if (st === 'expired') expired++;
-    else trial++;
-
-    if (b.activatedAt) recent.push(b);
-    const dl = b.expiry ? daysLeft(b.expiry) : null;
-    if (dl !== null && dl >= 0 && dl <= 14 && b.tier !== 'lifetime' && licStatus(b) === 'active') expiring.push(b);
-  });
-
-  document.getElementById('s-total').textContent = total;
-  document.getElementById('s-active').textContent = active;
-  document.getElementById('s-expired').textContent = expired;
-  document.getElementById('s-trial').textContent = trial;
-  document.getElementById('s-suspended').textContent = suspended;
-  document.getElementById('s-mrr').textContent = K(mrr);
-
-  // recent activations (top 5 by activatedAt)
-  const recSorted = recent.sort((a,b)=>(b.activatedAt||0)-(a.activatedAt||0)).slice(0,5);
-  const recTbody = document.getElementById('recent-activations');
-  recTbody.innerHTML = recSorted.length ? recSorted.map(b => `
-    <tr>
-      <td>${b.companyName}</td>
-      <td>${tierBadge(b.tier)}</td>
-      <td class="mono">${fmtDate(b.activatedAt)}</td>
-      <td class="mono">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
-    </tr>`).join('') : '<tr><td colspan="4" class="empty">No activations yet.</td></tr>';
-
-  // expiring soon
-  const expTbody = document.getElementById('expiring-soon');
-  const expSort = expiring.sort((a,b)=>(a.expiry||0)-(b.expiry||0));
-  expTbody.innerHTML = expSort.length ? expSort.map(b => {
-    const dl = daysLeft(b.expiry);
-    return `<tr>
-      <td>${b.companyName}</td>
-      <td>${tierBadge(b.tier)}</td>
-      <td class="mono" style="color:var(--amber)">${fmtDate(b.expiry)} (${dl}d)</td>
-      <td><button class="action-btn success" onclick="openSubModal('${b.uid}')">Renew</button></td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="4" class="empty">No businesses expiring soon.</td></tr>';
-}
-
-/* ── BUSINESSES TABLE ────────────────────────────────────────── */
-let showArchived = false;
-
-function renderBusinessTable(list) {
-  const tbody = document.getElementById('biz-table');
-  const visible = list.filter(b => showArchived ? b.archived : !b.archived);
-  if (!visible.length) { tbody.innerHTML = `<tr><td colspan="6" class="empty">${showArchived ? 'No archived businesses.' : 'No businesses found.'}</td></tr>`; return; }
-  tbody.innerHTML = visible.map(b => {
-    const st = licStatus(b);
-    const isSusp = b.suspended;
-    const isArch = b.archived;
-    return `<tr>
-      <td>
-        <div style="font-weight:600;font-size:.88rem">${b.companyName}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${b.uid.slice(0,16)}…</div>
-      </td>
-      <td class="mono" style="font-size:.8rem">${b.adminUsername}</td>
-      <td>${tierBadge(b.tier)}</td>
-      <td>${statusBadge(st)}</td>
-      <td class="mono" style="font-size:.8rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
-      <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-        <button class="action-btn success" onclick="openSubModal('${b.uid}')">Manage Sub</button>
-        <button class="action-btn ${isSusp?'':'danger'}" onclick="openSuspendModal('${b.uid}',${isSusp})">${isSusp?'Unsuspend':'Suspend'}</button>
-        <button class="action-btn ${isArch?'success':'danger'}" onclick="openArchiveModal('${b.uid}',${isArch})">${isArch?'Unarchive':'Archive'}</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function toggleArchivedView() {
-  showArchived = !showArchived;
-  const btn = document.getElementById('archived-toggle-btn');
-  if (btn) btn.textContent = showArchived ? '← Back to Active' : 'View Archived';
-  filterBusinesses();
-}
-
-function filterBusinesses() {
-  const q = document.getElementById('biz-search').value.toLowerCase();
-  const filtered = allBusinesses.filter(b =>
-    b.companyName.toLowerCase().includes(q) || b.adminUsername.toLowerCase().includes(q) || b.uid.includes(q)
-  );
-  renderBusinessTable(filtered);
-}
-
-/* ── SUBSCRIPTIONS TABLE ─────────────────────────────────────── */
-function renderSubTable(list) {
-  const tbody = document.getElementById('sub-table');
-  if (!list.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No businesses.</td></tr>'; return; }
-  tbody.innerHTML = list.map(b => {
-    const st = licStatus(b);
-    return `<tr>
-      <td>
-        <div style="font-weight:600;font-size:.88rem">${b.companyName}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${b.adminUsername}</div>
-      </td>
-      <td>${tierBadge(b.tier)}</td>
-      <td>${statusBadge(st)}</td>
-      <td class="mono" style="font-size:.8rem">${fmtDate(b.activatedAt)}</td>
-      <td class="mono" style="font-size:.8rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
-      <td><button class="action-btn primary" onclick="openSubModal('${b.uid}')">Manage</button></td>
-    </tr>`;
-  }).join('');
-}
-
-function filterSubscriptions() {
-  const q = document.getElementById('sub-search').value.toLowerCase();
-  const filtered = allBusinesses.filter(b =>
-    b.companyName.toLowerCase().includes(q) || b.adminUsername.toLowerCase().includes(q)
-  );
-  renderSubTable(filtered);
-}
-
-/* ── FINANCIALS ──────────────────────────────────────────────── */
-function renderFinancials() {
-  const prices = PRICES();
-  let mrr = 0, totalRevenue = 0, lifetimeCount = 0, activeCount = 0;
-  const byTier = { starter:0, standard:0, pro:0, lifetime:0 };
-  const payments = [];
-
-  allBusinesses.forEach(b => {
-    const st = licStatus(b);
-    if (b.tier === 'lifetime') { lifetimeCount++; totalRevenue += prices.lifetime; byTier.lifetime += prices.lifetime; }
-    else if (st === 'active') { mrr += prices[b.tier]||0; activeCount++; byTier[b.tier] = (byTier[b.tier]||0) + (prices[b.tier]||0); }
-
-    // payment log entries
-    (b.paymentLog || []).forEach(p => payments.push({ ...p, biz: b.companyName }));
-    // Count activatedAt as a payment if no log
-    if (!b.paymentLog?.length && b.tier !== 'trial' && b.activatedAt) {
-      payments.push({ ts: b.activatedAt, amount: prices[b.tier]||0, biz: b.companyName, tier: b.tier, note: b.note || '' });
-    }
-  });
-  totalRevenue += mrr; // rough estimate
-
-  document.getElementById('f-mrr').textContent = K(mrr);
-  document.getElementById('f-total').textContent = K(totalRevenue);
-  document.getElementById('f-lifetime-count').textContent = lifetimeCount;
-  document.getElementById('f-active-count').textContent = activeCount;
-
-  // Plan breakdown bars
-  const maxVal = Math.max(...Object.values(byTier), 1);
-  const colors = { starter:'#2fbe6a', standard:'#4a9eff', pro:'#a78bfa', lifetime:'#c084fc' };
-  const labels = { starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
-  document.getElementById('plan-breakdown').innerHTML = Object.entries(byTier).map(([t,v]) => `
-    <div class="revenue-bar-wrap">
-      <div class="revenue-bar-label"><span>${labels[t]}</span><span style="color:var(--text)">${K(v)}</span></div>
-      <div class="revenue-bar-track">
-        <div class="revenue-bar-fill" style="width:${Math.round(v/maxVal*100)}%;background:${colors[t]}"></div>
+function renderHome() {
+  activeApp = null;
+  document.getElementById('topbar-title').innerHTML = 'NEXLITE <span class="dim">— Admin Console</span>';
+  document.getElementById('frame-wrap').innerHTML = `
+    <div class="home">
+      <h1>Your apps</h1>
+      <p class="sub">Pick an app to manage its groups, businesses, tiers, and requests.</p>
+      <div class="app-grid">
+        ${APPS.map(a => `
+          <div class="app-card ${a.available ? '' : 'disabled'}" ${a.available ? `onclick="openApp('${a.id}')"` : ''}>
+            <div class="mark" style="background:${a.color}">${a.initials}</div>
+            <h3>${a.name}</h3>
+            <p>${a.desc}</p>
+            <span class="tag">${a.available ? 'Open panel' : 'File not added yet'}</span>
+          </div>`).join('')}
       </div>
-    </div>
-  `).join('');
-
-  // Payment log
-  payments.sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const logEl = document.getElementById('payment-log');
-  logEl.innerHTML = payments.length ? payments.slice(0,50).map(p => `
-    <div class="payment-row">
-      <div class="payment-amount">${K(p.amount||0)}</div>
-      <div>
-        <div style="font-size:.85rem">${p.biz}</div>
-        <div class="payment-meta">${tierBadge(p.tier||'—')} &nbsp; ${fmtDate(p.ts)} ${p.note?'· '+p.note:''}</div>
-      </div>
-    </div>
-  `).join('') : '<div class="empty">No payment records yet.</div>';
+    </div>`;
+  renderNav();
 }
 
-/* ── SUSPEND MODAL ───────────────────────────────────────────── */
-let _suspendTarget = null;
-let _suspendAction = null;
-function openSuspendModal(uid, isSuspended) {
-  const biz = allBusinesses.find(b => b.uid === uid);
-  _suspendTarget = uid;
-  _suspendAction = isSuspended ? 'unsuspend' : 'suspend';
-  document.getElementById('modal-suspend-title').textContent = isSuspended ? 'Unsuspend Business' : 'Suspend Business';
-  document.getElementById('modal-suspend-desc').textContent = isSuspended
-    ? `This will restore access for "${biz?.companyName}". The business will be able to log in again immediately.`
-    : `This will block all logins for "${biz?.companyName}". The business will see an account suspended message.`;
-  const btn = document.getElementById('modal-suspend-confirm');
-  btn.textContent = isSuspended ? 'Unsuspend' : 'Suspend';
-  btn.className = 'action-btn ' + (isSuspended ? 'success' : 'danger');
-  document.getElementById('modal-suspend').classList.add('open');
-}
-async function confirmSuspend() {
-  if (!_suspendTarget) return;
-  const biz = allBusinesses.find(b => b.uid === _suspendTarget);
-  const suspend = _suspendAction === 'suspend';
-  try {
-    await fbPatch(`businesses/${_suspendTarget}/settings`, { suspended: suspend });
-    biz.suspended = suspend;
-    closeModal('modal-suspend');
-    renderBusinessTable(allBusinesses);
-    renderSubTable(allBusinesses);
-    renderOverview();
-    toast(`"${biz.companyName}" ${suspend ? 'suspended' : 'unsuspended'}.`, 'ok');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
+function openApp(id) {
+  const app = APPS.find(a => a.id === id);
+  if (!app || !app.available) return;
+  activeApp = id;
+  document.getElementById('topbar-title').innerHTML =
+    `<span class="dim">NEXLITE /</span> ${app.name}`;
+  document.getElementById('frame-wrap').innerHTML =
+    `<iframe src="${app.src}" title="${app.name}"></iframe>`;
+  renderNav();
+  closeSidebar();
 }
 
-/* ── ARCHIVE MODAL ───────────────────────────────────────────── */
-let _archiveTarget = null;
-let _archiveAction = null;
-function openArchiveModal(uid, isArchived) {
-  const biz = allBusinesses.find(b => b.uid === uid);
-  _archiveTarget = uid;
-  _archiveAction = isArchived ? 'unarchive' : 'archive';
-  document.getElementById('modal-archive-title').textContent = isArchived ? 'Unarchive Business' : 'Archive Business';
-  document.getElementById('modal-archive-desc').textContent = isArchived
-    ? `This will restore "${biz?.companyName}" to the active businesses list. It will not automatically un-suspend them if they were also suspended.`
-    : `This hides "${biz?.companyName}" from the active list and blocks their logins, same as suspending. Their data is kept and nothing is deleted — you can unarchive at any time. Use this for accounts you consider closed/churned, to keep them out of your active view.`;
-  const btn = document.getElementById('modal-archive-confirm');
-  btn.textContent = isArchived ? 'Unarchive' : 'Archive';
-  btn.className = 'action-btn ' + (isArchived ? 'success' : 'danger');
-  document.getElementById('modal-archive').classList.add('open');
-}
-async function confirmArchive() {
-  if (!_archiveTarget) return;
-  const biz = allBusinesses.find(b => b.uid === _archiveTarget);
-  const archive = _archiveAction === 'archive';
-  try {
-    // Archiving also sets suspended so login is blocked; unarchiving does NOT auto-unsuspend,
-    // since the two states are tracked independently and a business could have been suspended
-    // for an unrelated reason before being archived.
-    const patch = archive ? { archived: true, suspended: true } : { archived: false };
-    await fbPatch(`businesses/${_archiveTarget}/settings`, patch);
-    biz.archived = archive;
-    if (archive) biz.suspended = true;
-    closeModal('modal-archive');
-    renderBusinessTable(allBusinesses);
-    renderSubTable(allBusinesses);
-    renderOverview();
-    toast(`"${biz.companyName}" ${archive ? 'archived' : 'unarchived'}.`, 'ok');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
-}
+// Clicking the logo/home area returns to the app grid
+document.querySelector('.sidebar-logo').style.cursor = 'pointer';
+document.querySelector('.sidebar-logo').addEventListener('click', renderHome);
 
-/* ── SUBSCRIPTION MODAL ──────────────────────────────────────── */
-let _subTarget = null;
-function openSubModal(uid) {
-  const biz = allBusinesses.find(b => b.uid === uid);
-  _subTarget = uid;
-  document.getElementById('modal-sub-uid').value = uid;
-  document.getElementById('modal-sub-biz').textContent = `${biz?.companyName} · ${biz?.adminUsername}`;
-  document.getElementById('modal-sub-tier').value = biz?.tier || 'trial';
-  document.getElementById('modal-sub-txnid').value = '';
-  document.getElementById('modal-sub-note').value = biz?.note || '';
-  const expiry = biz?.expiry ? new Date(biz.expiry).toISOString().slice(0,10) : '';
-  document.getElementById('modal-sub-expiry').value = expiry;
-  document.getElementById('modal-sub-err').style.display = 'none';
-  toggleExpiryRow();
-  document.getElementById('modal-sub').classList.add('open');
-}
-function toggleExpiryRow() {
-  const tier = document.getElementById('modal-sub-tier').value;
-  document.getElementById('modal-sub-expiry-row').style.display = tier === 'lifetime' ? 'none' : '';
-}
-document.getElementById('modal-sub-tier').addEventListener('change', toggleExpiryRow);
-
-async function saveSubscription() {
-  const uid    = document.getElementById('modal-sub-uid').value;
-  const tier   = document.getElementById('modal-sub-tier').value;
-  const txnId  = document.getElementById('modal-sub-txnid').value.trim();
-  const note   = document.getElementById('modal-sub-note').value.trim();
-  const errEl  = document.getElementById('modal-sub-err');
-  errEl.style.display = 'none';
-
-  if (!txnId) {
-    errEl.textContent = 'Transaction ID is required.';
-    errEl.style.display = 'block';
-    document.getElementById('modal-sub-txnid').focus();
-    return;
-  }
-
-  let expiry = null;
-  if (tier !== 'lifetime') {
-    const dateVal = document.getElementById('modal-sub-expiry').value;
-    if (!dateVal) { errEl.textContent = 'Please set an expiry date.'; errEl.style.display = 'block'; return; }
-    expiry = new Date(dateVal).getTime();
-  }
-
-  const prices = PRICES();
-  const biz = allBusinesses.find(b => b.uid === uid);
-  const licData = {
-    tier, expiry, activatedAt: Date.now(), txnId, note,
-    paymentLog: [
-      ...(biz?.paymentLog || []),
-      { ts: Date.now(), tier, amount: prices[tier]||0, txnId, note }
-    ]
-  };
-
-  try {
-    await fbPatch(`businesses/${uid}/settings`, { licenseData: licData });
-    // Update local cache
-    biz.tier = tier; biz.expiry = expiry; biz.activatedAt = licData.activatedAt; biz.note = note;
-    biz.paymentLog = licData.paymentLog;
-    closeModal('modal-sub');
-    renderBusinessTable(allBusinesses);
-    renderSubTable(allBusinesses);
-    renderOverview();
-    renderFinancials();
-    toast(`Subscription updated for "${biz?.companyName}".`, 'ok');
-    // If activated from a request, mark it as done
-    if (window._pendingDismissUid && window._pendingDismissReqId) {
-      try {
-        await fbPatch(`subscriptionRequests/${window._pendingDismissUid}/${window._pendingDismissReqId}`, { status: 'done' });
-        const r = allRequests.find(r => r.uid === window._pendingDismissUid && r.reqId === window._pendingDismissReqId);
-        if (r) r.status = 'done';
-        renderRequestsTable(allRequests);
-        updateReqBadge(allRequests.filter(r => r.status === 'pending').length);
-      } catch(e) {
-        if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
-      }
-      window._pendingDismissUid = null;
-      window._pendingDismissReqId = null;
-    }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
-}
-
-/* ── SETTINGS ────────────────────────────────────────────────── */
-function loadSettingsForm() {
-  document.getElementById('cfg-phone').value    = panelCfg.phone    || '';
-  document.getElementById('cfg-whatsapp').value = panelCfg.whatsapp || '';
-}
-function saveSettings() {
-  panelCfg = {
-    phone:    document.getElementById('cfg-phone').value.trim(),
-    whatsapp: document.getElementById('cfg-whatsapp').value.trim(),
-  };
-  localStorage.setItem(OWNER_PANEL_KEY, JSON.stringify(panelCfg));
-  toast('Settings saved.', 'ok');
-}
-async function changePassword() {
-  const np = prompt('Enter new password (min 8 chars):');
-  if (!np || np.length < 8) { toast('Password must be at least 8 characters.', 'err'); return; }
-  try {
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FB.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: authToken, password: np, returnSecureToken: true })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error?.message || 'Failed');
-    authToken = d.idToken;
-    toast('Password changed successfully.', 'ok');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
-}
-
-/* ── MODAL UTILS ─────────────────────────────────────────────── */
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
-
-/* ── SIDEBAR TOGGLE ──────────────────────────────────────────── */
 function toggleSidebar() {
-  const sb  = document.querySelector('.sidebar');
-  const btn = document.getElementById('ham-btn');
-  const bd  = document.getElementById('sidebar-backdrop');
-  if (window.innerWidth <= 680) {
-    const open = sb.classList.toggle('open');
-    btn.classList.toggle('open', open);
-    bd.classList.toggle('open', open);
-  } else {
-    const collapsed = sb.classList.toggle('collapsed');
-    btn.classList.toggle('open', !collapsed);
-  }
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  const open = sb.classList.toggle('open');
+  bd.classList.toggle('open', open);
 }
 function closeSidebar() {
-  document.querySelector('.sidebar').classList.remove('open');
-  document.getElementById('ham-btn').classList.remove('open');
+  if (window.innerWidth > 720) return;
+  document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebar-backdrop').classList.remove('open');
 }
-// Close sidebar on nav item tap (mobile)
-document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => {
-  if (window.innerWidth <= 680) closeSidebar();
-}));
+document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
 
-/* ── REQUESTS ───────────────────────────────────────────────── */
-let allRequests = [];
-
-async function loadRequests() {
-  try {
-    const raw = await fbGet('subscriptionRequests');
-    if (!raw) { allRequests = []; renderRequestsTable([]); updateReqBadge(0); return; }
-    // Each uid holds one or more requests keyed by requestId:
-    // subscriptionRequests/{uid}/{requestId} -> { companyName, phone, tier, ... }
-    allRequests = [];
-    Object.entries(raw).forEach(([uid, reqsByUid]) => {
-      if (!reqsByUid || typeof reqsByUid !== 'object') return;
-      Object.entries(reqsByUid).forEach(([reqId, r]) => {
-        if (r && typeof r === 'object') allRequests.push({ ...r, uid, reqId });
-      });
-    });
-    allRequests.sort((a,b) => (b.ts||0) - (a.ts||0));
-    renderRequestsTable(allRequests);
-    const pending = allRequests.filter(r => r.status === 'pending').length;
-    updateReqBadge(pending);
-  } catch(e) {
-    console.warn('Requests load failed:', e);
-  }
-}
-
-function updateReqBadge(n) {
-  const el = document.getElementById('req-badge');
-  if (!el) return;
-  el.textContent = n;
-  el.style.display = n > 0 ? 'inline' : 'none';
-}
-
-function renderRequestsTable(list) {
-  const tbody = document.getElementById('req-table');
-  if (!tbody) return;
-  if (!list.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No requests yet.</td></tr>'; return; }
-  tbody.innerHTML = list.map(r => {
-    const isPending = r.status === 'pending';
-    const txnDisplay = r.txnId
-      ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${r.txnId}</span>`
-      : '<span style="color:var(--muted);font-size:.78rem">—</span>';
-    return `<tr style="${isPending ? '' : 'opacity:.5'}">
-      <td>
-        <div style="font-weight:600;font-size:.88rem">${r.companyName||'—'}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${r.adminUsername||''}</div>
-      </td>
-      <td><a href="tel:${r.phone}" style="color:var(--green)">${r.phone||'—'}</a></td>
-      <td>${tierBadge(r.currentTier||'trial')}</td>
-      <td>${tierBadge(r.tier||'trial')}</td>
-      <td>${txnDisplay}</td>
-      <td style="font-size:.8rem;color:var(--muted);max-width:140px">${r.note||'—'}</td>
-      <td class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
-      <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-        ${isPending ? `<button class="action-btn primary" onclick="activateFromRequest('${r.uid}','${r.reqId}')">Activate</button>
-        <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>` : `<span style="color:var(--muted);font-size:.8rem">Done</span>`}
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function activateFromRequest(uid, reqId) {
-  // Open subscription modal pre-filled with requested tier
-  const req = allRequests.find(r => r.uid === uid && r.reqId === reqId);
-  if (!req) return;
-  // Make sure business is in allBusinesses (may not be if rules differ)
-  let biz = allBusinesses.find(b => b.uid === uid);
-  if (!biz) {
-    // Add a temporary entry so modal works
-    biz = { uid, companyName: req.companyName, adminUsername: req.adminUsername, tier: req.currentTier||'trial', expiry: null, paymentLog: [] };
-    allBusinesses.push(biz);
-  }
-  openSubModal(uid);
-  // Pre-select requested tier
-  setTimeout(() => {
-    document.getElementById('modal-sub-tier').value = req.tier || 'starter';
-    const noteVal = [req.txnId ? `Txn: ${req.txnId}` : '', req.note || ''].filter(Boolean).join(' · ');
-    const txnFromReq = req.txnId || '';
-    document.getElementById('modal-sub-txnid').value = txnFromReq;
-    document.getElementById('modal-sub-note').value = req.note || '';
-    toggleExpiryRow();
-    // Set expiry to 1 month from today by default
-    if (req.tier !== 'lifetime') {
-      const d = new Date(); d.setMonth(d.getMonth() + 1);
-      document.getElementById('modal-sub-expiry').value = d.toISOString().slice(0,10);
-    }
-  }, 50);
-  // Mark as done after save (hook into saveSubscription success)
-  window._pendingDismissUid = uid;
-  window._pendingDismissReqId = reqId;
-}
-
-async function dismissRequest(uid, reqId) {
-  try {
-    await fbPatch(`subscriptionRequests/${uid}/${reqId}`, { status: 'dismissed' });
-    const r = allRequests.find(r => r.uid === uid && r.reqId === reqId);
-    if (r) r.status = 'dismissed';
-    renderRequestsTable(allRequests);
-    const pending = allRequests.filter(r => r.status === 'pending').length;
-    updateReqBadge(pending);
-    toast('Request dismissed.', 'ok');
-  } catch(e) {
-    toast('Error: ' + e.message, 'err');
-    if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
-  }
-}
-let _toastTimer;
-function toast(msg, type='ok') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'show ' + type;
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.className = '', 3000);
-}
+renderHome();
 </script>
 </body>
 </html>
