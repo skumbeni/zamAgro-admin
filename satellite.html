@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDM Admin — Manager Licenses</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+  :root{
+    --ink:#231a12; --paper:#fbf7ef; --card:#fffdf9;
+    --gold:#b8862f; --gold-dark:#8a641f; --line:#e7dcc7;
+    --rust:#9c3b2e; --good:#2f6f4e;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper); color:var(--ink); min-height:100vh;
+  }
+  .topbar{
+    background:linear-gradient(135deg,#3a2c18,#241a0e); color:#f3e6c8;
+    padding:18px 20px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .topbar h1{ font-size:16px; margin:0; letter-spacing:.3px; font-weight:700; }
+  .topbar h1 span{ color:var(--gold); }
+  .topbar .who{ font-size:12px; opacity:.8; }
+  .wrap{ max-width:480px; margin:0 auto; padding:20px 16px 60px; }
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:20px; margin-bottom:16px; box-shadow:0 1px 2px rgba(35,26,18,.04);
+  }
+  .card h2{ font-size:15px; margin:0 0 4px; }
+  .card .sub{ font-size:12px; color:#8a7b62; font-weight:400; }
+  label{ display:block; font-size:12px; font-weight:600; margin:14px 0 4px; color:#5c4a30; }
+  input, select{
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:9px;
+    font-size:15px; background:#fff; color:var(--ink);
+  }
+  input:focus, select:focus{ outline:none; border-color:var(--gold); }
+  .row2{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:end; }
+  .btn{
+    display:inline-block; width:100%; padding:12px; margin-top:16px; border:none;
+    border-radius:9px; background:var(--gold); color:#221a0d; font-weight:700;
+    font-size:15px; cursor:pointer; text-align:center;
+  }
+  .btn:hover{ background:var(--gold-dark); color:#fff; }
+  .btn:disabled{ opacity:.55; cursor:default; }
+  .btn.secondary{ background:transparent; border:1px solid var(--line); color:var(--ink); font-weight:600; }
+  .err{ display:none; margin-top:10px; padding:9px 11px; background:#fbe9e6; color:var(--rust); border-radius:8px; font-size:13px; }
+  .err.show{ display:block; }
+  .ok{ display:none; margin-top:10px; padding:9px 11px; background:#e9f4ee; color:var(--good); border-radius:8px; font-size:13px; }
+  .ok.show{ display:block; }
+  .muted{ color:#8a7b62; font-size:12px; }
+  .pill{ display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:99px; }
+  .pill.active{ background:#e9f4ee; color:var(--good); }
+  .pill.inactive{ background:#fbe9e6; color:var(--rust); }
+  .pill.none{ background:#f1ece0; color:#8a7b62; }
+  #gate{ max-width:360px; margin:80px auto 0; }
+  #app{ display:none; }
+  .result-head{ display:flex; align-items:center; justify-content:space-between; margin-top:2px; }
+  .logout{ background:none; border:none; color:#f3e6c8; opacity:.75; font-size:12px; cursor:pointer; text-decoration:underline; padding:0; }
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar" style="display:none;">
+  <h1>SDM <span>Admin</span></h1>
+  <div class="who">
+    <span id="whoEmail"></span> ·
+    <button class="logout" id="logoutBtn" type="button">Sign out</button>
+  </div>
+</div>
+
+<!-- SIGN-IN GATE -->
+<div class="wrap" id="gate">
+  <div class="card" style="margin-top:60px;">
+    <h2>SDM Admin</h2>
+    <p class="sub">Sign in with the admin's Firebase account to manage manager licenses.</p>
+    <label>Email</label>
+    <input type="email" id="loginEmail" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="loginPassword" autocomplete="current-password">
+    <div class="err" id="loginError"></div>
+    <button class="btn" type="button" id="loginBtn">Sign in</button>
+  </div>
+</div>
+
+<!-- ADMIN APP -->
+<div class="wrap" id="app">
+  <div class="card" id="requestsCard">
+    <div class="result-head">
+      <h2 style="margin:0;">Subscription requests</h2>
+      <button class="logout" type="button" id="refreshRequestsBtn" style="color:var(--gold-dark);">Refresh</button>
+    </div>
+    <p class="sub" style="margin-top:2px;">Sent by managers from the app's Settings tab.</p>
+    <div id="requestsList" class="muted" style="margin-top:10px;">Loading…</div>
+  </div>
+
+  <div class="card">
+    <h2>Look up a manager</h2>
+    <p class="sub">Search by the username they use to log into Satellite Depot Manager.</p>
+    <div class="row2">
+      <div>
+        <label style="margin-top:0;">Username</label>
+        <input type="text" id="lookupUsername" autocapitalize="off" placeholder="e.g. skumbeni">
+      </div>
+      <button class="btn" style="margin-top:0;width:auto;padding:11px 18px;" type="button" id="lookupBtn">Find</button>
+    </div>
+    <div class="err" id="lookupError"></div>
+  </div>
+
+  <div class="card" id="licenseCard" style="display:none;">
+    <div class="result-head">
+      <h2 id="managerLabel" style="margin:0;"></h2>
+      <span class="pill" id="statusPill"></span>
+    </div>
+    <p class="muted" id="managerMeta" style="margin-top:2px;"></p>
+
+    <label>Plan</label>
+    <select id="planPreset">
+      <option value="free">Free — 2 depots, 4 Supervisor logins</option>
+      <option value="tier3">3 depots — K120/mo · K650/6mo · K1,200/yr</option>
+      <option value="tier6">4–6 depots — K400/mo · K2,150/6mo · K4,000/yr</option>
+      <option value="tier12">7–12 depots — K800/mo · K4,350/6mo · K8,000/yr</option>
+      <option value="custom">13+ depots — custom pricing, unlimited</option>
+      <option value="">— Set fields manually —</option>
+    </select>
+
+    <label>Billing period</label>
+    <select id="billingPeriod">
+      <option value="monthly">Monthly</option>
+      <option value="sixmonth">6-Month</option>
+      <option value="annual">Annual</option>
+    </select>
+
+    <button class="btn secondary" type="button" id="applyPlanBtn">Apply plan to fields below</button>
+    <p class="muted" style="margin-top:6px;">Fills in Status/Expiry/Max depots/Max supervisor logins for you — review before saving. Applying doesn't save by itself.</p>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0;">
+
+    <label>Status</label>
+    <select id="licStatus">
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+
+    <label>Expires on <span class="muted">(blank = no expiry)</span></label>
+    <input type="date" id="licExpiry">
+
+    <label>Max depots <span class="muted">(blank = unlimited)</span></label>
+    <input type="number" id="licMaxDepots" min="0">
+
+    <label>Max supervisor logins <span class="muted">(blank = unlimited)</span></label>
+    <input type="number" id="licMaxClerks" min="0">
+
+    <div class="err" id="saveError"></div>
+    <div class="ok" id="saveOk">License saved.</div>
+    <button class="btn" type="button" id="saveBtn">Save license</button>
+  </div>
+</div>
+
+<script>
+/* ===================== Firebase project (same project as the main
+   Satellite Depot Manager app - only the auth account signing in here
+   is different: this admin account is a real Firebase Auth email/password
+   user, not one of the app's own username/password manager accounts). ===================== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBnfmuR0RNSPMMD77KNFrnw4_6aQgg0F74",
+  authDomain: "satelite-depot-manager.firebaseapp.com",
+  databaseURL: "https://satelite-depot-manager-default-rtdb.firebaseio.com",
+  projectId: "satelite-depot-manager",
+  storageBucket: "satelite-depot-manager.firebasestorage.app",
+  messagingSenderId: "953840553698",
+  appId: "1:953840553698:web:455384bb2ffe3b53a798bb"
+};
+
+// The only Firebase Auth email allowed to use this page. The matching
+// RTDB rule (database.rules.json) gates on this account's fixed UID
+// rather than this email, since a UID can never change.
+const ADMIN_EMAIL = 'skumbeni@gmail.com';
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+
+function $(id){ return document.getElementById(id); }
+function showErr(el, msg){ el.textContent = msg; el.classList.add('show'); }
+function hideErr(el){ el.classList.remove('show'); }
+
+/* ---- RTDB REST helpers (no Firebase Database SDK needed) ---- */
+async function rtdbGet(path, query){
+  const token = await auth.currentUser.getIdToken();
+  const base = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
+  const params = new URLSearchParams(query || {});
+  params.set('auth', token);
+  const res = await fetch(`${base}/${path}.json?${params.toString()}`);
+  if(!res.ok) throw new Error('Request failed: ' + res.status);
+  return res.status === 204 ? null : res.json();
+}
+async function rtdbPut(path, value){
+  const token = await auth.currentUser.getIdToken();
+  const base = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
+  const res = await fetch(`${base}/${path}.json?auth=${encodeURIComponent(token)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(value)
+  });
+  if(!res.ok) throw new Error('Save failed: ' + res.status + ' (check the RTDB rule allows this admin email to write)');
+  return res.json();
+}
+async function rtdbDelete(path){
+  const token = await auth.currentUser.getIdToken();
+  const base = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
+  const res = await fetch(`${base}/${path}.json?auth=${encodeURIComponent(token)}`, { method: 'DELETE' });
+  if(!res.ok) throw new Error('Delete failed: ' + res.status);
+  return res.json();
+}
+
+async function findManagerByUsername(username){
+  const result = await rtdbGet('satDepotManagerUsers', {
+    orderBy: JSON.stringify('username'),
+    equalTo: JSON.stringify(username),
+    limitToFirst: '1'
+  });
+  if(!result) return null;
+  const [id, user] = Object.entries(result)[0];
+  return { id, user };
+}
+
+/* ---- Sign-in gate ---- */
+auth.onAuthStateChanged(user=>{
+  if(user && user.email === ADMIN_EMAIL){
+    $('gate').style.display = 'none';
+    $('app').style.display = '';
+    $('topbar').style.display = 'flex';
+    $('whoEmail').textContent = user.email;
+    loadSubscriptionRequests();
+  } else {
+    if(user) auth.signOut(); // signed in, but not the admin account
+    $('gate').style.display = '';
+    $('app').style.display = 'none';
+    $('topbar').style.display = 'none';
+  }
+});
+
+$('loginBtn').addEventListener('click', async ()=>{
+  hideErr($('loginError'));
+  const email = $('loginEmail').value.trim();
+  const password = $('loginPassword').value;
+  if(!email || !password){ showErr($('loginError'), 'Enter your email and password.'); return; }
+  const btn = $('loginBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try{
+    await auth.signInWithEmailAndPassword(email, password);
+  }catch(e){
+    showErr($('loginError'), e.message || 'Could not sign in.');
+  }
+  btn.disabled = false; btn.textContent = 'Sign in';
+});
+
+$('logoutBtn').addEventListener('click', ()=> auth.signOut());
+
+/* ---- Subscription requests (sent from the app's Settings tab) ---- */
+const PLAN_LABELS = { free:'Free', tier3:'3 depots', tier6:'4–6 depots', tier12:'7–12 depots', custom:'13+ depots (custom)' };
+const REQ_BILLING_LABELS = { monthly:'Monthly', sixmonth:'6-Month', annual:'Annual' };
+let lastRequestEntries = [];
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadSubscriptionRequests(){
+  const el = $('requestsList');
+  el.textContent = 'Loading…';
+  try{
+    const all = await rtdbGet('subscriptionRequests');
+    const entries = all ? Object.entries(all).filter(([id, r])=> r && r.status === 'pending') : [];
+    entries.sort((a, b)=> (b[1].requestedAt || 0) - (a[1].requestedAt || 0));
+    lastRequestEntries = entries;
+    if(!entries.length){ el.textContent = 'No pending requests.'; return; }
+    el.innerHTML = entries.map(([id, r])=>{
+      const planText = PLAN_LABELS[r.plan] || r.plan || '?';
+      const billingText = REQ_BILLING_LABELS[r.billingPeriod] || r.billingPeriod || '';
+      const when = r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '';
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
+        <div style="font-weight:700;color:var(--ink);">${escapeHtml(r.name || r.username || id)}</div>
+        <div class="muted" style="font-size:12px;">@${escapeHtml(r.username || '')} · ${escapeHtml(planText)} · ${escapeHtml(billingText)}${when ? ' · ' + escapeHtml(when) : ''}</div>
+        ${r.transactionId ? `<div class="muted" style="font-size:12px;margin-top:2px;">Txn ID: <b>${escapeHtml(r.transactionId)}</b></div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn secondary" style="margin-top:0;width:auto;padding:8px 14px;" type="button" data-review="${escapeHtml(id)}">Review</button>
+          <button class="btn secondary" style="margin-top:0;width:auto;padding:8px 14px;color:var(--rust);" type="button" data-dismiss="${escapeHtml(id)}">Dismiss</button>
+        </div>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('[data-review]').forEach(btn=>{
+      btn.addEventListener('click', ()=> reviewRequest(btn.getAttribute('data-review')));
+    });
+    el.querySelectorAll('[data-dismiss]').forEach(btn=>{
+      btn.addEventListener('click', ()=> dismissRequest(btn.getAttribute('data-dismiss')));
+    });
+  }catch(e){
+    el.textContent = 'Could not load requests: ' + (e.message || 'try again.');
+  }
+}
+
+// Loads the requesting manager into the lookup card below and pre-fills
+// the plan/billing they asked for - admin still reviews and hits Save.
+function reviewRequest(userId){
+  const entry = lastRequestEntries.find(([id])=> id === userId);
+  if(!entry) return;
+  const r = entry[1];
+  $('lookupUsername').value = r.username || '';
+  $('lookupBtn').click();
+  let tries = 0;
+  const tryFill = ()=>{
+    tries++;
+    if($('licenseCard').style.display === 'none'){
+      if(tries < 15) setTimeout(tryFill, 200);
+      return;
+    }
+    if(r.plan){ $('planPreset').value = r.plan; }
+    if(r.billingPeriod){ $('billingPeriod').value = r.billingPeriod; }
+    if(r.plan) $('applyPlanBtn').click();
+    $('licenseCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  setTimeout(tryFill, 300);
+}
+
+async function dismissRequest(userId){
+  if(!confirm("Dismiss this request without changing the manager's license?")) return;
+  try{
+    await rtdbDelete(`subscriptionRequests/${userId}`);
+    loadSubscriptionRequests();
+  }catch(e){
+    alert('Could not dismiss: ' + (e.message || 'try again.'));
+  }
+}
+
+$('refreshRequestsBtn').addEventListener('click', loadSubscriptionRequests);
+
+/* ---- Manager lookup + license editor ---- */
+let currentManagerId = null;
+
+$('lookupBtn').addEventListener('click', async ()=>{
+  hideErr($('lookupError'));
+  $('licenseCard').style.display = 'none';
+  $('saveOk').classList.remove('show');
+  const username = $('lookupUsername').value.trim();
+  if(!username){ showErr($('lookupError'), 'Enter a username.'); return; }
+  const btn = $('lookupBtn');
+  btn.disabled = true; btn.textContent = 'Finding…';
+  try{
+    const found = await findManagerByUsername(username);
+    if(!found || found.user.deleted) throw new Error('No account found with that username.');
+    if(found.user.role !== 'ASSISTANT') throw new Error('That account is a Supervisor, not a Manager — licenses are set on Manager accounts.');
+    currentManagerId = found.id;
+    const lic = found.user.license || {};
+    $('managerLabel').textContent = found.user.name || found.user.username;
+    $('managerMeta').textContent = `@${found.user.username}`;
+    $('licStatus').value = lic.status === 'inactive' ? 'inactive' : (lic.status === 'active' ? 'active' : 'active');
+    $('licExpiry').value = lic.expiresAt ? new Date(lic.expiresAt).toISOString().slice(0,10) : '';
+    $('licMaxDepots').value = (lic.maxDepots != null) ? lic.maxDepots : '';
+    $('licMaxClerks').value = (lic.maxClerks != null) ? lic.maxClerks : '';
+    renderStatusPill(lic);
+    $('licenseCard').style.display = '';
+  }catch(e){
+    showErr($('lookupError'), e.message || 'Lookup failed.');
+  }
+  btn.disabled = false; btn.textContent = 'Find';
+});
+
+/* ---- Plan presets (Option B pricing) - fills the license fields for
+   you; doesn't save on its own, Save license below still does that. ---- */
+const PLAN_PRESETS = {
+  free:   { maxDepots: 2,  maxClerks: 4  },
+  tier3:  { maxDepots: 3,  maxClerks: 8  },
+  tier6:  { maxDepots: 6,  maxClerks: 12 },
+  tier12: { maxDepots: 12, maxClerks: 20 },
+  custom: { maxDepots: null, maxClerks: null }
+};
+const BILLING_MONTHS = { monthly: 1, sixmonth: 6, annual: 12 };
+
+function addMonths(date, months){
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+$('applyPlanBtn').addEventListener('click', ()=>{
+  const plan = $('planPreset').value;
+  if(!plan) return; // "Set fields manually" - leave everything as-is
+  const preset = PLAN_PRESETS[plan];
+  $('licStatus').value = 'active';
+  $('licMaxDepots').value = (preset.maxDepots != null) ? preset.maxDepots : '';
+  $('licMaxClerks').value = (preset.maxClerks != null) ? preset.maxClerks : '';
+  if(plan === 'free' || plan === 'custom'){
+    // Free is free forever; custom (13+ depots) is negotiated separately -
+    // leave expiry blank rather than guessing a billing period for either.
+    $('licExpiry').value = '';
+  } else {
+    const months = BILLING_MONTHS[$('billingPeriod').value] || 1;
+    $('licExpiry').value = addMonths(new Date(), months).toISOString().slice(0,10);
+  }
+});
+
+function renderStatusPill(lic){
+  const pill = $('statusPill');
+  if(!lic || !lic.status){ pill.textContent = 'No license set'; pill.className = 'pill none'; return; }
+  const expired = lic.expiresAt && Date.now() > lic.expiresAt;
+  if(lic.status === 'active' && !expired){ pill.textContent = 'Active'; pill.className = 'pill active'; }
+  else { pill.textContent = expired ? 'Expired' : 'Inactive'; pill.className = 'pill inactive'; }
+}
+
+$('saveBtn').addEventListener('click', async ()=>{
+  hideErr($('saveError'));
+  $('saveOk').classList.remove('show');
+  if(!currentManagerId) return;
+  const status = $('licStatus').value;
+  const expiryStr = $('licExpiry').value;
+  const maxDepotsStr = $('licMaxDepots').value;
+  const maxClerksStr = $('licMaxClerks').value;
+  const license = {
+    status,
+    expiresAt: expiryStr ? new Date(expiryStr + 'T23:59:59').getTime() : null,
+    maxDepots: maxDepotsStr !== '' ? parseInt(maxDepotsStr, 10) : null,
+    maxClerks: maxClerksStr !== '' ? parseInt(maxClerksStr, 10) : null,
+    updatedAt: Date.now()
+  };
+  const btn = $('saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    await rtdbPut(`satDepotManagerUsers/${currentManagerId}/license`, license);
+    renderStatusPill(license);
+    $('saveOk').classList.add('show');
+    // Best-effort: clear this manager's pending request, if any, now that
+    // their license has been actioned. Failing silently is fine here -
+    // the admin can still Dismiss it manually from the list above.
+    rtdbDelete(`subscriptionRequests/${currentManagerId}`).then(loadSubscriptionRequests).catch(()=>{});
+  }catch(e){
+    showErr($('saveError'), e.message || 'Could not save license.');
+  }
+  btn.disabled = false; btn.textContent = 'Save license';
+});
+</script>
+</body>
+</html>
