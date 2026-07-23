@@ -96,6 +96,29 @@
     <div id="requestsList" class="muted" style="margin-top:10px;">Loading…</div>
   </div>
 
+  <div class="card" id="financialCard">
+    <h2 style="margin:0;">Financial summary</h2>
+    <p class="sub" style="margin-top:2px;">Estimated recurring revenue across all registered businesses.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+      <div><div class="muted" style="font-size:11px;">Total businesses</div><div style="font-size:20px;font-weight:700;" id="finTotal">—</div></div>
+      <div><div class="muted" style="font-size:11px;">Active licenses</div><div style="font-size:20px;font-weight:700;color:var(--good);" id="finActive">—</div></div>
+      <div><div class="muted" style="font-size:11px;">Inactive / expired</div><div style="font-size:20px;font-weight:700;color:var(--rust);" id="finInactiveExpired">—</div></div>
+      <div><div class="muted" style="font-size:11px;">Free / no license</div><div style="font-size:20px;font-weight:700;" id="finFree">—</div></div>
+      <div><div class="muted" style="font-size:11px;">Est. MRR</div><div style="font-size:20px;font-weight:700;color:var(--gold-dark);" id="finMRR">—</div></div>
+      <div><div class="muted" style="font-size:11px;">Est. ARR</div><div style="font-size:20px;font-weight:700;color:var(--gold-dark);" id="finARR">—</div></div>
+    </div>
+    <p class="muted" id="finNote" style="margin-top:12px;font-size:11px;"></p>
+  </div>
+
+  <div class="card" id="businessesCard">
+    <div class="result-head">
+      <h2 style="margin:0;">Registered businesses</h2>
+      <button class="logout" type="button" id="refreshBusinessesBtn" style="color:var(--gold-dark);">Refresh</button>
+    </div>
+    <p class="sub" style="margin-top:2px;">Every Manager account — each represents one depot-operating business.</p>
+    <div id="businessesList" class="muted" style="margin-top:10px;">Loading…</div>
+  </div>
+
   <div class="card">
     <h2>Look up a manager</h2>
     <p class="sub">Search by the username they use to log into Satellite Depot Manager.</p>
@@ -234,6 +257,7 @@ auth.onAuthStateChanged(user=>{
     $('topbar').style.display = 'flex';
     $('whoEmail').textContent = user.email;
     loadSubscriptionRequests();
+    loadBusinesses();
   } else {
     if(user) auth.signOut(); // signed in, but not the admin account
     $('gate').style.display = '';
@@ -263,6 +287,148 @@ $('logoutBtn').addEventListener('click', ()=> auth.signOut());
 const PLAN_LABELS = { free:'Free', tier3:'3 depots', tier6:'4–6 depots', tier12:'7–12 depots', custom:'13+ depots (custom)' };
 const REQ_BILLING_LABELS = { monthly:'Monthly', sixmonth:'6-Month', annual:'Annual' };
 let lastRequestEntries = [];
+
+/* ---- Financial summary / registered businesses -----------------------
+   "Business" here = a Manager (role: ASSISTANT) account - each one runs
+   its own depot(s), so the account itself is the billable unit.
+
+   Revenue is derived from license.plan/license.billingPeriod, which are
+   only stored going forward from this build (set on Save, but only when
+   the admin actually clicked "Apply plan" for this edit - see
+   planJustApplied below, so an unrelated manual edit never silently
+   mislabels a license's plan). Older licenses saved before this field
+   existed fall back to inferPlanFromLimits(), which matches their
+   maxDepots/maxClerks against PLAN_PRESETS - a best-effort guess, flagged
+   as "estimated" in the UI, since the actual billing period they paid
+   isn't recoverable from limits alone (monthly price is used as the
+   estimate in that case). ------------------------------------------- */
+const PLAN_PRICING = {
+  free:   { monthly: 0,   sixmonth: 0,    annual: 0    },
+  tier3:  { monthly: 120, sixmonth: 650,  annual: 1200 },
+  tier6:  { monthly: 400, sixmonth: 2150, annual: 4000 },
+  tier12: { monthly: 800, sixmonth: 4350, annual: 8000 },
+  custom: null // negotiated per-account - no fixed price to estimate from
+};
+let lastBusinessEntries = [];
+
+function inferPlanFromLimits(lic){
+  if(lic.maxDepots == null && lic.maxClerks == null) return 'custom'; // unlimited -> negotiated
+  for(const key of Object.keys(PLAN_PRESETS)){
+    if(key === 'custom') continue;
+    const preset = PLAN_PRESETS[key];
+    if(preset.maxDepots === lic.maxDepots && preset.maxClerks === lic.maxClerks) return key;
+  }
+  return null; // limits don't match any known tier
+}
+
+function monthlyEquivalentRevenue(plan, billingPeriod){
+  const pricing = PLAN_PRICING[plan];
+  if(!pricing) return null; // unknown plan, or 'custom' (negotiated - excluded from totals)
+  const bp = (billingPeriod && BILLING_MONTHS[billingPeriod]) ? billingPeriod : 'monthly';
+  const totalPrice = pricing[bp] != null ? pricing[bp] : pricing.monthly;
+  const months = BILLING_MONTHS[bp] || 1;
+  return totalPrice / months;
+}
+
+// Buckets a manager's current license into a status + estimated MRR
+// contribution, for both the summary tiles and the per-business row.
+function licenseFinancials(user){
+  const lic = user.license || null;
+  if(!lic || !lic.status){
+    return { bucket:'none', statusLabel:'No license (free/grandfathered)', planLabel:'Free', monthlyRevenue:0, revenueNote:'' };
+  }
+  const expired = !!(lic.expiresAt && Date.now() > lic.expiresAt);
+  const activeNow = lic.status === 'active' && !expired;
+  const storedPlan = lic.plan || null;
+  const plan = storedPlan || inferPlanFromLimits(lic);
+  const billingPeriod = lic.billingPeriod || null;
+
+  let monthlyRevenue = 0, revenueNote = '';
+  if(activeNow){
+    if(plan === 'custom'){ revenueNote = 'custom pricing'; }
+    else if(plan){
+      const rev = monthlyEquivalentRevenue(plan, billingPeriod);
+      if(rev != null){ monthlyRevenue = rev; if(!storedPlan) revenueNote = 'estimated from limits'; }
+      else revenueNote = 'plan unknown';
+    } else {
+      revenueNote = 'plan unknown';
+    }
+  }
+  return {
+    bucket: activeNow ? 'active' : (expired ? 'expired' : 'inactive'),
+    statusLabel: activeNow ? 'Active' : (expired ? 'Expired' : 'Inactive'),
+    planLabel: plan ? (PLAN_LABELS[plan] || (plan === 'custom' ? 'Custom (13+ depots)' : plan)) : '—',
+    monthlyRevenue, revenueNote
+  };
+}
+
+async function loadBusinesses(){
+  const el = $('businessesList');
+  el.textContent = 'Loading…';
+  try{
+    const all = await rtdbGet('satDepotManagerUsers');
+    const entries = all ? Object.entries(all).filter(([id, u])=> u && u.role === 'ASSISTANT' && !u.deleted) : [];
+    entries.sort((a, b)=> (a[1].name || a[1].username || '').localeCompare(b[1].name || b[1].username || ''));
+    lastBusinessEntries = entries;
+    renderFinancialSummary(entries);
+    if(!entries.length){ el.textContent = 'No registered businesses yet.'; return; }
+    el.innerHTML = entries.map(([id, u])=>{
+      const fin = licenseFinancials(u);
+      const depotCount = u.depotIds ? Object.keys(u.depotIds).length : 0;
+      const pillClass = fin.bucket === 'active' ? 'active' : (fin.bucket === 'none' ? 'none' : 'inactive');
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
+        <div class="result-head" style="align-items:flex-start;">
+          <div>
+            <div style="font-weight:700;color:var(--ink);">${escapeHtml(u.name || u.username || id)}</div>
+            <div class="muted" style="font-size:12px;">@${escapeHtml(u.username || '')} · ${depotCount} depot${depotCount === 1 ? '' : 's'} · ${escapeHtml(fin.planLabel)}</div>
+          </div>
+          <span class="pill ${pillClass}">${escapeHtml(fin.statusLabel)}</span>
+        </div>
+        ${fin.monthlyRevenue ? `<div class="muted" style="font-size:12px;margin-top:2px;">~K${fin.monthlyRevenue.toFixed(2)}/mo${fin.revenueNote ? ' (' + escapeHtml(fin.revenueNote) + ')' : ''}</div>` : ''}
+        <button class="btn secondary" style="margin-top:8px;width:auto;padding:8px 14px;" type="button" data-open-business="${escapeHtml(u.username || '')}">Manage license</button>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('[data-open-business]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        $('lookupUsername').value = btn.getAttribute('data-open-business');
+        $('lookupBtn').click();
+        setTimeout(()=> $('licenseCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      });
+    });
+  }catch(e){
+    el.textContent = 'Could not load businesses: ' + (e.message || 'try again.');
+  }
+}
+
+function renderFinancialSummary(entries){
+  let active = 0, inactive = 0, expired = 0, none = 0, mrr = 0, customCount = 0, unknownCount = 0;
+  entries.forEach(([id, u])=>{
+    const fin = licenseFinancials(u);
+    if(fin.bucket === 'active') active++;
+    else if(fin.bucket === 'inactive') inactive++;
+    else if(fin.bucket === 'expired') expired++;
+    else none++;
+    if(fin.bucket === 'active'){
+      if(fin.revenueNote === 'custom pricing') customCount++;
+      else if(fin.revenueNote === 'plan unknown') unknownCount++;
+      mrr += fin.monthlyRevenue;
+    }
+  });
+  $('finTotal').textContent = entries.length;
+  $('finActive').textContent = active;
+  $('finInactiveExpired').textContent = inactive + expired;
+  $('finFree').textContent = none;
+  $('finMRR').textContent = 'K' + mrr.toFixed(2);
+  $('finARR').textContent = 'K' + (mrr * 12).toFixed(2);
+  const noteParts = [];
+  if(customCount) noteParts.push(`${customCount} custom-priced account${customCount === 1 ? '' : 's'} excluded from MRR`);
+  if(unknownCount) noteParts.push(`${unknownCount} active license${unknownCount === 1 ? '' : 's'} with unrecognized limits (not counted)`);
+  $('finNote').textContent = noteParts.length
+    ? noteParts.join(' · ') + '.'
+    : 'Estimated from each license\'s stored plan/billing period; older licenses without one are inferred from their depot/login limits.';
+}
+
+$('refreshBusinessesBtn').addEventListener('click', loadBusinesses);
 
 function escapeHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -339,6 +505,13 @@ $('refreshRequestsBtn').addEventListener('click', loadSubscriptionRequests);
 
 /* ---- Manager lookup + license editor ---- */
 let currentManagerId = null;
+// Tracks whether the currently-loaded license already has plan/billingPeriod
+// stored (kept as-is on Save unless the admin explicitly re-applies a
+// preset below - see applyPlanBtn/saveBtn), so an unrelated manual edit
+// (e.g. just bumping the expiry date) never silently mislabels the plan.
+let currentLicensePlan = null;
+let currentLicenseBillingPeriod = null;
+let planJustApplied = false;
 
 $('lookupBtn').addEventListener('click', async ()=>{
   hideErr($('lookupError'));
@@ -354,6 +527,9 @@ $('lookupBtn').addEventListener('click', async ()=>{
     if(found.user.role !== 'ASSISTANT') throw new Error('That account is a Supervisor, not a Manager — licenses are set on Manager accounts.');
     currentManagerId = found.id;
     const lic = found.user.license || {};
+    currentLicensePlan = lic.plan || null;
+    currentLicenseBillingPeriod = lic.billingPeriod || null;
+    planJustApplied = false;
     $('managerLabel').textContent = found.user.name || found.user.username;
     $('managerMeta').textContent = `@${found.user.username}`;
     $('licStatus').value = lic.status === 'inactive' ? 'inactive' : (lic.status === 'active' ? 'active' : 'active');
@@ -388,6 +564,7 @@ function addMonths(date, months){
 $('applyPlanBtn').addEventListener('click', ()=>{
   const plan = $('planPreset').value;
   if(!plan) return; // "Set fields manually" - leave everything as-is
+  planJustApplied = true;
   const preset = PLAN_PRESETS[plan];
   $('licStatus').value = 'active';
   $('licMaxDepots').value = (preset.maxDepots != null) ? preset.maxDepots : '';
@@ -423,18 +600,28 @@ $('saveBtn').addEventListener('click', async ()=>{
     expiresAt: expiryStr ? new Date(expiryStr + 'T23:59:59').getTime() : null,
     maxDepots: maxDepotsStr !== '' ? parseInt(maxDepotsStr, 10) : null,
     maxClerks: maxClerksStr !== '' ? parseInt(maxClerksStr, 10) : null,
+    // Only overwrite plan/billingPeriod when a preset was actually applied
+    // this session (planJustApplied) - otherwise keep whatever was already
+    // on the license, so e.g. just tweaking the expiry date doesn't
+    // silently mislabel or wipe the stored plan used for revenue reporting.
+    plan: planJustApplied ? ($('planPreset').value || null) : currentLicensePlan,
+    billingPeriod: planJustApplied ? ($('billingPeriod').value || null) : currentLicenseBillingPeriod,
     updatedAt: Date.now()
   };
   const btn = $('saveBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
   try{
     await rtdbPut(`satDepotManagerUsers/${currentManagerId}/license`, license);
+    currentLicensePlan = license.plan;
+    currentLicenseBillingPeriod = license.billingPeriod;
+    planJustApplied = false;
     renderStatusPill(license);
     $('saveOk').classList.add('show');
     // Best-effort: clear this manager's pending request, if any, now that
     // their license has been actioned. Failing silently is fine here -
     // the admin can still Dismiss it manually from the list above.
     rtdbDelete(`subscriptionRequests/${currentManagerId}`).then(loadSubscriptionRequests).catch(()=>{});
+    loadBusinesses(); // license just changed - keep the summary/list in sync
   }catch(e){
     showErr($('saveError'), e.message || 'Could not save license.');
   }
