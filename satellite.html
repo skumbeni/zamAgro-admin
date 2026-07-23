@@ -253,7 +253,7 @@ async function findManagerByUsername(username){
 auth.onAuthStateChanged(user=>{
   if(user && user.email === ADMIN_EMAIL){
     $('gate').style.display = 'none';
-    $('app').style.display = '';
+    $('app').style.display = 'block';
     $('topbar').style.display = 'flex';
     $('whoEmail').textContent = user.email;
     loadSubscriptionRequests();
