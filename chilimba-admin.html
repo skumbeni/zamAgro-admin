@@ -225,7 +225,15 @@ function signOut(){
 async function dbGet(path){
   await ensureFreshToken();
   const res = await fetch(`${DB_URL.replace(/\/$/,'')}/${path}.json?auth=${authState.idToken}`);
-  if(!res.ok) throw new Error('Read failed: ' + res.status);
+  if(!res.ok){
+    // Firebase RTDB returns a JSON body with the real reason (e.g.
+    // "Permission denied") even on 4xx — surface that instead of a bare
+    // status code, or a blocked write just looks like "failed: 403" with
+    // no clue why.
+    let reason = res.status;
+    try{ const body = await res.json(); if(body && body.error) reason = body.error; }catch(e){}
+    throw new Error(`Read failed (${path}): ${reason}`);
+  }
   return res.json();
 }
 
@@ -234,7 +242,11 @@ async function dbSet(path, value){
   const res = await fetch(`${DB_URL.replace(/\/$/,'')}/${path}.json?auth=${authState.idToken}`, {
     method:'PUT', body: JSON.stringify(value)
   });
-  if(!res.ok) throw new Error('Write failed: ' + res.status);
+  if(!res.ok){
+    let reason = res.status;
+    try{ const body = await res.json(); if(body && body.error) reason = body.error; }catch(e){}
+    throw new Error(`Write failed (${path}): ${reason}`);
+  }
   return res.json();
 }
 
@@ -259,11 +271,20 @@ async function setGroupTier(groupId, tier){
 }
 
 async function resolveApplication(groupId, appId, status){
-  await dbSet(`groups/${groupId}/subscriptionApplications/${appId}/status`, status);
+  // Tier write happens FIRST, before the application is marked resolved.
+  // groups/{id}/settings/tier is a separate, more locked-down path than
+  // subscriptionApplications — if the security rules reject this write
+  // (e.g. it's still set to write:false, meant only for a manual Firebase
+  // Console edit), we want that error to stop everything right here, with
+  // the application left at 'pending' so it's safe to just click Approve
+  // again once the rules are fixed. The old order wrote 'approved' first,
+  // so a blocked tier write left the application stuck saying "approved"
+  // forever while the group's actual plan never changed — worse, silently.
   if(status === 'approved'){
     const app = (openApps[groupId]||[]).find(a=>a.id===appId);
     if(app) await setGroupTier(groupId, app.requestedTier);
   }
+  await dbSet(`groups/${groupId}/subscriptionApplications/${appId}/status`, status);
   openApps[groupId] = (openApps[groupId]||[]).filter(a=>a.id!==appId);
   const pendingLeft = openApps[groupId].length;
   await dbSet(`groupRegistry/${groupId}/pendingApplications`, pendingLeft);
