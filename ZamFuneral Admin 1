@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZamFuneral Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase (compat SDK, same project as the main app) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAiFObyNzicausT66szOuizXo698M_NJwI",
+    authDomain: "zamfuneral-fund-manager.firebaseapp.com",
+    databaseURL: "https://zamfuneral-fund-manager-default-rtdb.firebaseio.com",
+    projectId: "zamfuneral-fund-manager",
+    storageBucket: "zamfuneral-fund-manager.firebasestorage.app",
+    messagingSenderId: "460712286210",
+    appId: "1:460712286210:web:209f4b0b6c23ca1f01af1b"
+  };
+  firebase.initializeApp(firebaseConfig);
+</script>
+
+<style>
+  :root{
+    --bg: #0b1a0e;
+    --panel: #122016;
+    --panel-raised: #1a2e1e;
+    --line: #2a4030;
+    --ink: #e8f0ea;
+    --ink-dim: #6b8f74;
+    --gold: #2fbe6a;
+    --gold-bright: #4ad885;
+    --gold-soft: rgba(47,190,106,0.16);
+    --teal: #2fae8b;
+    --teal-bright: #4ac9a5;
+    --teal-soft: rgba(47,174,139,0.16);
+    --rose: #e05252;
+    --rose-bright: #ea7373;
+    --rose-soft: rgba(224,82,82,0.16);
+    --blue: #4a9eff;
+    --blue-bright: #6fb4ff;
+    --blue-soft: rgba(74,158,255,0.16);
+    --radius: 10px;
+    --shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1100px 560px at 88% -8%, rgba(47,190,106,0.08), transparent 58%),
+      radial-gradient(900px 500px at -8% 100%, rgba(47,174,139,0.06), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+  ::selection{background:var(--gold-soft);}
+  .mono{ font-family:'IBM Plex Mono',monospace; }
+
+  .center-screen{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .auth-box{
+    width:100%; max-width:380px; background:var(--panel); border:1px solid var(--line);
+    border-radius:14px; padding:30px 26px; box-shadow:var(--shadow);
+  }
+  .auth-box h1{ font-family:'Inter',sans-serif; text-transform:uppercase; letter-spacing:.5px; font-size:22px; margin:0 0 6px; }
+  .auth-box p.sub{ margin:0 0 22px; color:var(--ink-dim); font-size:13px; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink-dim); margin-bottom:6px;}
+  input{
+    background:var(--panel-raised); border:1px solid var(--line); color:var(--ink);
+    padding:10px 12px; border-radius:7px; font-size:13.5px; font-family:'Inter',sans-serif; outline:none; width:100%;
+  }
+  input:focus{ border-color:var(--gold); }
+  .btn{
+    background:linear-gradient(135deg, var(--gold-bright), var(--gold));
+    color:#1B1610; border:none; font-weight:600; font-size:13px;
+    padding:10px 18px; border-radius:8px; cursor:pointer; transition:transform .1s, filter .15s, box-shadow .2s;
+    font-family:'Inter',sans-serif; width:100%;
+  }
+  .btn:hover{ filter:brightness(1.06); }
+  .btn:active{ transform:scale(.98); }
+  .btn.secondary{ background:transparent; color:var(--ink); border:1px solid var(--line); width:auto; }
+  .btn.small{ padding:6px 12px; font-size:12px; width:auto; }
+  .btn.danger{ background:transparent; color:var(--rose-bright); border:1px solid rgba(209,114,138,0.45); width:auto; }
+  .btn.teal-outline{ background:transparent; color:var(--teal-bright); border:1px solid rgba(79,179,150,0.45); width:auto; }
+  .helper{ font-size:12px; color:var(--ink-dim); margin-top:10px; }
+  .error-msg{ font-size:12.5px; color:var(--rose-bright); margin-top:10px; display:none; }
+  .link-btn{ all:unset; cursor:pointer; color:var(--gold); font-size:12.5px; text-decoration:underline; }
+
+  /* ---- Dashboard shell ---- */
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 34px; border-bottom:1px solid var(--line);
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{ width:30px;height:30px;border-radius:50%; border:1.5px solid var(--gold); display:flex; align-items:center; justify-content:center; }
+  .brand-mark::before{ content:""; width:6px;height:6px;border-radius:50%;background:var(--gold); }
+  .brand h1{ font-family:'Inter',sans-serif; text-transform:uppercase; letter-spacing:.5px; font-size:16px; font-weight:600; margin:0; }
+  .brand p{ margin:0; font-size:10.5px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.5px; }
+  main{ padding:32px 34px 60px; max-width:1180px; margin:0 auto; }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:28px;}
+  .stat-card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px; position:relative; overflow:hidden;}
+  .stat-card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg, var(--gold), rgba(212,175,106,0.15)); }
+  .stat-card.accent-teal::before{ background:linear-gradient(90deg, var(--teal), rgba(79,179,150,0.15)); }
+  .stat-card.accent-rose::before{ background:linear-gradient(90deg, var(--rose), rgba(209,114,138,0.15)); }
+  .stat-card .label{ font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--ink-dim); margin-bottom:10px;}
+  .stat-card .value{ font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600;}
+  .stat-card .value.gold{ color:var(--gold-bright);}
+  .stat-card .value.teal{ color:var(--teal-bright);}
+  .stat-card .value.rose{ color:var(--rose-bright);}
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; margin-bottom:24px;}
+  .panel-head{ padding:16px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;}
+  .panel-head h3{ margin:0; font-family:'Inter',sans-serif; text-transform:uppercase; letter-spacing:.5px; font-size:16px; font-weight:600;}
+  table{ width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{ text-align:left; padding:11px 20px; font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-dim); border-bottom:1px solid var(--line); font-weight:600; background:rgba(255,255,255,0.015);}
+  tbody td{ padding:12px 20px; border-bottom:1px solid rgba(58,66,80,0.5); vertical-align:middle;}
+  tbody tr:last-child td{ border-bottom:none;}
+  tbody tr:hover{ background:rgba(255,255,255,0.015);}
+  .empty-row td{ text-align:center; padding:40px 20px; color:var(--ink-dim); font-size:13px;}
+  .badge{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; letter-spacing:.2px;}
+  .badge.active{ background:var(--teal-soft); color:var(--teal-bright);}
+  .badge.overdue{ background:var(--rose-soft); color:var(--rose-bright);}
+  .badge.suspended{ background:rgba(255,255,255,0.06); color:var(--ink-dim);}
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+
+  .overlay{ display:none; position:fixed; inset:0; background:rgba(10,12,16,0.6); backdrop-filter:blur(2px); align-items:center; justify-content:center; z-index:100; padding:20px;}
+  .overlay.show{ display:flex; }
+  .modal{ background:var(--panel); border:1px solid var(--line); border-radius:12px; width:100%; max-width:560px; box-shadow:var(--shadow); max-height:88vh; overflow-y:auto;}
+  .modal-head{ padding:18px 22px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;}
+  .modal-head h3{ margin:0; font-family:'Inter',sans-serif; text-transform:uppercase; letter-spacing:.5px; font-size:17px;}
+  .modal-body{ padding:20px 22px; display:flex; flex-direction:column; gap:14px;}
+  .modal-foot{ padding:16px 22px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:10px;}
+  .close-x{ all:unset; cursor:pointer; color:var(--ink-dim); font-size:18px; line-height:1; padding:2px 6px;}
+  .close-x:hover{ color:var(--ink); }
+
+  .toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--panel-raised); border:1px solid var(--gold); color:var(--ink); padding:12px 22px; border-radius:8px; font-size:13px; box-shadow:var(--shadow); opacity:0; pointer-events:none; transition:all .25s; z-index:200;}
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .search-bar{ padding:14px 20px; border-bottom:1px solid var(--line); }
+  .search-bar input{ max-width:280px; }
+</style>
+</head>
+<body>
+
+<!-- SIGN IN -->
+<div class="center-screen" id="screenSignIn">
+  <div class="auth-box">
+    <h1>ZamFuneral Admin</h1>
+    <p class="sub">Nexlite internal panel — not for treasurers or members.</p>
+    <div class="field"><label>Email</label><input type="email" id="adminEmail" placeholder="you@nexlite.example"></div>
+    <div class="field"><label>Password</label><input type="password" id="adminPassword" placeholder="Password"></div>
+    <button class="btn" id="btnAdminSignIn">Sign In</button>
+    <div class="error-msg" id="signInError"></div>
+    <p class="helper">First time setting this up? <button class="link-btn" id="linkGoSignUp">Create the first admin account</button></p>
+  </div>
+</div>
+
+<!-- SIGN UP (bootstrap first admin) -->
+<div class="center-screen" id="screenSignUp" style="display:none;">
+  <div class="auth-box">
+    <h1>Create Admin Account</h1>
+    <p class="sub">This only works if no admin account exists yet. After the first one is created, this option won't work again from here.</p>
+    <div class="field"><label>Email</label><input type="email" id="signupEmail" placeholder="you@nexlite.example"></div>
+    <div class="field"><label>Password</label><input type="password" id="signupPassword" placeholder="At least 6 characters"></div>
+    <button class="btn" id="btnAdminSignUp">Create Account</button>
+    <div class="error-msg" id="signUpError"></div>
+    <p class="helper"><button class="link-btn" id="linkGoSignIn">Already have an account? Sign in</button></p>
+  </div>
+</div>
+
+<!-- ACCESS DENIED -->
+<div class="center-screen" id="screenDenied" style="display:none;">
+  <div class="auth-box">
+    <h1>Not an Admin Account</h1>
+    <p class="sub">This Firebase account is signed in, but isn't on the admin list. If you meant to sign in as a fund treasurer, use the main app instead.</p>
+    <button class="btn secondary" id="btnDeniedSignOut" style="width:100%;">Sign Out</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="screenDashboard" style="display:none;">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div><h1>ZamFuneral Admin</h1><p>All funds, one place</p></div>
+    </div>
+    <button class="btn secondary" id="btnAdminSignOut">Sign Out</button>
+  </header>
+
+  <main>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="label">Total Funds</div><div class="value gold mono" id="statTotalFunds">0</div><div class="sub" style="font-size:12px;color:var(--ink-dim);margin-top:6px;">Registered organisations</div></div>
+      <div class="stat-card accent-teal"><div class="label">Total Members</div><div class="value teal mono" id="statTotalMembers">0</div><div class="sub" style="font-size:12px;color:var(--ink-dim);margin-top:6px;">Across all funds</div></div>
+      <div class="stat-card"><div class="label">Active Subscriptions</div><div class="value gold mono" id="statActiveSubs">0</div><div class="sub" style="font-size:12px;color:var(--ink-dim);margin-top:6px;">Paid for the current month</div></div>
+      <div class="stat-card accent-rose"><div class="label">Overdue</div><div class="value rose mono" id="statOverdueSubs">0</div><div class="sub" style="font-size:12px;color:var(--ink-dim);margin-top:6px;">Not paid this month</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>All Funds</h3></div>
+      <div class="search-bar"><input type="text" id="fundSearch" placeholder="Search by fund or organisation name..."></div>
+      <table>
+        <thead><tr><th>Organisation</th><th>Fund Code</th><th>Members</th><th>Total Collected</th><th>Subscription</th><th></th></tr></thead>
+        <tbody id="fundsBody"><tr class="empty-row"><td colspan="6">Loading funds...</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- FUND DETAIL MODAL -->
+<div class="overlay" id="fundModal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="fundModalTitle">Fund</h3><button class="close-x" data-close="fundModal">&times;</button></div>
+    <div class="modal-body">
+      <div class="panel" style="margin-bottom:0;">
+        <div class="panel-head"><h3>Subscription Payment History</h3></div>
+        <table>
+          <thead><tr><th>Date Recorded</th><th>Month</th><th>Amount</th><th>Transaction ID</th></tr></thead>
+          <tbody id="fundModalPayments"><tr class="empty-row"><td colspan="4">No payments recorded.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="btnModalSuspend">Suspend Fund</button>
+      <button class="btn teal-outline" id="btnModalReactivate" style="display:none;">Reactivate Fund</button>
+      <button class="btn secondary" data-close="fundModal">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  function showScreen(id){
+    ['screenSignIn','screenSignUp','screenDenied','screenDashboard'].forEach(s=>{
+      document.getElementById(s).style.display = (s===id) ? (s==='screenDashboard'?'block':'flex') : 'none';
+    });
+  }
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+  }
+  function openModal(id){ document.getElementById(id).classList.add('show'); }
+  function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+  document.querySelectorAll('[data-close]').forEach(b=>{
+    b.addEventListener('click', ()=> closeModal(b.dataset.close));
+  });
+  function fmtK(n){ return 'K' + Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); return isNaN(d) ? iso : d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+  function thisMonth(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  /* ---------- Sign in / sign up (bootstrap) ---------- */
+  document.getElementById('linkGoSignUp').addEventListener('click', ()=> showScreen('screenSignUp'));
+  document.getElementById('linkGoSignIn').addEventListener('click', ()=> showScreen('screenSignIn'));
+
+  function friendlyAuthError(err){
+    const map = {
+      'auth/invalid-api-key': "Firebase isn't configured — check firebaseConfig at the top of this file.",
+      'auth/email-already-in-use': 'That email already has an account. Try signing in instead.',
+      'auth/invalid-email': 'Enter a valid email address.',
+      'auth/weak-password': 'Password should be at least 6 characters.',
+      'auth/wrong-password': 'Incorrect email or password.',
+      'auth/invalid-credential': 'Incorrect email or password.',
+      'auth/user-not-found': 'No account found with that email.',
+      'auth/network-request-failed': 'No internet connection.'
+    };
+    return (err && map[err.code]) || (err && err.message) || 'Something went wrong.';
+  }
+
+  document.getElementById('btnAdminSignIn').addEventListener('click', async ()=>{
+    const email = document.getElementById('adminEmail').value.trim();
+    const password = document.getElementById('adminPassword').value;
+    const errEl = document.getElementById('signInError');
+    errEl.style.display = 'none';
+    if(!email || !password){ errEl.textContent='Enter both email and password.'; errEl.style.display='block'; return; }
+    try{ await firebase.auth().signInWithEmailAndPassword(email, password); }
+    catch(err){ errEl.textContent = friendlyAuthError(err); errEl.style.display = 'block'; }
+  });
+
+  document.getElementById('btnAdminSignUp').addEventListener('click', async ()=>{
+    const email = document.getElementById('signupEmail').value.trim();
+    const password = document.getElementById('signupPassword').value;
+    const errEl = document.getElementById('signUpError');
+    errEl.style.display = 'none';
+    if(!email || !password){ errEl.textContent='Enter both email and password.'; errEl.style.display='block'; return; }
+    try{
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+      // This write only succeeds if /adminUsers is currently empty (see rules) —
+      // so this can only ever bootstrap the FIRST admin, safely.
+      await firebase.database().ref('adminUsers/'+cred.user.uid).set(true);
+    }catch(err){
+      errEl.textContent = friendlyAuthError(err);
+      errEl.style.display = 'block';
+    }
+  });
+
+  document.getElementById('btnAdminSignOut').addEventListener('click', ()=> firebase.auth().signOut());
+  document.getElementById('btnDeniedSignOut').addEventListener('click', ()=> firebase.auth().signOut());
+
+  /* ---------- Auth state -> route to the right screen ---------- */
+  let allFunds = {}; // uid -> fund data
+
+  firebase.auth().onAuthStateChanged(async (user)=>{
+    if(!user){ showScreen('screenSignIn'); return; }
+    try{
+      const adminSnap = await firebase.database().ref('adminUsers/'+user.uid).get();
+      if(adminSnap.exists() && adminSnap.val() === true){
+        showScreen('screenDashboard');
+        loadFunds();
+      } else {
+        showScreen('screenDenied');
+      }
+    }catch(err){
+      showScreen('screenDenied');
+    }
+  });
+
+  /* ---------- Load & render all funds ---------- */
+  function loadFunds(){
+    firebase.database().ref('funds').on('value', snap=>{
+      allFunds = snap.val() || {};
+      renderDashboard();
+    });
+  }
+
+  function fundStatus(fund){
+    if(fund.settings && fund.settings.suspended) return 'suspended';
+    const payments = fund.subscriptionPayments ? Object.values(fund.subscriptionPayments) : [];
+    if(payments.length === 0) return 'overdue';
+    const latest = payments.slice().sort((a,b)=> (b.paidOn||'').localeCompare(a.paidOn||''))[0];
+    return latest.monthCovered === thisMonth() ? 'active' : 'overdue';
+  }
+
+  function renderDashboard(){
+    const uids = Object.keys(allFunds);
+    const search = (document.getElementById('fundSearch').value || '').toLowerCase();
+
+    let totalMembers = 0, activeSubs = 0, overdueSubs = 0;
+    uids.forEach(uid=>{
+      const f = allFunds[uid];
+      totalMembers += (f.members ? Object.keys(f.members).length : 0);
+      const st = fundStatus(f);
+      if(st === 'active') activeSubs++; else if(st === 'overdue') overdueSubs++;
+    });
+    document.getElementById('statTotalFunds').textContent = uids.length;
+    document.getElementById('statTotalMembers').textContent = totalMembers;
+    document.getElementById('statActiveSubs').textContent = activeSubs;
+    document.getElementById('statOverdueSubs').textContent = overdueSubs;
+
+    const filtered = uids.filter(uid=>{
+      const f = allFunds[uid];
+      const name = ((f.settings && f.settings.orgName) || '').toLowerCase();
+      const code = ((f.settings && f.settings.fundCode) || '').toLowerCase();
+      return !search || name.includes(search) || code.includes(search);
+    });
+
+    const body = document.getElementById('fundsBody');
+    if(filtered.length === 0){
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No funds match your search.</td></tr>';
+      return;
+    }
+    body.innerHTML = filtered.map(uid=>{
+      const f = allFunds[uid];
+      const settings = f.settings || {};
+      const members = f.members ? Object.values(f.members) : [];
+      const contributions = f.contributions ? Object.values(f.contributions) : [];
+      const collected = contributions.reduce((s,c)=>s+Number(c.amount||0),0);
+      const status = fundStatus(f);
+      const badgeLabel = status === 'active' ? 'Active' : (status === 'suspended' ? 'Suspended' : 'Overdue');
+      return `
+        <tr>
+          <td>${escapeHtml(settings.orgName || '(unnamed fund)')}</td>
+          <td class="mono">${escapeHtml(settings.fundCode || '—')}</td>
+          <td class="mono">${members.length}</td>
+          <td class="mono">${fmtK(collected)}</td>
+          <td><span class="badge ${status}">${badgeLabel}</span></td>
+          <td class="row-actions"><button class="btn secondary small" data-view="${uid}">View</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    body.querySelectorAll('[data-view]').forEach(btn=>{
+      btn.addEventListener('click', ()=> openFundModal(btn.dataset.view));
+    });
+  }
+  document.getElementById('fundSearch').addEventListener('input', renderDashboard);
+
+  /* ---------- Fund detail modal ---------- */
+  let currentModalUid = null;
+
+  function openFundModal(uid){
+    currentModalUid = uid;
+    const f = allFunds[uid] || {};
+    const settings = f.settings || {};
+    document.getElementById('fundModalTitle').textContent = settings.orgName || '(unnamed fund)';
+
+    const payments = f.subscriptionPayments ? Object.values(f.subscriptionPayments) : [];
+    const body = document.getElementById('fundModalPayments');
+    if(payments.length === 0){
+      body.innerHTML = '<tr class="empty-row"><td colspan="4">No payments recorded.</td></tr>';
+    } else {
+      body.innerHTML = payments.slice().sort((a,b)=> (b.paidOn||'').localeCompare(a.paidOn||'')).map(p=>`
+        <tr>
+          <td>${fmtDate(p.paidOn)}</td>
+          <td class="mono">${escapeHtml(p.monthCovered)}</td>
+          <td class="mono">${fmtK(p.amount)}</td>
+          <td class="mono">${escapeHtml(p.txnId)}</td>
+        </tr>
+      `).join('');
+    }
+
+    const suspended = !!settings.suspended;
+    document.getElementById('btnModalSuspend').style.display = suspended ? 'none' : 'inline-block';
+    document.getElementById('btnModalReactivate').style.display = suspended ? 'inline-block' : 'none';
+
+    openModal('fundModal');
+  }
+
+  document.getElementById('btnModalSuspend').addEventListener('click', async ()=>{
+    if(!currentModalUid) return;
+    if(!confirm('Suspend this fund? The treasurer will be blocked from the dashboard until reactivated.')) return;
+    await firebase.database().ref('funds/'+currentModalUid+'/settings/suspended').set(true);
+    toast('Fund suspended.');
+    closeModal('fundModal');
+  });
+  document.getElementById('btnModalReactivate').addEventListener('click', async ()=>{
+    if(!currentModalUid) return;
+    await firebase.database().ref('funds/'+currentModalUid+'/setti
