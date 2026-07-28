@@ -477,59 +477,80 @@ body{padding-bottom:40px;}
   </div>
 </div>
 
+<!-- ── FIREBASE AUTH SDK (Phase 5 — real operator login) ──────────────────── -->
+<!-- Same pattern as index.html's Phase 2: RTDB stays on the hand-rolled REST -->
+<!-- API (fbGet/fbPatch/fbDelete below); this SDK exists purely to sign the   -->
+<!-- operator in against Identity Toolkit and silently refresh the hourly    -->
+<!-- ID token so it can be attached to every write. -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js" defer></script>
+<script defer>
+  window._fbAuthSdkReady = new Promise(function(resolve) {
+    try {
+      firebase.initializeApp(FB_CONFIG);
+      resolve();
+    } catch (e) {
+      console.warn('Firebase Auth SDK init failed:', e);
+      resolve();
+    }
+  });
+</script>
+
 <script>
 // ══════════════════════════════════════════════════════
 // CONFIG — your Firebase project
 // ══════════════════════════════════════════════════════
 const FB_URL   = 'https://realtime-database-be871-default-rtdb.firebaseio.com';
+const FB_CONFIG = {
+  apiKey:            "AIzaSyD_WnWTMBgd__V2M8840LDt1a-7Ebnh6ZU",
+  authDomain:        "realtime-database-be871.firebaseapp.com",
+  databaseURL:       "https://realtime-database-be871-default-rtdb.firebaseio.com",
+  projectId:         "realtime-database-be871",
+  storageBucket:     "realtime-database-be871.firebasestorage.app",
+  messagingSenderId: "1051301635587",
+  appId:             "1:1051301635587:web:00c5bc5825dd41fd329036"
+};
 
 // ── FIREBASE RULES NOTE ──────────────────────────────────────────────────────
-// Actual deployed rules (confirmed from Firebase Console, 28 Jun 2026):
-//
-//   "licenses": { ".read": true, "$depotKey": { ".read": true, ".write": <see below> } }
-//   "depots":   { "$depotKey": { ".read": true, ".write": true } }
-//   "usernames":{ "$username": { ".read": true, ".write": true } }
-//   "lockouts": { "$installId": { ".read": true, ".write": true } }
-//   "subscriptionRequests": { ".read": true, "$installId": { ".read": true, ".write": true } }
-//
-// depots/usernames/lockouts/subscriptionRequests are already unconditionally
-// writable/readable — no changes needed there for anything in this file
-// (activate/suspend/renew/approve/dismiss/delete-with-data all just work).
-//
-// REQUIRED FIX — licenses.$depotKey.write:
-// The rule that was deployed only allowed setting an existing license's
-// status to exactly 'pending_approval'. That silently rejected EVERY admin
-// action that touches an existing license: activateDepot, suspendDepot,
-// renewDepot, unsuspendDepot, approveDepot, approveSubRequest,
-// activateSubRequest, and deleteDepot (delete sends newData = null, which
-// also failed the same check). Change it to:
+// Phase 5 rules (operator-gated writes) — operator UID 0LtuB8qMQdgXxnKWVQysgZyBoEC2
+// (skumbeni@gmail.com) is already baked in below. These are also given as a
+// separate, standalone copy-paste block in chat — publish those in the Rules
+// tab, this comment is just documentation for this file:
 //
 //   "licenses": {
 //     ".read": true,
 //     "$depotKey": {
 //       ".read": true,
-//       ".write": true
+//       ".write": "(!data.exists() && newData.child('status').val() === 'trial') || auth.uid === '0LtuB8qMQdgXxnKWVQysgZyBoEC2'"
+//     }
+//   }
+//   "subscriptionRequests": {
+//     ".read": true,
+//     "$installId": {
+//       ".read": true,
+//       "$reqKey": {
+//         ".write": "!data.exists() || auth.uid === '0LtuB8qMQdgXxnKWVQysgZyBoEC2'"
+//       }
 //     }
 //   }
 //
-// This matches the same trust model already used everywhere else in this
-// database (anyone holding a depotKey can already rewrite its `depots` data
-// unconditionally, so this isn't introducing a new class of risk).
+// This lets the app's own client flows keep working unauthenticated —
+// signup creating a fresh 'trial' license, a depot submitting a new
+// subscription request — while every write this admin panel makes
+// (activate/suspend/renew/approve/dismiss/delete) now requires the operator's
+// Firebase Auth token, which fbGet/fbPatch/fbDelete below attach automatically
+// once you're signed in.
 // ────────────────────────────────────────────────────────────────────────────
 
-// SHA-256 hash of your admin password.
-// Current password is: 883686Sk#
-// To change it: https://emn178.github.io/online-tools/sha256.html — hash your new password and paste below.
-const ADMIN_PASS_HASH = '1f383a2c733c8921e44f1d303609faf010a0dd0e46bf56b7ef4af1ac5068f2d1';
+// Phase 5 — real operator identity. Set this to the exact email you used
+// when creating the operator's Firebase Auth account (Console →
+// Authentication → Users → Add user). The password lives only in Firebase
+// Auth now — nothing security-relevant is stored in this file anymore.
+const OPERATOR_EMAIL = 'skumbeni@gmail.com';
 
 const TRIAL_MS      = 30 * 24 * 60 * 60 * 1000; // 30-day trial (matches app)
 const ONE_MONTH_MS  = 30 * 24 * 60 * 60 * 1000; // 1-month active period
 const SUB_GRACE_MS  =  3 * 24 * 60 * 60 * 1000; // 3-day grace (matches app)
-
-async function sha256(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
 
 // FIX: esc() was used throughout (subscription request cards, applicant block)
 // but never defined in this file — caused a ReferenceError that silently
@@ -555,13 +576,38 @@ let _confirmFn = null;
 // ══════════════════════════════════════════════════════
 // FIREBASE REST HELPERS
 // ══════════════════════════════════════════════════════
+// Pulls a fresh ID token for the signed-in operator. Returns null if not
+// signed in or the Auth SDK failed to load — requests then go out
+// unauthenticated, which the tightened rules will simply reject for any
+// write beyond the client's own open self-service paths (trial creation,
+// new subscription-request submission). Reads stay unaffected either way
+// since licenses/subscriptionRequests are still publicly readable.
+async function _getIdToken() {
+  try {
+    await window._fbAuthSdkReady;
+    const user = firebase.auth().currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+  } catch (e) {
+    console.warn('_getIdToken failed (request will go out unauthenticated):', e);
+    return null;
+  }
+}
+function _withAuthParam(url, idToken) {
+  if (!idToken) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(idToken);
+}
 async function fbGet(path) {
-  const res = await fetch(FB_URL + '/' + path + '.json');
+  const idToken = await _getIdToken();
+  const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
+  const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
 async function fbPatch(path, data) {
-  const res = await fetch(FB_URL + '/' + path + '.json', {
+  const idToken = await _getIdToken();
+  const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
+  const res = await fetch(url, {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(data)
@@ -570,7 +616,9 @@ async function fbPatch(path, data) {
   return res.json();
 }
 async function fbDelete(path) {
-  const res = await fetch(FB_URL + '/' + path + '.json', { method: 'DELETE' });
+  const idToken = await _getIdToken();
+  const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
+  const res = await fetch(url, { method: 'DELETE' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
 }
 
@@ -586,13 +634,16 @@ async function doAdminLogin() {
   const err  = document.getElementById('login-err');
   const btn  = document.querySelector('#login-screen .btn');
   btn.disabled = true; btn.textContent = '🔐 Checking…';
-  const hash = await sha256(pass);
-  btn.disabled = false; btn.textContent = '🔐 Sign In';
-  if (hash !== ADMIN_PASS_HASH) {
+  try {
+    await window._fbAuthSdkReady;
+    await firebase.auth().signInWithEmailAndPassword(OPERATOR_EMAIL, pass);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '🔐 Sign In';
     err.style.display = 'block';
     err.textContent = '❌ Incorrect password.';
     return;
   }
+  btn.disabled = false; btn.textContent = '🔐 Sign In';
   err.style.display = 'none';
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main').style.display = 'block';
@@ -600,6 +651,7 @@ async function doAdminLogin() {
 }
 
 function doLogout() {
+  firebase.auth().signOut().catch(() => {});
   document.getElementById('admin-pass').value = '';
   document.getElementById('main').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
