@@ -482,19 +482,10 @@ body{padding-bottom:40px;}
 <!-- API (fbGet/fbPatch/fbDelete below); this SDK exists purely to sign the   -->
 <!-- operator in against Identity Toolkit and silently refresh the hourly    -->
 <!-- ID token so it can be attached to every write. -->
+<!-- Initialization itself happens lazily in _ensureFirebaseReady() below,   -->
+<!-- not here — see that function for why. -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js" defer></script>
-<script defer>
-  window._fbAuthSdkReady = new Promise(function(resolve) {
-    try {
-      firebase.initializeApp(FB_CONFIG);
-      resolve();
-    } catch (e) {
-      console.warn('Firebase Auth SDK init failed:', e);
-      resolve();
-    }
-  });
-</script>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -582,9 +573,36 @@ let _confirmFn = null;
 // write beyond the client's own open self-service paths (trial creation,
 // new subscription-request submission). Reads stay unaffected either way
 // since licenses/subscriptionRequests are still publicly readable.
+// Waits for the Firebase SDK CDN scripts to finish loading (they're `defer`,
+// so on a slow connection the login button can be clickable before they've
+// actually executed — polling here instead of trusting script-load timing
+// is what fixes that race), then initializes the app exactly once. Safe to
+// call from multiple places — firebase.apps.length guards against
+// "app already exists" errors on repeat calls.
+let _fbInitDone = false;
+async function _ensureFirebaseReady() {
+  if (_fbInitDone) return true;
+  const deadline = Date.now() + 10000;
+  while (typeof firebase === 'undefined' || !firebase.initializeApp) {
+    if (Date.now() > deadline) {
+      console.error('Firebase SDK never loaded (gstatic.com blocked? offline?)');
+      return false;
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+    _fbInitDone = true;
+    return true;
+  } catch (e) {
+    console.error('firebase.initializeApp failed:', e);
+    return false;
+  }
+}
 async function _getIdToken() {
   try {
-    await window._fbAuthSdkReady;
+    const ready = await _ensureFirebaseReady();
+    if (!ready) return null;
     const user = firebase.auth().currentUser;
     if (!user) return null;
     return await user.getIdToken();
@@ -635,7 +653,8 @@ async function doAdminLogin() {
   const btn  = document.querySelector('#login-screen .btn');
   btn.disabled = true; btn.textContent = '🔐 Checking…';
   try {
-    await window._fbAuthSdkReady;
+    const ready = await _ensureFirebaseReady();
+    if (!ready) throw { code: 'sdk/not-loaded' };
     await firebase.auth().signInWithEmailAndPassword(OPERATOR_EMAIL, pass);
   } catch (e) {
     btn.disabled = false; btn.textContent = '🔐 Sign In';
@@ -657,8 +676,8 @@ async function doAdminLogin() {
       err.textContent = '❌ Network error reaching Firebase Auth. Check your connection.';
     } else if (code === 'auth/invalid-email') {
       err.textContent = '❌ OPERATOR_EMAIL in this file is malformed — check the constant.';
-    } else if (!firebase.auth) {
-      err.textContent = '❌ Firebase Auth SDK failed to load (check network/ad-blocker for gstatic.com).';
+    } else if (code === 'sdk/not-loaded') {
+      err.textContent = '❌ Firebase Auth SDK never finished loading (check network/ad-blocker for gstatic.com, or try again).';
     } else {
       err.textContent = '❌ Login failed: ' + (code || (e && e.message) || 'unknown error') + ' — open the browser console for details.';
     }
