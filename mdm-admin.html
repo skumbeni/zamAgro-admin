@@ -640,7 +640,29 @@ async function doAdminLogin() {
   } catch (e) {
     btn.disabled = false; btn.textContent = '🔐 Sign In';
     err.style.display = 'block';
-    err.textContent = '❌ Incorrect password.';
+    // Surface the real Firebase Auth error code instead of always blaming the
+    // password — wrong-password is only one of several possible causes
+    // (unconfigured provider, unauthorized domain, network failure, etc.)
+    // and lumping them together makes this undebuggable from the outside.
+    const code = e && e.code;
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+      err.textContent = '❌ Incorrect password.';
+    } else if (code === 'auth/user-not-found') {
+      err.textContent = '❌ No account found for ' + OPERATOR_EMAIL + '. Check the Users tab in Firebase Console.';
+    } else if (code === 'auth/too-many-requests') {
+      err.textContent = '❌ Too many failed attempts — Firebase has temporarily blocked further tries. Wait a few minutes.';
+    } else if (code === 'auth/unauthorized-domain') {
+      err.textContent = '❌ This domain isn\'t in Firebase Auth\'s authorized-domains list. Add it in Console → Authentication → Settings → Authorized domains.';
+    } else if (code === 'auth/network-request-failed') {
+      err.textContent = '❌ Network error reaching Firebase Auth. Check your connection.';
+    } else if (code === 'auth/invalid-email') {
+      err.textContent = '❌ OPERATOR_EMAIL in this file is malformed — check the constant.';
+    } else if (!firebase.auth) {
+      err.textContent = '❌ Firebase Auth SDK failed to load (check network/ad-blocker for gstatic.com).';
+    } else {
+      err.textContent = '❌ Login failed: ' + (code || (e && e.message) || 'unknown error') + ' — open the browser console for details.';
+    }
+    console.error('Admin login failed:', e);
     return;
   }
   btn.disabled = false; btn.textContent = '🔐 Sign In';
