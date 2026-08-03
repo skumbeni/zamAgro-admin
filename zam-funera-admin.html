@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZamFuneral — Subscription Admin</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#1B2028; --panel:#242B36; --panel-raised:#2B3340; --line:#3A4250;
+    --ink:#EDEAE3; --ink-dim:#A7ADB8;
+    --gold:#D4AF6A; --gold-bright:#E8C687; --gold-soft:rgba(212,175,106,0.16);
+    --teal:#4FB396; --teal-bright:#6BCBB0; --teal-soft:rgba(79,179,150,0.16);
+    --rose:#D1728A; --rose-bright:#E08FA3; --rose-soft:rgba(209,114,138,0.16);
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:radial-gradient(1100px 560px at 88% -8%, rgba(212,175,106,0.09), transparent 58%), var(--bg);
+    color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh;
+  }
+  .wrap{ max-width:640px; margin:0 auto; padding:34px 20px 60px; }
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .brand .dot{ width:9px;height:9px;border-radius:50%; background:var(--gold); }
+  .brand h1{ font-family:'Fraunces',serif; font-size:18px; font-weight:600; margin:0; }
+  .sub{ color:var(--ink-dim); font-size:12.5px; margin:0 0 26px; }
+
+  .gate{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px; max-width:340px; margin:60px auto 0; }
+  .gate label{ font-size:12px; color:var(--ink-dim); display:block; margin-bottom:6px; }
+  .gate input{ width:100%; background:var(--panel-raised); border:1px solid var(--line); border-radius:8px; padding:10px 12px; color:var(--ink); font-size:14px; margin-bottom:12px; }
+  .gate button{ width:100%; background:linear-gradient(135deg, var(--gold-bright), var(--gold)); color:#1B1610; border:none; font-weight:600; font-size:13px; padding:11px; border-radius:8px; cursor:pointer; }
+  .gate .err{ color:var(--rose-bright); font-size:12px; margin:-4px 0 10px; display:none; }
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:18px; }
+  .panel h3{ margin:0 0 14px; font-family:'Fraunces',serif; font-size:15px; font-weight:600; }
+  .row{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(58,66,80,0.5); font-size:13.5px; }
+  .row:last-child{ border-bottom:none; }
+  .row .k{ color:var(--ink-dim); }
+  .row .v{ font-family:'IBM Plex Mono',monospace; font-weight:600; }
+
+  .status-pill{ display:inline-block; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; }
+  .status-pill.active{ background:var(--teal-soft); color:var(--teal-bright); }
+  .status-pill.due{ background:var(--rose-soft); color:var(--rose-bright); }
+
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  thead th{ text-align:left; padding:9px 0; font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-dim); border-bottom:1px solid var(--line); }
+  tbody td{ padding:10px 0; border-bottom:1px solid rgba(58,66,80,0.5); font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
+  tbody tr:last-child td{ border-bottom:none; }
+  .empty{ text-align:center; color:var(--ink-dim); padding:24px 0; font-size:13px; }
+  #app{ display:none; }
+  .refresh{ font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><div class="dot"></div><h1>ZamFuneral — Subscription Admin</h1></div>
+  <p class="sub">Internal view for NEXLITE. Not linked from the member app.</p>
+
+  <div class="gate" id="gate">
+    <label>Admin Passcode</label>
+    <input type="password" id="pwInput" placeholder="Enter passcode">
+    <div class="err" id="pwErr">Incorrect passcode.</div>
+    <button id="btnUnlock">Unlock</button>
+  </div>
+
+  <div id="app">
+    <div class="panel">
+      <h3>Fund</h3>
+      <div class="row"><span class="k">Organisation</span><span class="v" id="orgName">—</span></div>
+      <div class="row"><span class="k">MTN Number</span><span class="v" id="fundNumber">—</span></div>
+      <div class="row"><span class="k">Members</span><span class="v" id="memberCount">—</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>Subscription Status</h3>
+      <div class="row"><span class="k">Status</span><span id="statusPill"><span class="status-pill due">—</span></span></div>
+      <div class="row"><span class="k">Covered through</span><span class="v" id="coveredThrough">—</span></div>
+      <div class="row"><span class="k">Total paid to NEXLITE</span><span class="v" id="totalPaid">—</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>Payment History</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Month</th><th>Amount</th><th>Txn Ref</th></tr></thead>
+        <tbody id="payBody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <p class="refresh" id="lastUpdated"></p>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+(function(){
+  // Same Firebase project as the main ZamFuneral app (read-only here — signs in anonymously,
+  // same as the public member portal, so no write access to fund data from this panel).
+  const firebaseConfig = {
+    apiKey: "AIzaSyBmf374bIU4H6ddd1kG3AudT_M03xMmFj0",
+    authDomain: "zam-funeral.firebaseapp.com",
+    databaseURL: "https://zam-funeral-default-rtdb.firebaseio.com",
+    projectId: "zam-funeral",
+    storageBucket: "zam-funeral.firebasestorage.app",
+    messagingSenderId: "648106298963",
+    appId: "1:648106298963:web:6bfe8ddff652d7b77ec0a6"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const auth = firebase.auth();
+
+  // Passcode gate — local only, just keeps this URL from being casually browsable.
+  // CHANGE THIS before sharing/using.
+  const ADMIN_PASSCODE = 'nexlite-admin';
+
+  const fmtK = n => 'K' + (Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmtDate = d => { if(!d) return '—'; const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); };
+  const thisMonth = () => new Date().toISOString().slice(0,7);
+
+  document.getElementById('btnUnlock').addEventListener('click', unlock);
+  document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(); });
+
+  function unlock(){
+    const val = document.getElementById('pwInput').value;
+    if(val === ADMIN_PASSCODE){
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      startListening();
+    } else {
+      document.getElementById('pwErr').style.display = 'block';
+    }
+  }
+
+  function startListening(){
+    auth.onAuthStateChanged((user)=>{
+      if(!user){ auth.signInAnonymously(); return; }
+      db.ref('fundData').on('value', snap=>{
+        const data = snap.val();
+        if(!data) return;
+        render(data);
+      });
+    });
+  }
+
+  function render(data){
+    const s = data.settings || {};
+    document.getElementById('orgName').textContent = s.orgName || '—';
+    document.getElementById('fundNumber').textContent = s.fundNumber || '—';
+    document.getElementById('memberCount').textContent = (data.members||[]).length;
+
+    const payments = (data.subscriptionPayments||[]).slice().sort((a,b)=> b.paidOn.localeCompare(a.paidOn));
+    const totalPaid = payments.reduce((sum,p)=> sum + (Number(p.amount)||0), 0);
+    document.getElementById('totalPaid').textContent = fmtK(totalPaid);
+
+    const body = document.getElementById('payBody');
+    if(payments.length === 0){
+      body.innerHTML = '<tr><td colspan="4" class="empty">No payments recorded yet.</td></tr>';
+      document.getElementById('statusPill').innerHTML = '<span class="status-pill due">Inactive</span>';
+      document.getElementById('coveredThrough').textContent = '—';
+    } else {
+      body.innerHTML = payments.map(p=>`
+        <tr>
+          <td>${fmtDate(p.paidOn)}</td>
+          <td>${p.monthCovered||'—'}</td>
+          <td>${fmtK(p.amount)}</td>
+          <td>${p.txnId||'—'}</td>
+        </tr>
+      `).join('');
+      const latest = payments[0];
+      const isCurrent = latest.monthCovered === thisMonth();
+      document.getElementById('statusPill').innerHTML = isCurrent
+        ? '<span class="status-pill active">Active</span>'
+        : '<span class="status-pill due">Renewal Due</span>';
+      document.getElementById('coveredThrough').textContent = latest.monthCovered || '—';
+    }
+    document.getElementById('lastUpdated').textContent = 'Last synced ' + new Date().toLocaleTimeString('en-GB');
+  }
+})();
+</script>
+</body>
+</html>
