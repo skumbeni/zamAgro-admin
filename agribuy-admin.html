@@ -314,6 +314,7 @@ function enterAdmin(){
     db = snap.val() || {};
     if(!Array.isArray(db.companies)) db.companies = [];
     if(!Array.isArray(db.agents)) db.agents = [];
+    if(!Array.isArray(db.agentLinks)) db.agentLinks = [];
     document.getElementById('conn-dot').classList.add('live');
     document.getElementById('conn-label').textContent = 'Live';
     renderStats();
@@ -471,12 +472,21 @@ async function confirmDelete(type, id){
   if(!acct) return;
   const noun = type==='companies' ? 'company' : 'agent';
   const warn = type==='companies'
-    ? 'This deletes the company account itself. Its agents, field staff, farmers and purchase records will NOT be deleted automatically and will become orphaned — clean those up separately if needed.'
-    : 'This deletes the agent account itself. Any field staff and purchase records linked to them will NOT be deleted automatically and will become orphaned — clean those up separately if needed.';
+    ? "This deletes the company account and unlinks any agents from it. Its field staff, farmers and purchase records will NOT be deleted automatically and will become orphaned — clean those up separately if needed."
+    : "This deletes the agent account and unlinks it from any companies. Any field staff and purchase records linked to them will NOT be deleted automatically and will become orphaned — clean those up separately if needed.";
   if(!confirm(`Delete ${noun} "${acct.name}"?\n\n${warn}\n\nThis cannot be undone.`)) return;
   const newList = list.filter(a=>a.id!==id);
+  // Also drop any agentLinks referencing this account — otherwise the
+  // company/agent on the other end of the link is left pointing at a
+  // record that no longer exists, which crashes their Overview/Agents
+  // views (they read agent.name / company.name off it unguarded).
+  const links = Array.isArray(db.agentLinks) ? db.agentLinks : [];
+  const linkField = type==='companies' ? 'companyId' : 'agentId';
+  const newLinks = links.filter(l => l[linkField] !== id);
+  const payload = { [type]: newList };
+  if(newLinks.length !== links.length) payload.agentLinks = newLinks;
   try{
-    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { [type]: newList });
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, payload);
     toast(noun.charAt(0).toUpperCase()+noun.slice(1)+' deleted');
   }catch(e){
     console.error('Failed to delete:', e);
