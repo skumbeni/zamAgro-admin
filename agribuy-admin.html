@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgriBuy Connect — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --soil:#2B2318; --soil-70:#5A4E3C; --soil-40:#9C907C;
+  --paper:#FAF7F1; --paper-2:#F1EBDD; --card:#FFFFFF;
+  --line:#E4DBC7;
+  --gold:#C68A2E; --gold-dark:#8F621C; --gold-tint:#F6E7CB;
+  --navy:#2E4057; --navy-dark:#1C2A3A; --navy-tint:#DEE6EE;
+  --rust:#B85C38; --rust-dark:#8A4327;
+  --olive:#5C7A44; --olive-dark:#41592F; --olive-tint:#E2E9D8;
+  --red:#B23A3A; --red-tint:#F5DEDE;
+  --green-ok:#3F7A4E; --green-tint:#DDEBDF;
+  --amber:#B8860B; --amber-tint:#FBEEC9;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(43,35,24,0.06), 0 6px 20px rgba(43,35,24,0.06);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--soil);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+h1,h2,h3,.serif{font-family:'Fraunces',serif;}
+.mono{font-family:'JetBrains Mono',monospace;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+
+.screen{min-height:100vh;display:none;}
+.screen.active{display:block;}
+.center-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+
+/* Gate screen */
+.gate-box{max-width:380px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:32px;box-shadow:var(--shadow);}
+.gate-box .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px;}
+.brand-mark{width:36px;height:36px;border-radius:9px;background:var(--soil);display:flex;align-items:center;justify-content:center;color:var(--gold-tint);font-family:'Fraunces',serif;font-weight:600;font-size:16px;flex-shrink:0;}
+.brand-name{font-size:16px;font-weight:600;}
+.gate-box h2{font-size:19px;margin:0 0 4px;}
+.gate-box .sub{color:var(--soil-70);font-size:13px;margin:0 0 20px;line-height:1.5;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11.5px;font-weight:600;color:var(--soil-70);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em;}
+.field input,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:var(--paper);color:var(--soil);}
+.field input:focus,.field select:focus{outline:2px solid var(--soil-40);outline-offset:1px;}
+.submit-btn{width:100%;border:none;border-radius:9px;padding:12px;font-size:14px;font-weight:600;color:#fff;background:var(--navy);margin-top:4px;}
+.submit-btn:disabled{opacity:.6;}
+.err-msg{color:var(--red);font-size:12px;margin:-6px 0 12px;display:none;}
+.gate-note{font-size:11.5px;color:var(--soil-40);margin-top:16px;line-height:1.5;text-align:center;}
+
+/* App shell */
+.app{display:none;min-height:100vh;}
+.app.active{display:flex;flex-direction:column;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:var(--soil);color:#fff;flex-wrap:wrap;gap:10px;}
+.topbar .brand{display:flex;align-items:center;gap:10px;}
+.topbar .brand-name{color:#fff;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:var(--soil-40);display:inline-block;margin-right:6px;}
+.conn-dot.live{background:var(--green-ok);}
+.conn-label{font-size:11.5px;color:#D8D0BE;}
+.logout-btn{padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:none;color:#D8D0BE;font-size:12.5px;font-weight:500;}
+.logout-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
+
+.main{flex:1;padding:22px;max-width:1200px;width:100%;margin:0 auto;}
+.stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
+@media(max-width:900px){.stat-row{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:560px){.stat-row{grid-template-columns:repeat(2,1fr);}}
+.stat-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);}
+.stat-card .val{font-size:22px;font-weight:700;font-family:'Fraunces',serif;}
+.stat-card .lbl{font-size:11.5px;color:var(--soil-70);margin-top:2px;}
+
+.tabs{display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line);}
+.tab-btn{background:none;border:none;padding:10px 4px;margin-right:14px;font-size:13.5px;font-weight:600;color:var(--soil-70);border-bottom:2px solid transparent;}
+.tab-btn.active{color:var(--soil);border-bottom-color:var(--gold-dark);}
+
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;justify-content:space-between;}
+.toolbar-left{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;}
+.search-input{padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;min-width:200px;background:var(--card);}
+.filter-select{padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:var(--card);}
+
+.acct-list{display:flex;flex-direction:column;gap:10px;}
+.acct-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;}
+.acct-info{flex:1;min-width:220px;}
+.acct-name{font-size:15px;font-weight:600;margin:0 0 3px;}
+.acct-meta{font-size:12px;color:var(--soil-70);display:flex;gap:10px;flex-wrap:wrap;}
+.acct-meta code{background:var(--paper-2);padding:1px 6px;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:11px;}
+.acct-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.status-badge{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:4px 10px;border-radius:20px;}
+.status-trial{background:var(--gold-tint);color:var(--gold-dark);}
+.status-active{background:var(--green-tint);color:var(--green-ok);}
+.status-suspended{background:var(--red-tint);color:var(--red);}
+.status-expired{background:#EEE;color:var(--soil-40);}
+.status-none{background:var(--navy-tint);color:var(--navy-dark);}
+.expiry-note{font-size:11.5px;color:var(--soil-70);}
+.expiry-note.warn{color:var(--amber);font-weight:600;}
+.expiry-note.bad{color:var(--red);font-weight:600;}
+.acct-btn{border:none;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:600;color:#fff;background:var(--navy);}
+.acct-btn.ghost{background:none;border:1px solid var(--line);color:var(--soil-70);}
+.acct-btn.danger{background:var(--red);}
+.empty-note{text-align:center;color:var(--soil-40);font-size:13px;padding:40px 0;}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(43,35,24,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
+.modal-backdrop.active{display:flex;}
+.modal-box{background:var(--card);border-radius:var(--radius);padding:26px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);position:relative;max-height:90vh;overflow-y:auto;}
+.modal-close{position:absolute;top:14px;right:16px;background:none;border:none;font-size:20px;color:var(--soil-40);}
+.modal-box h3{font-size:18px;margin:0 0 4px;}
+.modal-box .sub{color:var(--soil-70);font-size:13px;margin:0 0 18px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--soil);color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s ease, transform .2s ease;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+</style>
+</head>
+<body>
+
+<!-- =========== GATE SCREEN =========== -->
+<div class="screen active" id="screen-gate">
+  <div class="center-wrap">
+    <div class="gate-box">
+      <div class="brand"><div class="brand-mark">A</div><div class="brand-name">AgriBuy Connect — Admin</div></div>
+
+      <div id="gate-login">
+        <h2>Admin sign in</h2>
+        <p class="sub">Manage subscriptions, companies and agents.</p>
+        <div class="field"><label>Email</label><input id="login-email" type="email" placeholder="you@example.com" autocomplete="username"></div>
+        <div class="field"><label>Password</label><input id="login-pass" type="password" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptAdminLogin()"></div>
+        <div class="err-msg" id="login-err"></div>
+        <button class="submit-btn" id="login-btn" onclick="attemptAdminLogin()">Sign in</button>
+      </div>
+
+      <p class="gate-note">Connects to the same Firebase project as AgriBuy Connect (buyconnect-3ec28). Access is restricted to one authorized account. Not linked from the public app — keep this URL private.</p>
+    </div>
+  </div>
+</div>
+
+<!-- =========== ADMIN APP =========== -->
+<div class="app" id="screen-app">
+  <div class="topbar">
+    <div class="brand"><div class="brand-mark">A</div><div class="brand-name">AgriBuy Connect — Admin</div></div>
+    <div class="topbar-right">
+      <span><span class="conn-dot" id="conn-dot"></span><span class="conn-label" id="conn-label">Connecting…</span></span>
+      <button class="logout-btn" onclick="adminLogout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="stat-row" id="stat-row"></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-companies" onclick="switchTab('companies')">Companies</button>
+      <button class="tab-btn" id="tab-agents" onclick="switchTab('agents')">Agents</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <input class="search-input" id="search-input" placeholder="Search by name, ID or phone…" oninput="renderList()">
+        <select class="filter-select" id="status-filter" onchange="renderList()">
+          <option value="">All statuses</option>
+          <option value="trial">Trial</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+          <option value="expired">Expired</option>
+          <option value="none">No subscription set</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="acct-list" id="acct-list"></div>
+  </div>
+</div>
+
+<!-- Edit subscription modal -->
+<div class="modal-backdrop" id="edit-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeEditModal()">&times;</button>
+    <h3 id="edit-title">Edit subscription</h3>
+    <p class="sub" id="edit-sub"></p>
+    <div class="field">
+      <label>Status</label>
+      <select id="edit-status">
+        <option value="trial">Trial</option>
+        <option value="active">Active</option>
+        <option value="suspended">Suspended</option>
+        <option value="expired">Expired</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Plan</label>
+      <select id="edit-plan">
+        <option value="trial">Trial</option>
+        <option value="starter">Starter</option>
+        <option value="growth">Growth</option>
+        <option value="enterprise">Enterprise</option>
+        <option value="custom">Custom / negotiated</option>
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="field"><label>Trial ends</label><input id="edit-trial-end" type="date"></div>
+      <div class="field"><label>Subscription expires</label><input id="edit-expires" type="date"></div>
+    </div>
+    <div class="field"><label>Admin notes (internal only)</label><input id="edit-notes" placeholder="e.g. paid via mobile money, ref #..."></div>
+    <button class="submit-btn" onclick="saveSubscription()">Save changes</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+import { getDatabase, ref, get, update, onValue } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
+
+// Same Firebase project AgriBuy Connect itself uses.
+const firebaseConfig = {
+  apiKey: "AIzaSyBLXhkQld9Ij_XgvmeGPOVwLI67tvzbOBM",
+  authDomain: "buyconnect-3ec28.firebaseapp.com",
+  databaseURL: "https://buyconnect-3ec28-default-rtdb.firebaseio.com",
+  projectId: "buyconnect-3ec28",
+  storageBucket: "buyconnect-3ec28.firebasestorage.app",
+  messagingSenderId: "980918021234",
+  appId: "1:980918021234:web:6941f32a4367238de566eb"
+};
+const app = initializeApp(firebaseConfig);
+const rtdb = getDatabase(app);
+const auth = getAuth(app);
+
+const dataRef = ref(rtdb, 'agribuy_data_v1');
+
+// The only Firebase Auth UID allowed into this panel. Firebase Auth verifies
+// the password server-side (never touches this file) — this UID check is
+// what stops any *other* successfully-authenticated account (if one ever
+// exists in this project) from reaching admin data too.
+const ADMIN_UID = 'inV5mhOeHOh9QnlsRJeQU4Lsk6A3';
+
+window.__adminFirebase = { rtdb, ref, get, update, onValue, dataRef, auth, signInWithEmailAndPassword, signOut, onAuthStateChanged, ADMIN_UID };
+</script>
+
+<script>
+/* =========================================================================
+   Password verification for admin sign-in is handled entirely by Firebase
+   Auth (signInWithEmailAndPassword) — nothing here checks or stores a
+   password. ADMIN_UID above is the only extra gate: it confirms the
+   signed-in account is the specific one authorized for this panel.
+   ========================================================================= */
+let db = null; // full data blob from Firebase, kept live via onValue
+let currentTab = 'companies';
+
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.app').forEach(a=>a.classList.remove('active'));
+  const el = document.getElementById(id);
+  if(el){ el.classList.add('active'); }
+}
+function toast(msg){
+  let t = document.getElementById('toast');
+  if(!t){ t = document.createElement('div'); t.id='toast'; t.className='toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ---------- Gate: Firebase Auth email/password, restricted to ADMIN_UID ---------- */
+let authChecked = false;
+window.__adminFirebase.onAuthStateChanged(window.__adminFirebase.auth, (user) => {
+  if(!authChecked){
+    // First callback after page load — Firebase Auth restores a previous
+    // session automatically, so this covers "already signed in" reloads.
+    authChecked = true;
+    if(user && user.uid === window.__adminFirebase.ADMIN_UID){
+      enterAdmin();
+    }
+  }
+});
+
+async function attemptAdminLogin(){
+  const err = document.getElementById('login-err');
+  err.style.display = 'none';
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if(!email || !pass){ err.textContent = 'Enter your email and password.'; err.style.display='block'; return; }
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const fb = window.__adminFirebase;
+  try{
+    const cred = await fb.signInWithEmailAndPassword(fb.auth, email, pass);
+    if(cred.user.uid !== fb.ADMIN_UID){
+      await fb.signOut(fb.auth);
+      err.textContent = "This account isn't authorized for admin access.";
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Sign in';
+      return;
+    }
+    enterAdmin();
+  }catch(e){
+    console.error('Admin sign-in failed:', e);
+    err.textContent = 'Incorrect email or password.';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+function adminLogout(){
+  const fb = window.__adminFirebase;
+  fb.signOut(fb.auth).finally(() => location.reload());
+}
+
+/* ---------- Main admin app ---------- */
+function enterAdmin(){
+  show('screen-app');
+  document.getElementById('screen-app').classList.add('active');
+  const fb = window.__adminFirebase;
+  document.getElementById('conn-label').textContent = 'Loading…';
+  fb.onValue(fb.dataRef, (snap) => {
+    db = snap.val() || {};
+    if(!Array.isArray(db.companies)) db.companies = [];
+    if(!Array.isArray(db.agents)) db.agents = [];
+    document.getElementById('conn-dot').classList.add('live');
+    document.getElementById('conn-label').textContent = 'Live';
+    renderStats();
+    renderList();
+  }, (err) => {
+    console.error('Live data listener failed:', err);
+    document.getElementById('conn-dot').classList.remove('live');
+    document.getElementById('conn-label').textContent = 'Connection issue';
+  });
+}
+
+function switchTab(tab){
+  currentTab = tab;
+  document.getElementById('tab-companies').classList.toggle('active', tab==='companies');
+  document.getElementById('tab-agents').classList.toggle('active', tab==='agents');
+  renderList();
+}
+
+function subStatusOf(acct){
+  return (acct.subscription && acct.subscription.status) ? acct.subscription.status : 'none';
+}
+
+function renderStats(){
+  const all = [...(db.companies||[]), ...(db.agents||[])];
+  const counts = { total: all.length, trial:0, active:0, suspended:0, expired:0 };
+  all.forEach(a => { const s = subStatusOf(a); if(counts[s]!==undefined) counts[s]++; });
+  const cards = [
+    ['Total accounts', counts.total],
+    ['Trial', counts.trial],
+    ['Active', counts.active],
+    ['Suspended', counts.suspended],
+    ['Expired', counts.expired],
+  ];
+  document.getElementById('stat-row').innerHTML = cards.map(([lbl,val]) =>
+    `<div class="stat-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`
+  ).join('');
+}
+
+function daysUntil(dateStr){
+  if(!dateStr) return null;
+  const ms = new Date(dateStr+'T23:59:59').getTime() - Date.now();
+  return Math.ceil(ms / 86400000);
+}
+
+function expiryNote(acct){
+  const sub = acct.subscription;
+  if(!sub) return '';
+  if(sub.status==='trial' && sub.trialEndsAt){
+    const d = daysUntil(sub.trialEndsAt);
+    if(d===null) return '';
+    if(d<0) return `<span class="expiry-note bad">Trial ended ${Math.abs(d)}d ago</span>`;
+    if(d<=3) return `<span class="expiry-note warn">Trial ends in ${d}d</span>`;
+    return `<span class="expiry-note">Trial ends in ${d}d</span>`;
+  }
+  if(sub.status==='active' && sub.expiresAt){
+    const d = daysUntil(sub.expiresAt);
+    if(d===null) return '';
+    if(d<0) return `<span class="expiry-note bad">Expired ${Math.abs(d)}d ago</span>`;
+    if(d<=5) return `<span class="expiry-note warn">Renews/expires in ${d}d</span>`;
+    return `<span class="expiry-note">Active until ${sub.expiresAt}</span>`;
+  }
+  return '';
+}
+
+function renderList(){
+  if(!db) return;
+  const list = currentTab==='companies' ? (db.companies||[]) : (db.agents||[]);
+  const q = document.getElementById('search-input').value.trim().toLowerCase();
+  const statusFilter = document.getElementById('status-filter').value;
+  const filtered = list.filter(a => {
+    if(statusFilter && subStatusOf(a) !== statusFilter) return false;
+    if(!q) return true;
+    return (a.name||'').toLowerCase().includes(q) || (a.code||'').toLowerCase().includes(q) || (a.phone||'').toLowerCase().includes(q);
+  });
+  const wrap = document.getElementById('acct-list');
+  if(!filtered.length){
+    wrap.innerHTML = `<div class="empty-note">No ${currentTab} match this search/filter.</div>`;
+    return;
+  }
+  wrap.innerHTML = filtered.map(a => {
+    const status = subStatusOf(a);
+    const plan = a.subscription ? (a.subscription.plan || '—') : '—';
+    const extraMeta = currentTab==='companies' ? (a.location || '') : '';
+    return `
+    <div class="acct-card">
+      <div class="acct-info">
+        <p class="acct-name">${escapeHTML(a.name||'Unnamed')}</p>
+        <div class="acct-meta">
+          <code>${escapeHTML(a.code||'—')}</code>
+          <span>${escapeHTML(a.phone||'No phone on file')}</span>
+          ${extraMeta ? `<span>${escapeHTML(extraMeta)}</span>` : ''}
+          <span>Plan: ${escapeHTML(plan)}</span>
+        </div>
+      </div>
+      <div class="acct-right">
+        ${expiryNote(a)}
+        <span class="status-badge status-${status}">${status==='none'?'No subscription':status}</span>
+        <button class="acct-btn ghost" onclick="openEditModal('${currentTab}','${a.id}')">Edit</button>
+        <button class="acct-btn danger" onclick="confirmDelete('${currentTab}','${a.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHTML(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------- Edit subscription modal ---------- */
+let editingType = null, editingId = null;
+function openEditModal(type, id){
+  editingType = type; editingId = id;
+  const acct = (type==='companies' ? db.companies : db.agents).find(a=>a.id===id);
+  if(!acct) return;
+  document.getElementById('edit-title').textContent = acct.name || 'Edit subscription';
+  document.getElementById('edit-sub').textContent = (type==='companies'?'Company':'Agent') + ' · ID ' + (acct.code||'—');
+  const sub = acct.subscription || { status:'trial', plan:'trial', trialEndsAt:'', expiresAt:'', notes:'' };
+  document.getElementById('edit-status').value = sub.status || 'trial';
+  document.getElementById('edit-plan').value = sub.plan || 'trial';
+  document.getElementById('edit-trial-end').value = sub.trialEndsAt || '';
+  document.getElementById('edit-expires').value = sub.expiresAt || '';
+  document.getElementById('edit-notes').value = sub.notes || '';
+  document.getElementById('edit-modal').classList.add('active');
+}
+function closeEditModal(){
+  document.getElementById('edit-modal').classList.remove('active');
+  editingType = null; editingId = null;
+}
+async function saveSubscription(){
+  if(!editingType || !editingId) return;
+  const list = editingType==='companies' ? db.companies : db.agents;
+  const acct = list.find(a=>a.id===editingId);
+  if(!acct) return;
+  acct.subscription = {
+    status: document.getElementById('edit-status').value,
+    plan: document.getElementById('edit-plan').value,
+    trialEndsAt: document.getElementById('edit-trial-end').value || null,
+    expiresAt: document.getElementById('edit-expires').value || null,
+    notes: document.getElementById('edit-notes').value.trim(),
+  };
+  try{
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { [editingType]: list });
+    toast('Subscription updated');
+    closeEditModal();
+  }catch(e){
+    console.error('Failed to save subscription:', e);
+    toast('Save failed — check your connection');
+  }
+}
+
+/* ---------- Delete account ---------- */
+async function confirmDelete(type, id){
+  const list = type==='companies' ? db.companies : db.agents;
+  const acct = list.find(a=>a.id===id);
+  if(!acct) return;
+  const noun = type==='companies' ? 'company' : 'agent';
+  const warn = type==='companies'
+    ? 'This deletes the company account itself. Its agents, field staff, farmers and purchase records will NOT be deleted automatically and will become orphaned — clean those up separately if needed.'
+    : 'This deletes the agent account itself. Any field staff and purchase records linked to them will NOT be deleted automatically and will become orphaned — clean those up separately if needed.';
+  if(!confirm(`Delete ${noun} "${acct.name}"?\n\n${warn}\n\nThis cannot be undone.`)) return;
+  const newList = list.filter(a=>a.id!==id);
+  try{
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { [type]: newList });
+    toast(noun.charAt(0).toUpperCase()+noun.slice(1)+' deleted');
+  }catch(e){
+    console.error('Failed to delete:', e);
+    toast('Delete failed — check your connection');
+  }
+}
+
+// Expose functions the inline onclick= handlers need
+window.attemptAdminLogin = attemptAdminLogin;
+window.adminLogout = adminLogout;
+window.switchTab = switchTab;
+window.renderList = renderList;
+window.openEditModal = openEditModal;
+window.closeEditModal = closeEditModal;
+window.saveSubscription = saveSubscription;
+window.confirmDelete = confirmDelete;
+</script>
+</body>
+</html>
