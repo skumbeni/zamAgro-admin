@@ -92,6 +92,9 @@ input,select,textarea{font-family:inherit;}
 .status-suspended{background:var(--red-tint);color:var(--red);}
 .status-expired{background:#EEE;color:var(--soil-40);}
 .status-none{background:var(--navy-tint);color:var(--navy-dark);}
+.nav-badge{background:var(--rust);color:#fff;font-size:10.5px;font-weight:700;min-width:16px;height:16px;padding:0 5px;border-radius:20px;display:inline-flex;align-items:center;justify-content:center;margin-left:6px;vertical-align:middle;}
+.req-terms{font-size:12.5px;color:var(--soil-70);line-height:1.6;margin-top:6px;}
+.req-terms b{color:var(--soil);}
 .expiry-note{font-size:11.5px;color:var(--soil-70);}
 .expiry-note.warn{color:var(--amber);font-weight:600;}
 .expiry-note.bad{color:var(--red);font-weight:600;}
@@ -150,9 +153,10 @@ input,select,textarea{font-family:inherit;}
     <div class="tabs">
       <button class="tab-btn active" id="tab-companies" onclick="switchTab('companies')">Companies</button>
       <button class="tab-btn" id="tab-agents" onclick="switchTab('agents')">Agents</button>
+      <button class="tab-btn" id="tab-requests" onclick="switchTab('requests')">Partnership requests<span class="nav-badge" id="requests-badge" style="display:none;"></span></button>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar" id="list-toolbar">
       <div class="toolbar-left">
         <input class="search-input" id="search-input" placeholder="Search by name, ID or phone…" oninput="renderList()">
         <select class="filter-select" id="status-filter" onchange="renderList()">
@@ -167,6 +171,7 @@ input,select,textarea{font-family:inherit;}
     </div>
 
     <div class="acct-list" id="acct-list"></div>
+    <div class="acct-list" id="requests-list" style="display:none;"></div>
   </div>
 </div>
 
@@ -206,7 +211,7 @@ input,select,textarea{font-family:inherit;}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-import { getDatabase, ref, get, update, onValue } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js";
+import { getDatabase, ref, get, set, update, onValue } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
 
 // Same Firebase project AgriBuy Connect itself uses.
@@ -224,6 +229,11 @@ const rtdb = getDatabase(app);
 const auth = getAuth(app);
 
 const dataRef = ref(rtdb, 'agribuy_data_v1');
+// Partnership terms/requests live outside agribuy_data_v1 specifically so the
+// database rules can restrict partnership_terms writes to ADMIN_UID alone —
+// see the rules block documented in index.html (search "RTDB SECURITY RULES").
+const partnershipRequestsRef = ref(rtdb, 'partnership_requests');
+const partnershipTermsRef = ref(rtdb, 'partnership_terms');
 
 // The only Firebase Auth UID allowed into this panel. Firebase Auth verifies
 // the password server-side (never touches this file) — this UID check is
@@ -231,7 +241,7 @@ const dataRef = ref(rtdb, 'agribuy_data_v1');
 // exists in this project) from reaching admin data too.
 const ADMIN_UID = 'inV5mhOeHOh9QnlsRJeQU4Lsk6A3';
 
-window.__adminFirebase = { rtdb, ref, get, update, onValue, dataRef, auth, signInWithEmailAndPassword, signOut, onAuthStateChanged, ADMIN_UID };
+window.__adminFirebase = { rtdb, ref, get, set, update, onValue, dataRef, partnershipRequestsRef, partnershipTermsRef, auth, signInWithEmailAndPassword, signOut, onAuthStateChanged, ADMIN_UID };
 </script>
 
 <script>
@@ -242,6 +252,8 @@ window.__adminFirebase = { rtdb, ref, get, update, onValue, dataRef, auth, signI
    signed-in account is the specific one authorized for this panel.
    ========================================================================= */
 let db = null; // full data blob from Firebase, kept live via onValue
+let partnershipRequests = {}; // { [companyUid]: requestObj } from /partnership_requests, admin-readable in full
+let partnershipTerms = {};    // { [companyUid]: termsObj } from /partnership_terms, admin-readable in full
 let currentTab = 'companies';
 
 function show(id){
@@ -319,19 +331,156 @@ function enterAdmin(){
     document.getElementById('conn-label').textContent = 'Live';
     renderStats();
     renderList();
+    if(currentTab==='requests') renderRequestsList();
   }, (err) => {
     console.error('Live data listener failed:', err);
     document.getElementById('conn-dot').classList.remove('live');
     document.getElementById('conn-label').textContent = 'Connection issue';
   });
+  // Only ADMIN_UID can read these nodes in full (see rules) — this is what
+  // lets the panel list every pending request without already knowing each
+  // company's uid up front.
+  fb.onValue(fb.partnershipRequestsRef, (snap) => {
+    partnershipRequests = snap.val() || {};
+    renderRequestsBadge();
+    renderStats();
+    if(currentTab==='requests') renderRequestsList();
+  }, (err) => console.error('Partnership requests listener failed:', err));
+  fb.onValue(fb.partnershipTermsRef, (snap) => {
+    partnershipTerms = snap.val() || {};
+    if(currentTab==='requests') renderRequestsList();
+  }, (err) => console.error('Partnership terms listener failed:', err));
 }
 
 function switchTab(tab){
   currentTab = tab;
   document.getElementById('tab-companies').classList.toggle('active', tab==='companies');
   document.getElementById('tab-agents').classList.toggle('active', tab==='agents');
-  renderList();
+  document.getElementById('tab-requests').classList.toggle('active', tab==='requests');
+  const isRequests = tab==='requests';
+  document.getElementById('list-toolbar').style.display = isRequests ? 'none' : '';
+  document.getElementById('acct-list').style.display = isRequests ? 'none' : '';
+  document.getElementById('requests-list').style.display = isRequests ? '' : 'none';
+  if(isRequests) renderRequestsList(); else renderList();
 }
+
+/* ---------- Partnership change requests ---------- */
+// Kept in sync with the equivalent formatter in index.html (partnershipSummary()).
+const PARTNERSHIP_LABELS = { origination_commission:'Origination Commission', managed_origination:'Managed Origination', trading_margin:'Trading Margin' };
+function fmtNumAdmin(n){ return Number(n||0).toLocaleString('en-ZM',{maximumFractionDigits:0}); }
+function partnershipSummary(pt){
+  if(!pt) return '';
+  if(pt.model === 'origination_commission'){
+    return pt.originationRateType==='flat'
+      ? `ZMW ${fmtNumAdmin(pt.originationRateFlatPerMT)}/MT flat`
+      : `${pt.originationRatePct}% of accepted value`;
+  }
+  if(pt.model === 'managed_origination'){
+    return `ZMW ${fmtNumAdmin(pt.retainerZMW)}/mo retainer + ZMW ${fmtNumAdmin(pt.managedRatePerMT)}/MT`;
+  }
+  if(pt.model === 'trading_margin'){
+    return `${pt.tradingMarginPct}% target spread, ${pt.avgCycleDays}d cycle, ${pt.financingCostPctPerAnnum}%/yr financing`;
+  }
+  return '';
+}
+// Requests live at /partnership_requests/{companyUid} — this only works for
+// companies that already have a Firebase Auth uid on their record (the
+// overwhelming majority; see index.html's uidFor()). A request keyed by a
+// uid with no matching company (stale/orphaned) is skipped rather than
+// crashing the list.
+function pendingRequestEntries(){
+  return Object.keys(partnershipRequests)
+    .map(uid => ({ uid, request: partnershipRequests[uid], company: (db.companies||[]).find(c=>c.uid===uid) }))
+    .filter(e => e.company);
+}
+function renderRequestsBadge(){
+  const n = pendingRequestEntries().length;
+  const badge = document.getElementById('requests-badge');
+  badge.textContent = n;
+  badge.style.display = n>0 ? 'inline-flex' : 'none';
+}
+function renderRequestsList(){
+  if(!db) return;
+  const pending = pendingRequestEntries();
+  const wrap = document.getElementById('requests-list');
+  if(!pending.length){
+    wrap.innerHTML = `<div class="empty-note">No pending partnership change requests.</div>`;
+    return;
+  }
+  wrap.innerHTML = pending.map(({uid, request, company:c}) => {
+    const cur = partnershipTerms[uid]; // undefined until AgriBuy has ever approved terms for this company
+    const submitted = (request.requestedAt||'').slice(0,10);
+    return `
+    <div class="acct-card" style="align-items:flex-start;">
+      <div class="acct-info">
+        <p class="acct-name">${escapeHTML(c.name||'Unnamed')}</p>
+        <div class="acct-meta"><code>${escapeHTML(c.code||'—')}</code>${submitted?`<span>Submitted ${escapeHTML(submitted)}</span>`:''}</div>
+        <div class="req-terms">
+          <div>Current: <b>${cur ? (PARTNERSHIP_LABELS[cur.model]||cur.model) : 'Default'}</b> — ${cur ? escapeHTML(partnershipSummary(cur)) : 'Origination Commission, 4% of accepted value (never explicitly approved)'}</div>
+          <div>Requested: <b>${PARTNERSHIP_LABELS[request.model]||request.model}</b> — ${escapeHTML(partnershipSummary(request))}</div>
+        </div>
+      </div>
+      <div class="acct-right">
+        <button class="acct-btn" style="background:var(--green-ok);" onclick="approvePartnershipRequest('${uid}')">Approve</button>
+        <button class="acct-btn danger" onclick="rejectPartnershipRequest('${uid}')">Reject</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+// Best-effort notification into the company's own /inbox/{uid}/notifications —
+// same record shape DB.addNotification() writes in index.html, so it renders
+// there identically. Failure here never blocks the approve/reject itself.
+function notifyPartnershipDecision(companyUid, companyId, approved, request){
+  const fb = window.__adminFirebase;
+  const id = 'nt_' + Math.random().toString(36).slice(2,9);
+  const summary = partnershipSummary(request);
+  const n = {
+    id, role:'company', userId: companyId, type:'partnership',
+    title: approved ? 'Partnership terms approved' : 'Partnership request rejected',
+    body: approved
+      ? `AgriBuy approved your requested terms: ${PARTNERSHIP_LABELS[request.model]||request.model} — ${summary}.`
+      : `AgriBuy rejected your requested partnership change (${PARTNERSHIP_LABELS[request.model]||request.model} — ${summary}). Your current terms stay in effect.`,
+    meta: null, createdAt: Date.now(), read: false,
+    uid: companyUid, byUid: fb.ADMIN_UID
+  };
+  fb.set(fb.ref(fb.rtdb, 'inbox/'+companyUid+'/notifications/'+id), n)
+    .catch(err => console.error('Partnership decision notification failed to send:', err));
+}
+async function approvePartnershipRequest(companyUid){
+  const request = partnershipRequests[companyUid];
+  const c = (db.companies||[]).find(x=>x.uid===companyUid);
+  if(!request || !c) return;
+  const terms = Object.assign({}, request);
+  delete terms.requestedAt;
+  delete terms.companyId;
+  terms.approvedAt = new Date().toISOString();
+  const fb = window.__adminFirebase;
+  try{
+    await fb.set(ref_(fb, 'partnership_terms/'+companyUid), terms);
+    await fb.set(ref_(fb, 'partnership_requests/'+companyUid), null);
+    notifyPartnershipDecision(companyUid, c.id, true, request);
+    toast('Partnership terms approved');
+  }catch(e){
+    console.error('Failed to approve partnership request:', e);
+    toast('Approval failed — check your connection');
+  }
+}
+async function rejectPartnershipRequest(companyUid){
+  const request = partnershipRequests[companyUid];
+  const c = (db.companies||[]).find(x=>x.uid===companyUid);
+  if(!request || !c) return;
+  if(!confirm(`Reject ${c.name}'s requested partnership change? Their current terms stay in effect.`)) return;
+  const fb = window.__adminFirebase;
+  try{
+    await fb.set(ref_(fb, 'partnership_requests/'+companyUid), null);
+    notifyPartnershipDecision(companyUid, c.id, false, request);
+    toast('Request rejected');
+  }catch(e){
+    console.error('Failed to reject partnership request:', e);
+    toast('Action failed — check your connection');
+  }
+}
+function ref_(fb, path){ return fb.ref(fb.rtdb, path); }
 
 function subStatusOf(acct){
   return (acct.subscription && acct.subscription.status) ? acct.subscription.status : 'none';
@@ -347,6 +496,7 @@ function renderStats(){
     ['Active', counts.active],
     ['Suspended', counts.suspended],
     ['Expired', counts.expired],
+    ['Partnership requests', pendingRequestEntries().length],
   ];
   document.getElementById('stat-row').innerHTML = cards.map(([lbl,val]) =>
     `<div class="stat-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`
@@ -503,6 +653,8 @@ window.openEditModal = openEditModal;
 window.closeEditModal = closeEditModal;
 window.saveSubscription = saveSubscription;
 window.confirmDelete = confirmDelete;
+window.approvePartnershipRequest = approvePartnershipRequest;
+window.rejectPartnershipRequest = rejectPartnershipRequest;
 </script>
 </body>
 </html>
