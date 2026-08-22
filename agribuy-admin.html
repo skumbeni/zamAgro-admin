@@ -154,6 +154,7 @@ input,select,textarea{font-family:inherit;}
       <button class="tab-btn active" id="tab-companies" onclick="switchTab('companies')">Companies</button>
       <button class="tab-btn" id="tab-agents" onclick="switchTab('agents')">Agents</button>
       <button class="tab-btn" id="tab-requests" onclick="switchTab('requests')">Partnership requests<span class="nav-badge" id="requests-badge" style="display:none;"></span></button>
+      <button class="tab-btn" id="tab-unlinks" onclick="switchTab('unlinks')">Unlink requests<span class="nav-badge" id="unlinks-badge" style="display:none;"></span></button>
     </div>
 
     <div class="toolbar" id="list-toolbar">
@@ -172,6 +173,7 @@ input,select,textarea{font-family:inherit;}
 
     <div class="acct-list" id="acct-list"></div>
     <div class="acct-list" id="requests-list" style="display:none;"></div>
+    <div class="acct-list" id="unlinks-list" style="display:none;"></div>
   </div>
 </div>
 
@@ -197,6 +199,7 @@ input,select,textarea{font-family:inherit;}
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
         <option value="enterprise">Enterprise</option>
+        <option value="payperpurchase">Pay-per-purchase</option>
         <option value="custom">Custom / negotiated</option>
       </select>
     </div>
@@ -204,6 +207,7 @@ input,select,textarea{font-family:inherit;}
       <div class="field"><label>Trial ends</label><input id="edit-trial-end" type="date"></div>
       <div class="field"><label>Subscription expires</label><input id="edit-expires" type="date"></div>
     </div>
+    <div class="field"><label>Grace period ends (billing bypassed until this date — set by unlink approvals, blank to clear)</label><input id="edit-grace-end" type="date"></div>
     <div class="field"><label>Admin notes (internal only)</label><input id="edit-notes" placeholder="e.g. paid via mobile money, ref #..."></div>
     <button class="submit-btn" onclick="saveSubscription()">Save changes</button>
   </div>
@@ -331,7 +335,9 @@ function enterAdmin(){
     document.getElementById('conn-label').textContent = 'Live';
     renderStats();
     renderList();
+    renderUnlinksBadge();
     if(currentTab==='requests') renderRequestsList();
+    if(currentTab==='unlinks') renderUnlinksList();
   }, (err) => {
     console.error('Live data listener failed:', err);
     document.getElementById('conn-dot').classList.remove('live');
@@ -357,11 +363,16 @@ function switchTab(tab){
   document.getElementById('tab-companies').classList.toggle('active', tab==='companies');
   document.getElementById('tab-agents').classList.toggle('active', tab==='agents');
   document.getElementById('tab-requests').classList.toggle('active', tab==='requests');
+  document.getElementById('tab-unlinks').classList.toggle('active', tab==='unlinks');
   const isRequests = tab==='requests';
-  document.getElementById('list-toolbar').style.display = isRequests ? 'none' : '';
-  document.getElementById('acct-list').style.display = isRequests ? 'none' : '';
+  const isUnlinks = tab==='unlinks';
+  document.getElementById('list-toolbar').style.display = (isRequests||isUnlinks) ? 'none' : '';
+  document.getElementById('acct-list').style.display = (isRequests||isUnlinks) ? 'none' : '';
   document.getElementById('requests-list').style.display = isRequests ? '' : 'none';
-  if(isRequests) renderRequestsList(); else renderList();
+  document.getElementById('unlinks-list').style.display = isUnlinks ? '' : 'none';
+  if(isRequests) renderRequestsList();
+  else if(isUnlinks) renderUnlinksList();
+  else renderList();
 }
 
 /* ---------- Partnership change requests ---------- */
@@ -480,6 +491,101 @@ async function rejectPartnershipRequest(companyUid){
     toast('Action failed — check your connection');
   }
 }
+
+/* ---------- Agent unlink requests ----------
+   Unlike partnership changes, unlink requests live inline on each
+   agentLinks[] entry (unlinkRequestedAt) inside the main data blob —
+   there's no separate Firebase node for these, since the link record
+   itself is already part of that blob. Approving removes the link;
+   if that was the company's last agent, billing now applies to them,
+   so a short grace period is granted rather than an instant cutoff. */
+const UNLINK_GRACE_DAYS = 7;
+function pendingUnlinkEntries(){
+  return (db.agentLinks||[])
+    .filter(l => !!l.unlinkRequestedAt)
+    .map(l => ({ link:l, company:(db.companies||[]).find(c=>c.id===l.companyId), agent:(db.agents||[]).find(a=>a.id===l.agentId) }))
+    .filter(e => e.company);
+}
+function renderUnlinksBadge(){
+  const n = pendingUnlinkEntries().length;
+  const badge = document.getElementById('unlinks-badge');
+  badge.textContent = n;
+  badge.style.display = n>0 ? 'inline-flex' : 'none';
+}
+function renderUnlinksList(){
+  if(!db) return;
+  const pending = pendingUnlinkEntries();
+  const wrap = document.getElementById('unlinks-list');
+  if(!pending.length){
+    wrap.innerHTML = `<div class="empty-note">No pending agent-unlink requests.</div>`;
+    return;
+  }
+  wrap.innerHTML = pending.map(({link, company:c, agent:a}) => {
+    const submitted = (link.unlinkRequestedAt||'').slice(0,10);
+    const otherLinksLeft = (db.agentLinks||[]).filter(l=>l.companyId===c.id && l.id!==link.id).length;
+    return `
+    <div class="acct-card" style="align-items:flex-start;">
+      <div class="acct-info">
+        <p class="acct-name">${escapeHTML(c.name||'Unnamed')}</p>
+        <div class="acct-meta"><code>${escapeHTML(c.code||'—')}</code>${submitted?`<span>Requested ${escapeHTML(submitted)}</span>`:''}</div>
+        <div class="req-terms">
+          <div>Unlink agent: <b>${escapeHTML(a?a.name:'(agent record missing)')}</b></div>
+          <div>${otherLinksLeft>0 ? `Company keeps ${otherLinksLeft} other agent link(s) — stays free either way.` : `This is their only agent — approving moves them to billing, with a ${UNLINK_GRACE_DAYS}-day grace period.`}</div>
+        </div>
+      </div>
+      <div class="acct-right">
+        <button class="acct-btn" style="background:var(--green-ok);" onclick="approveUnlinkRequest('${link.id}')">Approve</button>
+        <button class="acct-btn danger" onclick="denyUnlinkRequest('${link.id}')">Deny</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function approveUnlinkRequest(linkId){
+  const link = (db.agentLinks||[]).find(l=>l.id===linkId);
+  if(!link) return;
+  const c = (db.companies||[]).find(x=>x.id===link.companyId);
+  const a = (db.agents||[]).find(x=>x.id===link.agentId);
+  if(!c) return;
+  if(!confirm(`Approve unlinking ${a?a.name:'this agent'} from ${c.name}?`)) return;
+  const newLinks = (db.agentLinks||[]).filter(l=>l.id!==linkId);
+  const stillAgentAssisted = newLinks.some(l=>l.companyId===c.id);
+  if(!Array.isArray(c.billingLog)) c.billingLog = [];
+  if(!stillAgentAssisted){
+    if(!c.subscription) c.subscription = { status:'trial', plan:'trial', trialEndsAt:null, expiresAt:null, graceEndsAt:null, notes:'' };
+    const graceDate = new Date(Date.now() + UNLINK_GRACE_DAYS*24*60*60*1000).toISOString().slice(0,10);
+    c.subscription.graceEndsAt = graceDate;
+    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_approved', detail:`Unlink of ${a?a.name:link.agentId} approved — no agents left, billing applies with grace until ${graceDate}.` });
+  } else {
+    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_approved', detail:`Unlink of ${a?a.name:link.agentId} approved — other agent link(s) remain, still free.` });
+  }
+  const fb = window.__adminFirebase;
+  try{
+    await fb.update(fb.dataRef, { agentLinks: newLinks, companies: db.companies });
+    toast('Unlink approved');
+  }catch(e){
+    console.error('Failed to approve unlink:', e);
+    toast('Action failed — check your connection');
+  }
+}
+async function denyUnlinkRequest(linkId){
+  const link = (db.agentLinks||[]).find(l=>l.id===linkId);
+  if(!link) return;
+  const c = (db.companies||[]).find(x=>x.id===link.companyId);
+  if(!confirm('Deny this unlink request? The agent stays linked.')) return;
+  delete link.unlinkRequestedAt;
+  if(c){
+    if(!Array.isArray(c.billingLog)) c.billingLog = [];
+    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_denied', detail:'Unlink request denied — agent remains linked.' });
+  }
+  const fb = window.__adminFirebase;
+  try{
+    await fb.update(fb.dataRef, { agentLinks: db.agentLinks, companies: db.companies });
+    toast('Unlink request denied');
+  }catch(e){
+    console.error('Failed to deny unlink:', e);
+    toast('Action failed — check your connection');
+  }
+}
 function ref_(fb, path){ return fb.ref(fb.rtdb, path); }
 
 function subStatusOf(acct){
@@ -586,6 +692,7 @@ function openEditModal(type, id){
   document.getElementById('edit-plan').value = sub.plan || 'trial';
   document.getElementById('edit-trial-end').value = sub.trialEndsAt || '';
   document.getElementById('edit-expires').value = sub.expiresAt || '';
+  document.getElementById('edit-grace-end').value = sub.graceEndsAt || '';
   document.getElementById('edit-notes').value = sub.notes || '';
   document.getElementById('edit-modal').classList.add('active');
 }
@@ -603,6 +710,7 @@ async function saveSubscription(){
     plan: document.getElementById('edit-plan').value,
     trialEndsAt: document.getElementById('edit-trial-end').value || null,
     expiresAt: document.getElementById('edit-expires').value || null,
+    graceEndsAt: document.getElementById('edit-grace-end').value || null,
     notes: document.getElementById('edit-notes').value.trim(),
   };
   try{
