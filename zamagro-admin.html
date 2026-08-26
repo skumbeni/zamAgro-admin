@@ -158,6 +158,7 @@
   .badge-active   { background: #0d2014; color: #2fbe6a; }
   .badge-expired  { background: #2a0d0d; color: #e05252; }
   .badge-suspended{ background: #2a1a0d; color: #f5a623; }
+  .badge-bundle   { background: #1a2a0d; color: #8bc34a; }
 
   /* ACTIONS */
   .action-btn {
@@ -197,6 +198,26 @@
   /* ── FINANCIALS ───────────────────────────────── */
   .finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
   @media (max-width: 700px) { .finance-grid { grid-template-columns: 1fr; } }
+
+  /* ── REQUESTS: mobile card layout ─────────────── */
+  @media (max-width: 680px) {
+    #view-requests .table-scroll { overflow-x: visible; }
+    #view-requests table { min-width: 0; }
+    #view-requests thead { display: none; }
+    #view-requests tbody tr {
+      display: block; border-bottom: 1px solid var(--border);
+      padding: .9rem 1.2rem;
+    }
+    #view-requests tbody td {
+      display: block; padding: .3rem 0; text-align: left; white-space: normal;
+    }
+    #view-requests tbody td[data-label]::before {
+      content: attr(data-label); display: block; font-size: .68rem;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: .15rem;
+    }
+    #view-requests tbody td:last-child { display: flex; gap: .5rem; padding-top: .6rem; }
+  }
   .revenue-bar-wrap { margin: .5rem 0; }
   .revenue-bar-label { display: flex; justify-content: space-between; font-size: .78rem; margin-bottom: .3rem; color: var(--muted); }
   .revenue-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
@@ -331,6 +352,9 @@
         <div class="nav-item" data-view="subscriptions" onclick="switchView('subscriptions',this)">
           <span class="nav-icon">🎫</span> Subscriptions
         </div>
+        <div class="nav-item" data-view="points" onclick="switchView('points',this)">
+          <span class="nav-icon">🎟️</span> Points
+        </div>
         <div class="nav-item" data-view="financials" onclick="switchView('financials',this)">
           <span class="nav-icon">💰</span> Financials
         </div>
@@ -433,6 +457,33 @@
                 </tr>
               </thead>
               <tbody id="sub-table"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ── POINTS (Multi-Shop Bundles) ── -->
+        <div id="view-points" class="view">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              Multi-Shop Points Balances
+              <div class="actions">
+                <button class="action-btn" onclick="loadPointsBalances()">↻ Refresh</button>
+              </div>
+            </div>
+            <div style="padding:.9rem 1.4rem;font-size:.8rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
+              Owners of several shops buy points in bulk (see Requests). 1 point = 1 shop-month at whichever plan tier that shop needs. Redeem a point here to extend/activate any one of that owner's shops — the balance drops by one and the shop's subscription updates automatically.
+            </div>
+            <div class="table-scroll"><table>
+              <thead>
+                <tr>
+                  <th>Owner</th>
+                  <th>Points Available</th>
+                  <th>Total Issued</th>
+                  <th>Last Updated</th>
+                  <th>Redeem Against Shop</th>
+                </tr>
+              </thead>
+              <tbody id="points-table"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
             </table></div>
           </div>
         </div>
@@ -726,7 +777,7 @@ async function sendPasswordReset(btn) {
 }
 
 /* ── NAVIGATION ──────────────────────────────────────────────── */
-const VIEW_TITLES = { overview:'Overview', businesses:'Businesses', subscriptions:'Subscriptions', financials:'Financials', requests:'Subscription Requests', settings:'Settings' };
+const VIEW_TITLES = { overview:'Overview', businesses:'Businesses', subscriptions:'Subscriptions', points:'Multi-Shop Points', financials:'Financials', requests:'Subscription Requests', settings:'Settings' };
 function switchView(id, el) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -736,6 +787,7 @@ function switchView(id, el) {
   if (id === 'overview') renderOverview();
   if (id === 'businesses') renderBusinessTable(allBusinesses);
   if (id === 'subscriptions') renderSubTable(allBusinesses);
+  if (id === 'points') loadPointsBalances();
   if (id === 'financials') renderFinancials();
   if (id === 'settings') loadSettingsForm();
   if (id === 'requests') loadRequests();
@@ -828,6 +880,7 @@ async function loadBusinesses() {
       uid,
       companyName: s.companyName || '(unnamed)',
       adminUsername: s.adminUsername || '—',
+      phone: s.companyPhone || '',
       tier: lic.tier || 'trial',
       expiry: lic.expiry || null,
       activatedAt: lic.activatedAt || null,
@@ -936,6 +989,7 @@ async function initPanel() {
     renderSubTable(allBusinesses);
     renderFinancials();
     await loadRequests();
+    await loadPointsBalances();
   } catch(e) {
     toast('Failed to load data: ' + e.message, 'err');
   }
@@ -957,7 +1011,7 @@ function licStatus(biz) {
   return daysLeft(biz.expiry) > 0 ? 'active' : 'expired';
 }
 function tierBadge(tier) {
-  const labels = { trial:'Trial', starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
+  const labels = { trial:'Trial', starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime', bundle:'Points Bundle' };
   return `<span class="badge badge-${tier}">${labels[tier]||tier}</span>`;
 }
 function statusBadge(status) {
@@ -1293,6 +1347,30 @@ async function saveSubscription() {
       window._pendingDismissUid = null;
       window._pendingDismissReqId = null;
     }
+    // If this save was a points redemption, deduct one point from the owner's balance
+    if (window._redeemPointsKey) {
+      const key = window._redeemPointsKey;
+      window._redeemPointsKey = null;
+      try {
+        const bal = allPointsBalances.find(o => o.key === key);
+        if (bal && (bal.points || 0) > 0) {
+          const updated = {
+            ...bal,
+            points: bal.points - 1,
+            lastUpdated: Date.now(),
+            log: [ ...(bal.log || []), { ts: Date.now(), type: 'redeem', points: -1, uid, tier, txnId, note } ]
+          };
+          delete updated.key;
+          await fbSet(`pointsBalances/${key}`, updated);
+          const idx = allPointsBalances.findIndex(o => o.key === key);
+          if (idx >= 0) allPointsBalances[idx] = { key, ...updated };
+          renderPointsTable();
+          toast(`Point redeemed — ${updated.points} left for ${updated.companyName || updated.phone}.`, 'ok');
+        }
+      } catch(e) {
+        toast('Subscription saved, but points balance update failed: ' + e.message, 'err');
+      }
+    }
   } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
 }
 
@@ -1325,7 +1403,10 @@ async function changePassword() {
 }
 
 /* ── MODAL UTILS ─────────────────────────────────────────────── */
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  if (id === 'modal-sub') window._redeemPointsKey = null;
+}
 document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
 
 /* ── SIDEBAR TOGGLE ──────────────────────────────────────────── */
@@ -1393,29 +1474,43 @@ function renderRequestsTable(list) {
     const txnDisplay = r.txnId
       ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${r.txnId}</span>`
       : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+    const isBundle = r.tier === 'bundle' && r.bundle;
+    const requestingCell = isBundle
+      ? `<span class="badge badge-bundle">Points Bundle</span>
+         <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">${r.bundle.points||0} pts @ ${tierBadgeLabel(r.bundle.tierPerShop)} · ${K(r.bundle.totalPrice||0)}${r.bundle.discountPct?` (${r.bundle.discountPct}% off)`:''}</div>`
+      : tierBadge(r.tier||'trial');
+    const actionCell = isBundle
+      ? `<button class="action-btn primary" onclick="issuePointsFromRequest('${r.uid}','${r.reqId}')">Issue ${r.bundle.points||0} Points</button>
+         <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>`
+      : `<button class="action-btn primary" onclick="activateFromRequest('${r.uid}','${r.reqId}')">Activate</button>
+         <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>`;
     return `<tr style="${isPending ? '' : 'opacity:.5'}">
-      <td>
+      <td data-label="Business">
         <div style="font-weight:600;font-size:.88rem">${r.companyName||'—'}</div>
         <div class="mono" style="color:var(--muted);font-size:.72rem">${r.adminUsername||''}</div>
       </td>
-      <td><a href="tel:${r.phone}" style="color:var(--green)">${r.phone||'—'}</a></td>
-      <td>${tierBadge(r.currentTier||'trial')}</td>
-      <td>${tierBadge(r.tier||'trial')}</td>
-      <td>${txnDisplay}</td>
-      <td style="font-size:.8rem;color:var(--muted);max-width:140px">${r.note||'—'}</td>
-      <td class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
+      <td data-label="Phone"><a href="tel:${r.phone}" style="color:var(--green)">${r.phone||'—'}</a></td>
+      <td data-label="Current Plan">${tierBadge(r.currentTier||'trial')}</td>
+      <td data-label="Requesting">${requestingCell}</td>
+      <td data-label="Txn ID">${txnDisplay}</td>
+      <td data-label="Note" style="font-size:.8rem;color:var(--muted);max-width:140px">${r.note||'—'}</td>
+      <td data-label="Date" class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-        ${isPending ? `<button class="action-btn primary" onclick="activateFromRequest('${r.uid}','${r.reqId}')">Activate</button>
-        <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>` : `<span style="color:var(--muted);font-size:.8rem">Done</span>`}
+        ${isPending ? actionCell : `<span style="color:var(--muted);font-size:.8rem">Done</span>`}
       </td>
     </tr>`;
   }).join('');
+}
+function tierBadgeLabel(tier) {
+  const labels = { trial:'Trial', starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
+  return labels[tier] || tier || '—';
 }
 
 function activateFromRequest(uid, reqId) {
   // Open subscription modal pre-filled with requested tier
   const req = allRequests.find(r => r.uid === uid && r.reqId === reqId);
   if (!req) return;
+  if (req.tier === 'bundle') { issuePointsFromRequest(uid, reqId); return; }
   // Make sure business is in allBusinesses (may not be if rules differ)
   let biz = allBusinesses.find(b => b.uid === uid);
   if (!biz) {
@@ -1457,6 +1552,106 @@ async function dismissRequest(uid, reqId) {
     if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
   }
 }
+/* ── MULTI-SHOP POINTS BALANCES ─────────────────────────────────
+   A Multi-Shop Points Bundle is purchased once but redeemable against
+   ANY of an owner's shops. Since each shop is its own Firebase Auth uid
+   with its own /businesses/{uid} record, points are banked separately
+   under pointsBalances/{ownerKey}, keyed by the owner's phone number
+   (the only identifier common across all of that owner's shops), and
+   redeemed by picking whichever shop needs it at redemption time. */
+function normalizePhone(p) {
+  const digits = (p || '').replace(/\D/g, '');
+  return digits.slice(-9) || digits; // last 9 digits — tolerates 0977…, 26097…, +26097… variants
+}
+
+let allPointsBalances = [];
+
+async function loadPointsBalances() {
+  try {
+    const raw = await fbGet('pointsBalances');
+    allPointsBalances = raw ? Object.entries(raw).map(([key, v]) => ({ key, ...v })) : [];
+    allPointsBalances.sort((a,b) => (b.points||0) - (a.points||0));
+  } catch(e) {
+    console.warn('pointsBalances load failed:', e);
+    allPointsBalances = [];
+  }
+  renderPointsTable();
+}
+
+function renderPointsTable() {
+  const tbody = document.getElementById('points-table');
+  if (!tbody) return;
+  if (!allPointsBalances.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No point balances yet — issue points from a bundle request first.</td></tr>'; return; }
+  tbody.innerHTML = allPointsBalances.map(o => {
+    const matches = allBusinesses.filter(b => b.phone && normalizePhone(b.phone) === o.key);
+    const list = matches.length ? matches : allBusinesses;
+    const options = list.map(b => `<option value="${b.uid}">${b.companyName}${matches.length ? '' : ' (no phone match — verify)'}</option>`).join('');
+    return `<tr>
+      <td data-label="Owner">
+        <div style="font-weight:600;font-size:.88rem">${o.companyName||'—'}</div>
+        <a href="tel:${o.phone||''}" style="color:var(--green);font-size:.78rem">${o.phone||o.key}</a>
+      </td>
+      <td data-label="Points Available" style="font-weight:700;font-size:1rem;color:${(o.points||0)>0?'var(--green)':'var(--muted)'}">${o.points||0}</td>
+      <td data-label="Total Issued" class="mono">${o.totalIssued||0}</td>
+      <td data-label="Last Updated" class="mono" style="font-size:.78rem">${fmtDate(o.lastUpdated)}</td>
+      <td data-label="Redeem Against Shop" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+        <select id="redeem-biz-${o.key}" style="max-width:150px;padding:.35rem;border-radius:6px;">${options || '<option value="">No businesses found</option>'}</select>
+        <button class="action-btn primary" ${(o.points||0) > 0 ? '' : 'disabled'} onclick="openRedeemModal('${o.key}')">Redeem</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function issuePointsFromRequest(uid, reqId) {
+  const req = allRequests.find(r => r.uid === uid && r.reqId === reqId);
+  if (!req || !req.bundle) { toast('This request has no bundle details.', 'err'); return; }
+  const key = normalizePhone(req.phone);
+  if (!key) { toast('Request has no phone number — cannot key a points balance to it.', 'err'); return; }
+  const pts = req.bundle.points || 0;
+  try {
+    let existing = allPointsBalances.find(o => o.key === key);
+    if (!existing) {
+      const fetched = await fbGet(`pointsBalances/${key}`);
+      existing = fetched ? { key, ...fetched } : { key };
+    }
+    const updated = {
+      phone: req.phone || existing.phone || '',
+      companyName: req.companyName || existing.companyName || '',
+      points: (existing.points || 0) + pts,
+      totalIssued: (existing.totalIssued || 0) + pts,
+      lastUpdated: Date.now(),
+      log: [
+        ...(existing.log || []),
+        { ts: Date.now(), type: 'issue', points: pts, tierPerShop: req.bundle.tierPerShop, price: req.bundle.totalPrice, txnId: req.txnId || '', note: req.note || '' }
+      ]
+    };
+    await fbSet(`pointsBalances/${key}`, updated);
+    await fbPatch(`subscriptionRequests/${uid}/${reqId}`, { status: 'done' });
+    req.status = 'done';
+    renderRequestsTable(allRequests);
+    updateReqBadge(allRequests.filter(r => r.status === 'pending').length);
+    const idx = allPointsBalances.findIndex(o => o.key === key);
+    if (idx >= 0) allPointsBalances[idx] = { key, ...updated }; else allPointsBalances.push({ key, ...updated });
+    renderPointsTable();
+    toast(`Issued ${pts} points to ${updated.companyName || updated.phone}.`, 'ok');
+  } catch(e) {
+    toast('Error: ' + e.message, 'err');
+    if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
+  }
+}
+
+function openRedeemModal(ownerKey) {
+  const sel = document.getElementById('redeem-biz-' + ownerKey);
+  const uid = sel && sel.value;
+  if (!uid) { toast('No business selected to redeem against.', 'err'); return; }
+  const bal = allPointsBalances.find(o => o.key === ownerKey);
+  if (!bal || (bal.points || 0) <= 0) { toast('No points available on this balance.', 'err'); return; }
+  openSubModal(uid);
+  window._redeemPointsKey = ownerKey;
+  document.getElementById('modal-sub-txnid').value = 'POINT-REDEEM';
+  document.getElementById('modal-sub-note').value = `Redeemed 1 point from bundle balance (${bal.points} → ${bal.points - 1} left)`;
+}
+
 let _toastTimer;
 function toast(msg, type='ok') {
   const el = document.getElementById('toast');
