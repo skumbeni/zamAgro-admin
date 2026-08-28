@@ -120,6 +120,7 @@
   .badge-pending{background:#ffedd5;color:#92400e}
   .badge-expired{background:#fee2e2;color:#991b1b}
   .badge-expiring{background:#fef9c3;color:#854d0e}
+  .badge-rsl_expired{background:#fed7aa;color:#9a3412}
   .badge-rejected{background:#f1f5f9;color:#64748b}
 
   /* ── TOOLBAR ── */
@@ -150,6 +151,7 @@
   .app-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.1rem;margin-bottom:.75rem;box-shadow:var(--shadow);display:flex;gap:1rem;align-items:flex-start}
   .app-card.pending{border-left:4px solid var(--warn)}
   .app-card.active{border-left:4px solid var(--accent2)}
+  .app-card.rsl_expired{border-left:4px solid #ea580c}
   .app-card.rejected{border-left:4px solid #cbd5e1;opacity:.7}
   .app-icon{font-size:1.8rem;flex-shrink:0;line-height:1}
   .app-info{flex:1;min-width:0}
@@ -361,6 +363,11 @@
           <div class="stat-value text-muted" id="statExpired">0</div>
           <div class="stat-sub">Need renewal</div>
         </div>
+        <div class="stat-card" style="cursor:pointer" onclick="showPage('subscriptions',document.getElementById('nav-subscriptions'));document.getElementById('subFilterStatus').value='rsl_expired';renderSubscriptions();">
+          <div class="stat-label">RSL Suspended</div>
+          <div class="stat-value stat-danger" id="statRslExpired">0</div>
+          <div class="stat-sub">Road Service Licence lapsed</div>
+        </div>
       </div>
 
       <!-- Recent Activity -->
@@ -490,6 +497,7 @@
           <option value="">All Status</option>
           <option value="active">Active</option>
           <option value="expired">Expired</option>
+          <option value="rsl_expired">RSL Expired</option>
           <option value="pending">Pending</option>
         </select>
         <select class="filter-select" id="subFilterPlan" onchange="renderSubscriptions()">
@@ -924,7 +932,17 @@
             <option value="active">Active</option>
             <option value="pending">Pending</option>
             <option value="expired">Expired</option>
+            <option value="rsl_expired">RSL Expired</option>
           </select>
+        </div>
+        <div class="form-row">
+          <label>RTSA Road Service Licence Number</label>
+          <input type="text" id="subRSLNo" placeholder="e.g. RSL/2026/00123"/>
+        </div>
+        <div class="form-row">
+          <label>RSL Expiry Date</label>
+          <input type="date" id="subRSLExpiry"/>
+          <div style="margin-top:.35rem;font-size:.75rem;color:var(--muted)">⏰ Listing is auto-suspended from the public directory once this date passes.</div>
         </div>
       </div>
       <div class="form-row">
@@ -958,6 +976,20 @@
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="closeModal('idCardModal')">Close</button>
       <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- RTSA Compliance Documents -->
+<div class="overlay" id="complianceModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>📄 RTSA Compliance Documents</h3>
+      <button class="close-btn" onclick="closeModal('complianceModal')">✕</button>
+    </div>
+    <div class="modal-body" id="complianceBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('complianceModal')">Close</button>
     </div>
   </div>
 </div>
@@ -1670,6 +1702,23 @@ function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString(
 function daysUntil(s){if(!s)return null;const diff=Math.ceil((new Date(s)-new Date())/(1000*60*60*24));return diff;}
 
 // ══════════════════════════════════════════════════════
+//  RTSA COMPLIANCE — auto-suspend when the Road Service
+//  Licence (RSL) lapses, independent of subscription status.
+//  Only manages transitions between active / expired / rsl_expired —
+//  pending and rejected are left alone, those are explicit states.
+// ══════════════════════════════════════════════════════
+function applyAutoStatus(s){
+  if(!s||(s.status!=='active'&&s.status!=='expired'&&s.status!=='rsl_expired'))return s;
+  const today=new Date();today.setHours(0,0,0,0);
+  const subOk=!s.expiry||new Date(s.expiry)>=today;
+  const rslOk=!s.rslExpiry||new Date(s.rslExpiry)>=today;
+  if(!subOk)s.status='expired';
+  else if(!rslOk)s.status='rsl_expired';
+  else s.status='active';
+  return s;
+}
+
+// ══════════════════════════════════════════════════════
 //  FIREBASE — intensified sync
 // ══════════════════════════════════════════════════════
 // (queue declared near KEYS/storage setup above, rehydrated from localStorage)
@@ -1869,9 +1918,8 @@ function attachListeners(){
           }
         });
         const result=Object.values(merged).filter(Boolean);
-        // Auto-expire
-        const today=new Date();today.setHours(0,0,0,0);
-        result.forEach(s=>{if(s.status==='active'&&s.expiry&&new Date(s.expiry)<today)s.status='expired';});
+        // Auto-expire — subscription expiry AND RSL (Road Service Licence) expiry
+        result.forEach(s=>applyAutoStatus(s));
         save(KEYS.subs,result);
       }
     }
@@ -2379,9 +2427,10 @@ function getSubStats(){
   const active=subs.filter(s=>s.status==='active');
   const pending=subs.filter(s=>s.status==='pending'||(s.isApplication&&s.status==='pending'));
   const expired=subs.filter(s=>s.status==='expired');
+  const rslExpired=subs.filter(s=>s.status==='rsl_expired');
   const expiring=active.filter(s=>{const d=daysUntil(s.expiry);return d!==null&&d>=0&&d<=state.warnDays;});
   const revenue=active.reduce((a,s)=>a+(s.price||0),0);
-  return{subs,active,pending,expired,expiring,revenue};
+  return{subs,active,pending,expired,rslExpired,expiring,revenue};
 }
 
 function updateBadges(){
@@ -2396,7 +2445,7 @@ function updateBadges(){
 //  DASHBOARD
 // ══════════════════════════════════════════════════════
 function renderDashboard(){
-  const{subs,active,pending,expired,expiring,revenue}=getSubStats();
+  const{subs,active,pending,expired,rslExpired,expiring,revenue}=getSubStats();
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('statTotal',subs.filter(s=>!s.isApplication||s.status!=='pending').length);
   set('statActive',active.length);
@@ -2406,6 +2455,7 @@ function renderDashboard(){
   set('statExpiringNote',`Within ${state.warnDays} days`);
   set('statRevenue','K'+revenue.toLocaleString());
   set('statExpired',expired.length);
+  set('statRslExpired',rslExpired.length);
 
   // Recent apps
   const recentEl=document.getElementById('recentApps');
@@ -2472,6 +2522,9 @@ function renderApplications(){
           ${a.nrc?`<br>🪪 NRC: ${esc(a.nrc)}`:''}
           ${a.licence?`<br>🪪 Licence: ${esc(a.licence)}`:''}
           ${a.regNo?`<br>🚗 Reg No: ${esc(a.regNo)}`:''}
+          ${a.rslNo?`<br>📄 RSL: ${esc(a.rslNo)} (exp ${fmtDate(a.rslExpiry)})${a.rslExpiry&&new Date(a.rslExpiry)<new Date()?' <span class="badge badge-rsl_expired">Expired</span>':''}`:'<br><span style="color:var(--danger);font-size:.78rem">⚠️ No Road Service Licence submitted</span>'}
+          ${a.vic?`<br>🪧 VIC: ${esc(a.vic)}`:''}
+          <br>${a.declarationAccepted?'<span style="color:#0d9669">✓ Conviction declaration accepted</span>':'<span style="color:var(--danger)">✗ Conviction declaration missing</span>'}
           ${a.area?`<br>📍 Area: ${esc(a.area)}`:''}
           ${a.hours?`<br>🕐 Hours: ${esc(a.hours)}`:''}
           ${a.txnId?`<br>💳 Txn ID: <code style="background:#d1fae5;color:#065f46;padding:.1rem .35rem;border-radius:4px;font-size:.78rem">${esc(a.txnId)}</code>`:''}
@@ -2486,8 +2539,15 @@ function renderApplications(){
         `:''}
         ${a.status==='active'?`
           <button class="btn btn-ghost btn-sm" onclick="showIdCard('${a.id}')">🆔 ID</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${a.id}')">📄 Docs</button>
           <button class="btn btn-warn btn-sm" onclick="openRenewModal('${a.id}')">🔄 Renew</button>
           <span class="badge badge-active">Approved</span>
+        `:''}
+        ${a.status==='rsl_expired'?`
+          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${a.id}')">🆔 ID</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${a.id}')">📄 Docs</button>
+          <button class="btn btn-warn btn-sm" onclick="openEditSubModal('${a.id}')">🔄 Renew RSL</button>
+          <span class="badge badge-rsl_expired">RSL Expired — Suspended</span>
         `:''}
         ${a.status==='rejected'?`<span class="badge badge-rejected">Rejected</span>`:''}
       </div>
@@ -2547,6 +2607,13 @@ function openApproveModal(appId){
     if(a.hours)rows.push(['Hours',esc(a.hours)]);
     if(a.nrc)rows.push(['NRC',esc(a.nrc)]);
     if(a.area)rows.push(['Area',esc(a.area)]);
+    if(a.rslNo){
+      const rslExpired=a.rslExpiry&&new Date(a.rslExpiry)<new Date();
+      rows.push(['📄 RSL No.',esc(a.rslNo)]);
+      rows.push(['RSL Expiry',`${fmtDate(a.rslExpiry)}${rslExpired?' <span class="badge badge-rsl_expired">Already expired</span>':''}`]);
+    }
+    if(a.vic)rows.push(['🪧 VIC No.',esc(a.vic)]);
+    rows.push(['Declaration',a.declarationAccepted?'<span style="color:#0d9669">✓ Accepted</span>':'<span style="color:var(--danger)">✗ Not accepted</span>']);
     if(a.txnId)rows.push(['💳 Txn ID',`<code style="background:#d1fae5;color:#065f46;padding:.1rem .4rem;border-radius:4px;font-size:.82rem">${esc(a.txnId)}</code>`]);
     if(a.notes)rows.push(['Notes',`<em style="color:var(--muted)">${esc(a.notes)}</em>`]);
     rows.push(['Ref',`<code style="font-size:.78rem">${esc(a.ref||a.id)}</code>`]);
@@ -2555,6 +2622,10 @@ function openApproveModal(appId){
     // Vehicle photos
     if(a.photo1||a.photo2){
       infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📸 Vehicle Photos</span><div style="display:flex;gap:.5rem">${a.photo1?`<img src="${a.photo1}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 1">`:''}${a.photo2?`<img src="${a.photo2}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 2">`:''}` +'</div></div>';
+    }
+    // Compliance documents — RSL & Police Clearance Certificate
+    if(a.rslDoc||a.policeDoc){
+      infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📄 Compliance Documents</span><div style="display:flex;gap:.5rem">${a.rslDoc?`<img src="${a.rslDoc}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Road Service Licence" title="Road Service Licence">`:'<span style="font-size:.72rem;color:var(--danger)">RSL not uploaded</span>'}${a.policeDoc?`<img src="${a.policeDoc}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Police Clearance Certificate" title="Police Clearance Certificate">`:'<span style="font-size:.72rem;color:var(--danger)">Police clearance not uploaded</span>'}` +'</div></div>';
     }
   }
 
@@ -2606,7 +2677,7 @@ function confirmApprove(){
   const expDate=new Date(start);
   expDate.setMonth(expDate.getMonth()+parseInt(duration));
   const now=new Date().toISOString();
-  subs[i]={...subs[i],
+  subs[i]=applyAutoStatus({...subs[i],
     status:'active',price,plan,duration,start,
     expiry:toDateStr(expDate),
     availability:'available',
@@ -2616,7 +2687,7 @@ function confirmApprove(){
     paymentDate:todayStr(),
     approvedAt:now,
     activatedBy:state.adminName||'Admin'
-  };
+  });
   // If admin accepted rider custom zone(s), permanently add them to zones list
   const acceptCustom=document.getElementById('acceptCustomZone')?.checked;
   if(acceptCustom){
@@ -3082,7 +3153,7 @@ function renderSubscriptions(){
   }
   tbody.innerHTML=subs.map((s,i)=>{
     const d=daysUntil(s.expiry);
-    let statusBadge=`<span class="badge badge-${s.status}">${s.status}</span>`;
+    let statusBadge=`<span class="badge badge-${s.status}">${s.status==='rsl_expired'?'RSL Expired':s.status}</span>`;
     if(s.status==='active'&&d!==null&&d<=state.warnDays&&d>=0)statusBadge=`<span class="badge badge-expiring">Expiring ${d===0?'today':'in '+d+'d'}</span>`;
     return`<tr>
       <td>${i+1}</td>
@@ -3098,6 +3169,7 @@ function renderSubscriptions(){
       <td>
         <div class="row-actions">
           <button class="btn btn-ghost btn-sm" onclick="openEditSubModal('${s.id}')">✏️</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${s.id}')" title="RTSA Compliance Docs">📄</button>
           <button class="btn btn-warn btn-sm" onclick="openRenewModal('${s.id}')">🔄</button>
           <button class="btn btn-ghost btn-sm" onclick="showIdCard('${s.id}')">🆔</button>
           <button class="btn btn-danger btn-sm" onclick="deleteSub('${s.id}')">🗑️</button>
@@ -3107,10 +3179,34 @@ function renderSubscriptions(){
   }).join('');
 }
 
+// Shows a rider's Road Service Licence, Police Clearance Certificate, and
+// Vehicle Identity Certificate details in a lightweight read-only modal.
+function showComplianceDocs(id){
+  const s=getSubs().find(x=>x.id===id);
+  if(!s)return;
+  const rslExpired=s.rslExpiry&&new Date(s.rslExpiry)<new Date();
+  const rows=[
+    ['Rider',`<strong>${esc(s.name)}</strong>`],
+    ['RSL No.',s.rslNo?esc(s.rslNo):'<span style="color:var(--danger)">Not on file</span>'],
+    ['RSL Expiry',s.rslExpiry?`${fmtDate(s.rslExpiry)}${rslExpired?' <span class="badge badge-rsl_expired">Expired</span>':''}`:'—'],
+    ['VIC No.',s.vic?esc(s.vic):'<span style="color:var(--muted)">Not yet issued</span>'],
+    ['Declaration',s.declarationAccepted?'<span style="color:#0d9669">✓ Accepted</span>':'<span style="color:var(--danger)">✗ Not on file</span>'],
+  ];
+  let html=rows.map(([l,v])=>`<div style="display:flex;gap:.5rem;margin-bottom:.4rem"><span style="color:var(--muted);min-width:90px;flex-shrink:0">${l}</span><span>${v}</span></div>`).join('');
+  html+=`<div style="margin-top:.7rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.4rem">Uploaded Documents</span>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+      ${s.rslDoc?`<div><img src="${s.rslDoc}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Road Service Licence</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Road Service Licence not uploaded</span>'}
+      ${s.policeDoc?`<div><img src="${s.policeDoc}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Police Clearance Certificate</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Police Clearance Certificate not uploaded</span>'}
+    </div>
+  </div>`;
+  document.getElementById('complianceBody').innerHTML=html;
+  openModal('complianceModal');
+}
+
 function openAddSubModal(){
   document.getElementById('subEditId').value='';
   document.getElementById('subModalTitle').textContent='Add Rider';
-  ['subName','subPhone','subPrice','subNotes','subHours'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';})
+  ['subName','subPhone','subPrice','subNotes','subHours','subRSLNo','subRSLExpiry'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';})
   const tripsEl=document.getElementById('subTrips');if(tripsEl)tripsEl.value=0;;
   document.getElementById('subStart').value=todayStr();
   document.getElementById('subStatus').value='active';
@@ -3133,6 +3229,8 @@ function openEditSubModal(id){
   document.getElementById('subNotes').value=s.notes||'';
   document.getElementById('subHours').value=s.hours||'';
   document.getElementById('subTrips').value=s.trips||0;
+  document.getElementById('subRSLNo').value=s.rslNo||'';
+  document.getElementById('subRSLExpiry').value=s.rslExpiry||'';
   openModal('subModal');
 }
 
@@ -3149,6 +3247,8 @@ function saveSub(){
   const notes=document.getElementById('subNotes').value.trim();
   const hours=document.getElementById('subHours')?.value.trim()||'';
   const trips=parseInt(document.getElementById('subTrips')?.value)||0;
+  const rslNo=document.getElementById('subRSLNo')?.value.trim()||'';
+  const rslExpiry=document.getElementById('subRSLExpiry')?.value||'';
   if(!name){alert('Name is required.');return;}
   const expDate=new Date(start);
   expDate.setMonth(expDate.getMonth()+parseInt(duration));
@@ -3156,9 +3256,9 @@ function saveSub(){
   const subs=getSubs();
   if(editId){
     const i=subs.findIndex(s=>s.id===editId);
-    if(i>-1)subs[i]={...subs[i],name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips};
+    if(i>-1)subs[i]=applyAutoStatus({...subs[i],name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry});
   }else{
-    subs.push({id:uid(),name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips,created:new Date().toISOString(),availability:'available'});
+    subs.push(applyAutoStatus({id:uid(),name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry,created:new Date().toISOString(),availability:'available'}));
   }
   save(KEYS.subs,subs);
   // Write only the changed item (or do full save for new additions)
