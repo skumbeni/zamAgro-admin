@@ -261,7 +261,7 @@
         <div class="topbar-info" id="topbarInfo">Manage subscriptions and users</div>
       </div>
       <div style="text-align: right; font-size: 12px; color: var(--ink-mute);">
-        <div id="syncBadge">✓ Ready</div>
+        <div id="syncBadge">○ Connecting…</div>
         <div id="currentTime" style="margin-top: 4px;"></div>
       </div>
     </div>
@@ -544,7 +544,8 @@
 <!-- Firebase Auth & Sync -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+  import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD1q9U8elKixUv3fxSPqf_RA5hihD3qNzY",
@@ -556,22 +557,46 @@
     measurementId: "G-NLK49PGQNS"
   };
 
+  // Admin account: skumbeni@gmail.com (UID V56EodaMNtd1oTSTanwBF4HIWIs2) is
+  // already baked into admin-firebase-rules.json as the sole owner of the
+  // "admin/" node. Still need this account's PASSWORD below — one-time,
+  // paste it in and this file is done.
+  const ADMIN_FIREBASE_EMAIL = 'skumbeni@gmail.com';
+  const ADMIN_FIREBASE_PASSWORD = 'REPLACE_WITH_ADMIN_PASSWORD';
+
   const app = initializeApp(firebaseConfig);
   window.auth = getAuth(app);
-  window.currentUser = null;
+  const db = getDatabase(app);
+  window.currentAdminUser = null;
 
-  onAuthStateChanged(window.auth, (user) => {
-    window.currentUser = user;
-    if (user) {
-      console.log('✓ Firebase authenticated:', user.uid);
-      loadDashboard();
-    } else {
-      signInAnonymously(window.auth).catch(err => {
-        console.warn('Auth retry:', err);
-        setTimeout(() => signInAnonymously(window.auth).catch(console.error), 2000);
-      });
+  // Low-level bridge so the classic (non-module) admin script below can
+  // read/write Realtime Database without its own `import`.
+  window.__rtdb = {
+    async setPath(path, value) {
+      await set(ref(db, path), value === undefined ? null : value);
+    },
+    async getPath(path) {
+      const snap = await get(ref(db, path));
+      return snap.exists() ? snap.val() : null;
     }
-  });
+  };
+
+  // Only called after the local password gate passes (see adminLogin()) —
+  // no point attempting a Firebase sign-in for random visitors on the
+  // login screen.
+  window.adminFirebaseSignIn = async function() {
+    if (window.currentAdminUser) return window.currentAdminUser;
+    try {
+      const cred = await signInWithEmailAndPassword(window.auth, ADMIN_FIREBASE_EMAIL, ADMIN_FIREBASE_PASSWORD);
+      window.currentAdminUser = cred.user;
+      console.log('✓ Admin Firebase authenticated:', cred.user.uid);
+      return cred.user;
+    } catch (err) {
+      console.error('Admin Firebase auth failed:', err);
+      window.lastSyncError = `${err.code || err.name || 'Error'}: ${err.message || err}`;
+      return null;
+    }
+  };
 </script>
 
 <!-- Admin Logic -->
@@ -597,7 +622,7 @@ let adminData = {
   tiers: []
 };
 
-// ============= LOCAL STORAGE HELPERS =============
+// ============= LOCAL STORAGE HELPERS (fallback / instant read) =============
 function getAdminData() {
   let data;
   try {
@@ -614,7 +639,84 @@ function getAdminData() {
 
 function saveAdminData(data) {
   localStorage.setItem('admin_data', JSON.stringify(data));
-  window.fb?.syncAll?.();
+  // Fire-and-forget: callers are synchronous, so we don't await here, but
+  // syncAll() now does a real write and updates the sync badge itself.
+  window.fb?.syncAll?.().catch(err => console.error('Sync failed:', err));
+}
+
+// ============= FIREBASE SYNC (shared admin/ node — same data on every device) =============
+window.fb = {
+  async write(path, data) {
+    if (!window.currentAdminUser) {
+      window.lastSyncError = 'Not signed in to Firebase';
+      return false;
+    }
+    try {
+      await window.__rtdb.setPath(`admin/${path}`, data);
+      return true;
+    } catch (err) {
+      console.error('Firebase write failed:', path, err);
+      window.lastSyncError = `${err.code || err.name || 'Error'}: ${err.message || err} (path: ${path})`;
+      return false;
+    }
+  },
+  async read(path) {
+    if (!window.currentAdminUser) return null;
+    try {
+      return await window.__rtdb.getPath(`admin/${path}`);
+    } catch (err) {
+      console.error('Firebase read failed:', err);
+      window.lastSyncError = `${err.code || err.name || 'Error'}: ${err.message || err}`;
+      return null;
+    }
+  },
+  async syncAll() {
+    if (!window.currentAdminUser) { updateSyncBadge('offline'); return false; }
+    updateSyncBadge('syncing');
+    const ok = await this.write('data', adminData);
+    updateSyncBadge(ok ? 'synced' : 'error');
+    return ok;
+  },
+  async restoreFromFirebase() {
+    if (!window.currentAdminUser) return null;
+    return await this.read('data');
+  }
+};
+
+function updateSyncBadge(state) {
+  const el = document.getElementById('syncBadge');
+  if (!el) return;
+  const map = {
+    syncing: '↻ Syncing…',
+    synced: '✓ Synced',
+    error: `⚠ Sync error${window.lastSyncError ? ' — ' + window.lastSyncError : ''}`,
+    offline: '○ Offline (local only)'
+  };
+  el.textContent = map[state] || state;
+}
+
+// Called once, right after the local password gate passes. Signs into the
+// fixed admin Firebase account, then reconciles local vs. cloud data:
+// cloud wins if it has data (so all devices converge on one record); if
+// the cloud is empty, this device's local copy is pushed up to seed it.
+async function initAdminData() {
+  let data = getAdminData();
+  const user = await (window.adminFirebaseSignIn ? window.adminFirebaseSignIn() : null);
+  if (!user) { updateSyncBadge('offline'); return data; }
+
+  const remote = await window.fb.restoreFromFirebase();
+  if (remote && Object.keys(remote).length) {
+    data = remote;
+    if (!data.tiers || data.tiers.length === 0) {
+      data.tiers = DEFAULT_TIERS.map(t => ({ ...t, features: [...t.features] }));
+    }
+    localStorage.setItem('admin_data', JSON.stringify(data));
+    updateSyncBadge('synced');
+  } else {
+    adminData = data;
+    await window.fb.syncAll();
+  }
+  return data;
 }
 
 // ============= TIER HELPERS =============
@@ -647,14 +749,16 @@ function populateTierSelect(selectedId) {
 }
 
 // ============= AUTHENTICATION =============
-function adminLogin() {
+async function adminLogin() {
   const password = document.getElementById('adminPassword').value;
   if (password === ADMIN_PASSWORD_HASH) {
     localStorage.setItem('admin_session', Date.now());
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('adminApp').style.display = 'flex';
     adminData = getAdminData();
-    loadDashboard();
+    loadDashboard(); // render instantly from local cache
+    adminData = await initAdminData(); // then reconcile with the cloud
+    loadDashboard(); // re-render with reconciled data
   } else {
     const error = document.getElementById('loginError');
     error.textContent = 'Invalid password';
@@ -1081,7 +1185,8 @@ window.addEventListener('load', () => {
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('adminApp').style.display = 'flex';
     adminData = getAdminData();
-    loadDashboard();
+    loadDashboard(); // render instantly from local cache
+    initAdminData().then(data => { adminData = data; loadDashboard(); });
   }
   updateClock();
 });
