@@ -562,7 +562,7 @@
   // "admin/" node. Still need this account's PASSWORD below — one-time,
   // paste it in and this file is done.
   const ADMIN_FIREBASE_EMAIL = 'skumbeni@gmail.com';
-  const ADMIN_FIREBASE_PASSWORD = 'REPLACE_WITH_ADMIN_PASSWORD';
+  const ADMIN_FIREBASE_PASSWORD = '883686Sk#';
 
   const app = initializeApp(firebaseConfig);
   window.auth = getAuth(app);
@@ -602,7 +602,23 @@
 <!-- Admin Logic -->
 <script>
 // ============= ADMIN CONFIG =============
-const ADMIN_PASSWORD_HASH = 'admin123'; // In production, use proper hashing!
+// Login gate password is no longer hardcoded — it's hashed (SHA-256) and
+// stored in localStorage under 'admin_password_hash'. First run seeds it
+// from DEFAULT_ADMIN_PASSWORD below; changing it in Settings overwrites
+// the stored hash so the new password actually takes effect.
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
+
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function ensureAdminPasswordInitialized() {
+  if (!localStorage.getItem('admin_password_hash')) {
+    localStorage.setItem('admin_password_hash', await sha256Hex(DEFAULT_ADMIN_PASSWORD));
+  }
+}
+
 const DEFAULT_TIERS = [
   { id: 'free', name: 'Free', price: 0, maxCustomers: 10, color: '#8A8A8A',
     features: ['Up to 10 customers', 'Basic reports', 'Offline mode'] },
@@ -751,7 +767,8 @@ function populateTierSelect(selectedId) {
 // ============= AUTHENTICATION =============
 async function adminLogin() {
   const password = document.getElementById('adminPassword').value;
-  if (password === ADMIN_PASSWORD_HASH) {
+  const inputHash = await sha256Hex(password);
+  if (inputHash === localStorage.getItem('admin_password_hash')) {
     localStorage.setItem('admin_session', Date.now());
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('adminApp').style.display = 'flex';
@@ -1125,12 +1142,13 @@ function addActivity(action, email, tier) {
   });
 }
 
-function changeAdminPassword() {
+async function changeAdminPassword() {
   const current = document.getElementById('currentPassword').value;
   const newPass = document.getElementById('newPassword').value;
   const confirm = document.getElementById('confirmPassword').value;
 
-  if (current !== ADMIN_PASSWORD_HASH) {
+  const currentHash = await sha256Hex(current);
+  if (currentHash !== localStorage.getItem('admin_password_hash')) {
     alert('Current password is incorrect');
     return;
   }
@@ -1145,8 +1163,7 @@ function changeAdminPassword() {
     return;
   }
 
-  // In production, hash the password and store securely
-  localStorage.setItem('admin_password_hash', newPass);
+  localStorage.setItem('admin_password_hash', await sha256Hex(newPass));
   document.getElementById('currentPassword').value = '';
   document.getElementById('newPassword').value = '';
   document.getElementById('confirmPassword').value = '';
@@ -1176,7 +1193,8 @@ function toast(msg, type = 'info') {
 }
 
 // ============= INIT =============
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  await ensureAdminPasswordInitialized();
   const session = localStorage.getItem('admin_session');
   if (!session || Date.now() - session > 86400000) { // 24 hour expiry
     document.getElementById('loginPage').style.display = 'flex';
