@@ -340,10 +340,10 @@
       <!-- USERS PAGE -->
       <div class="page" id="usersPage">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <div></div>
-          <button class="btn btn-primary" onclick="openUserModal()">
-            <i class="material-icons" style="font-size: 18px;">add</i>
-            New User
+          <div style="font-size: 12px; color: var(--ink-mute);">Businesses that have signed up in the app</div>
+          <button class="btn btn-secondary" onclick="loadUsers()">
+            <i class="material-icons" style="font-size: 18px;">refresh</i>
+            Refresh
           </button>
         </div>
 
@@ -368,6 +368,9 @@
 
       <!-- SUBSCRIPTIONS PAGE -->
       <div class="page" id="subscriptionsPage">
+        <h2 style="font-size: 14px; font-family: var(--font-heading); font-weight: 700; margin-bottom: 12px;">Pending Subscription Requests</h2>
+        <div id="pendingRequestsSection" style="margin-bottom: 28px;"></div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h2 style="font-size: 16px; font-family: var(--font-heading); font-weight: 700;">Subscription Tiers</h2>
           <button class="btn btn-primary" onclick="openTierModal()">
@@ -491,18 +494,11 @@
   <div class="modal-content">
     <button class="close-modal" onclick="closeUserModal()">&times;</button>
     <div class="modal-header">
-      <h2 id="userModalTitle">Add User</h2>
-      <p id="userModalDesc">Create a new user account</p>
+      <h2 id="userModalTitle">Edit User</h2>
+      <p id="userModalDesc">Update subscription tier &amp; status</p>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="userEmail" placeholder="user@example.com">
-      </div>
-      <div class="form-group">
-        <label>Business Name</label>
-        <input type="text" id="userBusiness" placeholder="My Business">
-      </div>
+      <div id="userModalInfo" style="background: var(--bg-alt); padding: 10px 12px; border-radius: 8px; font-size: 12px; color: var(--ink-soft); margin-bottom: 16px;"></div>
       <div class="form-group">
         <label>Subscription Tier</label>
         <select id="userTier" style="width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--font-body);"></select>
@@ -517,7 +513,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveUser()">Save User</button>
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
     </div>
   </div>
 </div>
@@ -575,7 +571,7 @@
     getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
     EmailAuthProvider, reauthenticateWithCredential, updatePassword
   } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-  import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+  import { getDatabase, ref, set, get, update } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD1q9U8elKixUv3fxSPqf_RA5hihD3qNzY",
@@ -607,6 +603,12 @@
     async getPath(path) {
       const snap = await get(ref(db, path));
       return snap.exists() ? snap.val() : null;
+    },
+    // Multi-location update from the database root — lets one call touch
+    // several paths atomically, e.g. approving a request writes
+    // users/{uid}/subscription/tier, /status, and /request/status together.
+    async updatePaths(updates) {
+      await update(ref(db), updates);
     }
   };
 
@@ -647,6 +649,41 @@
 // Authentication is handled entirely by Firebase Auth (see the module script
 // above) — there is no local password gate or default password anymore.
 
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ============= REAL USERS (from the actual SME Accounting Pro app) =============
+// The businesses that actually exist live in Firebase at users/{uid}/settings,
+// written by index.html itself on signup/sync — this admin panel has never
+// created real users, so "Add User" only ever produced fake local rows. Tier
+// and status are concepts the consumer app doesn't track at all, so admin's
+// choices for those are stored separately under admin/userOverrides/{uid}
+// (admin already owns read/write on the whole admin/ node) and merged in here.
+let realUsers = {}; // uid -> {id, email, business, tpin, createdAt, tier, status, request}
+
+async function refreshRealUsers() {
+  if (!window.currentAdminUser) return realUsers;
+  const usersNode = await window.fb.readUsers();
+  const next = {};
+  Object.entries(usersNode || {}).forEach(([uid, rec]) => {
+    const s = rec?.settings || {};
+    const sub = rec?.subscription || {};
+    next[uid] = {
+      id: uid,
+      email: s.email || '',
+      business: s.businessName || '',
+      tpin: s.tpin || '',
+      createdAt: s.createdAt || null,
+      tier: sub.tier || 'free',
+      status: sub.status || 'active',
+      request: sub.request && sub.request.status ? sub.request : null
+    };
+  });
+  realUsers = next;
+  return realUsers;
+}
+
 const DEFAULT_TIERS = [
   { id: 'free', name: 'Free', price: 0, maxCustomers: 10, color: '#8A8A8A',
     features: ['Up to 10 customers', 'Basic reports', 'Offline mode'] },
@@ -659,7 +696,6 @@ const DEFAULT_TIERS = [
 ];
 
 let adminData = {
-  users: [],
   subscriptions: [],
   billing: [],
   activity: [],
@@ -724,6 +760,20 @@ window.fb = {
   async restoreFromFirebase() {
     if (!window.currentAdminUser) return null;
     return await this.read('data');
+  },
+  // Reads the REAL app's /users tree directly (not admin/-prefixed like read()
+  // above) — this is where actual signed-up businesses live, written by the
+  // SME Accounting Pro app itself at users/{uid}/settings. Requires the RTDB
+  // rules to grant this admin UID .read on /users (see admin-firebase-rules.json).
+  async readUsers() {
+    if (!window.currentAdminUser) return null;
+    try {
+      return await window.__rtdb.getPath('users');
+    } catch (err) {
+      console.error('Reading /users failed:', err);
+      window.lastSyncError = `${err.code || err.name || 'Error'}: ${err.message || err} (path: users)`;
+      return null;
+    }
   }
 };
 
@@ -760,6 +810,8 @@ async function initAdminData() {
     adminData = data;
     await window.fb.syncAll();
   }
+  adminData = data;
+  publishTierCatalog(); // keep the consumer app's pricing/caps in sync on every load
   return data;
 }
 
@@ -824,7 +876,8 @@ window.onAdminAuthStateChanged = async function(user) {
     adminData = getAdminData();
     loadDashboard(); // render instantly from local cache
     adminData = await initAdminData(); // then reconcile with the cloud
-    loadDashboard(); // re-render with reconciled data
+    await refreshRealUsers(); // pull in the real signed-up businesses
+    loadDashboard(); // re-render with reconciled data + real user counts
   } else {
     document.getElementById('adminApp').style.display = 'none';
     document.getElementById('loginPage').style.display = 'flex';
@@ -874,10 +927,11 @@ function loadDashboard() {
     return !tier || !tier.price;
   };
 
+  const userList = Object.values(realUsers);
   const stats = {
-    totalUsers: adminData.users?.length || 0,
-    activeSubscriptions: adminData.users?.filter(u => !isFreeTier(u.tier))?.length || 0,
-    freeUsers: adminData.users?.filter(u => isFreeTier(u.tier))?.length || 0,
+    totalUsers: userList.length,
+    activeSubscriptions: userList.filter(u => !isFreeTier(u.tier)).length,
+    freeUsers: userList.filter(u => isFreeTier(u.tier)).length,
     monthlyRevenue: calculateMonthlyRevenue(),
   };
 
@@ -912,102 +966,188 @@ function calculateMonthlyRevenue() {
 
 // ============= USERS =============
 function loadUsers() {
-  adminData = getAdminData();
   const tbody = document.getElementById('usersTable');
-  
-  if (!adminData.users || adminData.users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--ink-mute);">No users yet</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--ink-mute);">Loading users…</td></tr>';
+
+  if (!window.currentAdminUser) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--ink-mute);">Not connected to Firebase — check the sync badge above.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = adminData.users.map(u => `
-    <tr>
-      <td><code style="font-size: 11px; color: var(--ink-mute);">${u.id.slice(0, 8)}...</code></td>
-      <td>${u.email}</td>
-      <td>${tierBadgeHTML(u.tier)}</td>
-      <td><span class="badge badge-${u.status === 'active' ? 'success' : 'danger'}">${u.status}</span></td>
-      <td>${new Date(u.created).toLocaleDateString()}</td>
-      <td>
-        <button class="btn btn-sm btn-secondary" onclick="editUser('${u.id}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button>
-      </td>
-    </tr>
-  `).join('');
+  refreshRealUsers().then(() => {
+    const list = Object.values(realUsers);
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--ink-mute);">No businesses have signed up yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = list.map(u => `
+      <tr>
+        <td><code style="font-size: 11px; color: var(--ink-mute);">${esc(u.id.slice(0, 10))}...</code></td>
+        <td>
+          ${esc(u.email) || '<span style="color: var(--ink-mute);">no email on file</span>'}
+          <div style="font-size: 11px; color: var(--ink-mute);">${esc(u.business) || 'business name not set'}</div>
+        </td>
+        <td>${tierBadgeHTML(u.tier)}</td>
+        <td><span class="badge badge-${u.status === 'active' ? 'success' : 'danger'}">${esc(u.status)}</span></td>
+        <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="editUser('${u.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="resetUserOverride('${u.id}')">Reset</button>
+        </td>
+      </tr>
+    `).join('');
+  });
 }
 
-function openUserModal(userId = null) {
-  const modal = document.getElementById('userModal');
-  if (userId) {
-    const user = adminData.users.find(u => u.id === userId);
-    document.getElementById('userModalTitle').textContent = 'Edit User';
-    document.getElementById('userModalDesc').textContent = 'Update user details';
-    document.getElementById('userEmail').value = user.email;
-    document.getElementById('userBusiness').value = user.business;
-    populateTierSelect(user.tier);
-    document.getElementById('userStatus').value = user.status;
-    modal.dataset.userId = userId;
-  } else {
-    document.getElementById('userModalTitle').textContent = 'Add User';
-    document.getElementById('userModalDesc').textContent = 'Create a new user account';
-    document.getElementById('userEmail').value = '';
-    document.getElementById('userBusiness').value = '';
-    populateTierSelect((adminData.tiers || []).find(t => !t.price)?.id || (adminData.tiers?.[0]?.id));
-    document.getElementById('userStatus').value = 'active';
-    modal.dataset.userId = null;
-  }
-  modal.classList.add('active');
+function openUserModal(userId) {
+  const user = realUsers[userId];
+  if (!user) return;
+  document.getElementById('userModalInfo').innerHTML =
+    `<strong>${esc(user.business) || 'Business name not set'}</strong><br>${esc(user.email) || 'No email on file'}`;
+  populateTierSelect(user.tier);
+  document.getElementById('userStatus').value = user.status;
+  document.getElementById('userModal').dataset.userId = userId;
+  document.getElementById('userModal').classList.add('active');
 }
 
 function closeUserModal() {
   document.getElementById('userModal').classList.remove('active');
 }
 
-function saveUser() {
+async function saveUser() {
   const userId = document.getElementById('userModal').dataset.userId;
-  const email = document.getElementById('userEmail').value;
-  const business = document.getElementById('userBusiness').value;
+  const user = realUsers[userId];
+  if (!user) return;
+
   const tier = document.getElementById('userTier').value;
   const status = document.getElementById('userStatus').value;
+  const oldTier = user.tier;
 
-  if (!email || !business) {
-    alert('Please fill all fields');
+  try {
+    await window.__rtdb.updatePaths({
+      [`users/${userId}/subscription/tier`]: tier,
+      [`users/${userId}/subscription/status`]: status
+    });
+  } catch (err) {
+    alert(`Could not save — ${err.message || err}`);
     return;
   }
 
-  if (userId) {
-    const user = adminData.users.find(u => u.id === userId);
-    const oldTier = user.tier;
-    user.email = email;
-    user.business = business;
-    user.tier = tier;
-    user.status = status;
-    addActivity(`Updated subscription ${oldTier} → ${tier}`, email, tier);
-  } else {
-    const newUser = {
-      id: 'user_' + Date.now(),
-      email, business, tier, status,
-      created: new Date().toISOString()
-    };
-    adminData.users.push(newUser);
-    addActivity('New user created', email, tier);
-  }
-
+  user.tier = tier;
+  user.status = status;
+  addActivity(`Updated subscription ${oldTier} → ${tier}`, user.email, tier);
   saveAdminData(adminData);
   closeUserModal();
   loadUsers();
-  toast(`User ${userId ? 'updated' : 'created'} successfully`, 'success');
+  toast('User updated successfully', 'success');
 }
 
 function editUser(userId) {
   openUserModal(userId);
 }
 
-function deleteUser(userId) {
-  if (!confirm('Delete this user? This cannot be undone.')) return;
-  adminData.users = adminData.users.filter(u => u.id !== userId);
-  saveAdminData(adminData);
+async function resetUserOverride(userId) {
+  const user = realUsers[userId];
+  if (!user) return;
+  if (!confirm(`Reset ${user.business || user.email || 'this business'} back to Free tier / Active status? This does not delete their account or data.`)) return;
+  try {
+    await window.__rtdb.updatePaths({
+      [`users/${userId}/subscription/tier`]: 'free',
+      [`users/${userId}/subscription/status`]: 'active'
+    });
+  } catch (err) {
+    alert(`Could not reset — ${err.message || err}`);
+    return;
+  }
   loadUsers();
-  toast('User deleted', 'success');
+  toast('Reset to default', 'success');
+}
+
+// ============= SUBSCRIPTION REQUESTS =============
+async function approveRequest(userId) {
+  const user = realUsers[userId];
+  if (!user?.request) return;
+  const tierName = getTierById(user.request.tier)?.name || user.request.tier;
+  if (!confirm(`Approve ${user.business || user.email || 'this business'}'s request to move to ${tierName}?`)) return;
+
+  try {
+    await window.__rtdb.updatePaths({
+      [`users/${userId}/subscription/tier`]: user.request.tier,
+      [`users/${userId}/subscription/status`]: 'active',
+      [`users/${userId}/subscription/request/status`]: 'approved',
+      [`users/${userId}/subscription/request/decidedAt`]: new Date().toISOString()
+    });
+  } catch (err) {
+    alert(`Could not approve — ${err.message || err}`);
+    return;
+  }
+
+  addActivity(`Approved subscription request → ${user.request.tier}`, user.email, user.request.tier);
+  saveAdminData(adminData);
+  await refreshRealUsers();
+  loadSubscriptions();
+  toast('Request approved', 'success');
+}
+
+async function rejectRequest(userId) {
+  const user = realUsers[userId];
+  if (!user?.request) return;
+  const note = prompt('Optional reason (shown to the business):', '') || '';
+
+  try {
+    const updates = {
+      [`users/${userId}/subscription/request/status`]: 'rejected',
+      [`users/${userId}/subscription/request/decidedAt`]: new Date().toISOString()
+    };
+    if (note) updates[`users/${userId}/subscription/request/decisionNote`] = note;
+    await window.__rtdb.updatePaths(updates);
+  } catch (err) {
+    alert(`Could not reject — ${err.message || err}`);
+    return;
+  }
+
+  addActivity(`Rejected subscription request (${user.request.tier})`, user.email, user.tier);
+  saveAdminData(adminData);
+  await refreshRealUsers();
+  loadSubscriptions();
+  toast('Request rejected', 'success');
+}
+
+function renderPendingRequests() {
+  const container = document.getElementById('pendingRequestsSection');
+  if (!container) return;
+  const pending = Object.values(realUsers).filter(u => u.request && u.request.status === 'pending');
+
+  if (!pending.length) {
+    container.innerHTML = '<div class="table-container"><div style="padding: 20px; text-align: center; color: var(--ink-mute); font-size: 13px;">No pending subscription requests</div></div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="table-container">
+      <table class="table">
+        <thead>
+          <tr><th>Business</th><th>Requested Tier</th><th>Method</th><th>Reference</th><th>Submitted</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          ${pending.map(u => `
+            <tr>
+              <td>${esc(u.business) || esc(u.email) || esc(u.id.slice(0, 8))}</td>
+              <td>${tierBadgeHTML(u.request.tier)}</td>
+              <td>${esc((u.request.method || '—').toUpperCase())}</td>
+              <td><code style="font-size: 11px;">${esc(u.request.reference || '—')}</code></td>
+              <td>${u.request.submittedAt ? new Date(u.request.submittedAt).toLocaleString() : '—'}</td>
+              <td>
+                <button class="btn btn-sm btn-primary" onclick="approveRequest('${u.id}')">Approve</button>
+                <button class="btn btn-sm btn-danger" onclick="rejectRequest('${u.id}')">Reject</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 // ============= BILLING =============
@@ -1052,7 +1192,7 @@ function loadUsage() {
   const tbody = document.getElementById('usageTable');
 
   tbody.innerHTML = tiers.length ? tiers.map(tier => {
-    const tierUsers = adminData.users?.filter(u => u.tier === tier.id) || [];
+    const tierUsers = Object.values(realUsers).filter(u => u.tier === tier.id);
     return `
       <tr>
         <td>${tierBadgeHTML(tier.id)}</td>
@@ -1067,12 +1207,13 @@ function loadUsage() {
 // ============= SUBSCRIPTIONS =============
 function loadSubscriptions() {
   adminData = getAdminData();
+  refreshRealUsers().then(renderPendingRequests);
   const grid = document.getElementById('tiersGrid');
   const tiers = adminData.tiers || [];
 
   grid.innerHTML = tiers.length ? tiers.map(tier => {
     const limit = tier.maxCustomers ? `Up to ${tier.maxCustomers.toLocaleString()} customers` : 'Unlimited customers';
-    const usersOnTier = adminData.users?.filter(u => u.tier === tier.id).length || 0;
+    const usersOnTier = Object.values(realUsers).filter(u => u.tier === tier.id).length;
     return `
       <div class="card tier-card" style="border: 2px solid ${tier.color};">
         <div class="tier-card-top">
@@ -1164,19 +1305,33 @@ function saveTier() {
   }
 
   saveAdminData(adminData);
+  publishTierCatalog();
   closeTierModal();
   loadSubscriptions();
   toast(`Tier ${existingId ? 'updated' : 'created'} successfully`, 'success');
 }
 
+// Pushes the tier list to a public tierCatalog node (readable by any signed-in
+// business, writable only by this admin account) so the consumer app's
+// Subscription tab and its cap enforcement always match what's configured
+// here — instead of a second hardcoded copy that could drift out of sync.
+async function publishTierCatalog() {
+  try {
+    await window.__rtdb.setPath('tierCatalog', adminData.tiers || []);
+  } catch (err) {
+    console.error('Failed to publish tier catalog:', err);
+  }
+}
+
 function deleteTier(tierId) {
-  const usersOnTier = adminData.users?.filter(u => u.tier === tierId).length || 0;
+  const usersOnTier = Object.values(realUsers).filter(u => u.tier === tierId).length;
   const warning = usersOnTier
     ? `${usersOnTier} user${usersOnTier === 1 ? '' : 's'} currently on this tier will show as "Unknown" until reassigned. Delete anyway?`
     : 'Delete this tier? This cannot be undone.';
   if (!confirm(warning)) return;
   adminData.tiers = (adminData.tiers || []).filter(t => t.id !== tierId);
   saveAdminData(adminData);
+  publishTierCatalog();
   loadSubscriptions();
   toast('Tier deleted', 'success');
 }
