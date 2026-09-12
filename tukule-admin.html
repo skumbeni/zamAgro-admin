@@ -192,8 +192,6 @@
         </div>
 
         <div id="admin-login-main">
-          <label class="field">Email</label>
-          <input type="email" id="admin-email" autocomplete="username">
           <label class="field">Password</label>
           <input type="password" id="admin-password" autocomplete="current-password">
           <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-login-btn">Enter</button>
@@ -214,8 +212,7 @@
       <p class="section-sub">No admin account exists yet for this Tukule installation — set one up now. This is the only login that can approve listings, confirm payments, and change platform settings.</p>
       <div class="side-card login-box">
         <div id="admin-setup-msg"></div>
-        <label class="field">Email</label>
-        <input type="email" id="admin-setup-email" autocomplete="username">
+        <p class="note" style="margin-top:0;">Account email: <strong>skumbeni@gmail.com</strong></p>
         <label class="field">Password (at least 6 characters)</label>
         <input type="password" id="admin-setup-password" autocomplete="new-password">
         <label class="field">Confirm password</label>
@@ -243,6 +240,9 @@ const firebaseConfig = {
   appId: "1:141747891324:web:c3e89d4cb8e96d7133edf9"
 };
 const DATA_PATH = 'tukule_state_v2';
+// Single super-admin account — hardcode the email so the login screen only
+// asks for a password. Change this if the admin account's email changes.
+const ADMIN_EMAIL = 'skumbeni@gmail.com';
 // How long an unpaid reservation is held before it's automatically released
 // back to available. Only reservations with zero payment logged against them
 // are eligible — the moment a buyer has any money down, expireStaleReservations()
@@ -1483,11 +1483,11 @@ document.getElementById('admin-mode-staff').addEventListener('click', ()=>{
 // Main admin: real Firebase Authentication (email/password), replacing the
 // old shared-PIN check against a hash stored in the RTDB blob.
 document.getElementById('admin-login-btn').addEventListener('click', async ()=>{
-  const email = document.getElementById('admin-email').value.trim();
+  const email = ADMIN_EMAIL;
   const password = document.getElementById('admin-password').value;
   const msg = document.getElementById('admin-msg');
   const btn = document.getElementById('admin-login-btn');
-  if(!email || !password){ msg.innerHTML = '<div class="msg err">Enter your email and password.</div>'; return; }
+  if(!password){ msg.innerHTML = '<div class="msg err">Enter your password.</div>'; return; }
   btn.disabled = true;
   try {
     await auth.signInWithEmailAndPassword(email, password);
@@ -1517,14 +1517,12 @@ document.getElementById('admin-login-btn').addEventListener('click', async ()=>{
 document.getElementById('admin-forgot-link').addEventListener('click', async (e)=>{
   e.preventDefault();
   const msg = document.getElementById('admin-msg');
-  const email = document.getElementById('admin-email').value.trim();
-  if(!email){ msg.innerHTML = '<div class="msg err">Enter your email above, then tap "Forgot password?" again.</div>'; return; }
   try {
-    await auth.sendPasswordResetEmail(email);
+    await auth.sendPasswordResetEmail(ADMIN_EMAIL);
     msg.innerHTML = '<div class="msg" style="color:#1f4b2c;">Password reset link sent — check that inbox.</div>';
   } catch(err){
     console.error('Tukule: password reset failed', err);
-    msg.innerHTML = '<div class="msg err">Couldn\'t send a reset email — check the address and try again.</div>';
+    msg.innerHTML = '<div class="msg err">Couldn\'t send a reset email — try again.</div>';
   }
 });
 
@@ -1561,10 +1559,9 @@ document.getElementById('admin-staff-login-btn').addEventListener('click', async
 document.getElementById('admin-setup-btn').addEventListener('click', async ()=>{
   const msg = document.getElementById('admin-setup-msg');
   const btn = document.getElementById('admin-setup-btn');
-  const email = document.getElementById('admin-setup-email').value.trim();
+  const email = ADMIN_EMAIL;
   const password = document.getElementById('admin-setup-password').value;
   const confirmPassword = document.getElementById('admin-setup-password-confirm').value;
-  if(!email){ msg.innerHTML = '<div class="msg err">Enter an email address.</div>'; return; }
   if(password.length < 6){ msg.innerHTML = '<div class="msg err">Password must be at least 6 characters.</div>'; return; }
   if(password !== confirmPassword){ msg.innerHTML = '<div class="msg err">Passwords don\'t match.</div>'; return; }
   btn.disabled = true;
@@ -1851,7 +1848,7 @@ function renderAdminInner(){
     currentAdminActor = null;
     updateSession({ isAdmin: false, adminPhone: '' });
     document.getElementById('admin-dashboard').classList.add('hidden');
-    document.getElementById('admin-email').value=''; document.getElementById('admin-password').value='';
+    document.getElementById('admin-password').value='';
     document.getElementById('admin-staff-phone').value=''; document.getElementById('admin-pin').value='';
     document.getElementById('admin-msg').innerHTML='';
     document.getElementById('admin-mode-main').classList.add('active');
