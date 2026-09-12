@@ -183,26 +183,44 @@
   <section class="view active" id="view-admin">
     <div id="admin-gate">
       <h2 class="section-title">Admin</h2>
-      <p class="section-sub">Enter the admin PIN to manage sites, listings, and payments.</p>
+      <p class="section-sub">Log in to manage sites, listings, and payments.</p>
       <div class="side-card login-box">
         <div id="admin-msg"></div>
-        <label class="field">Staff phone (leave blank if you're the main admin)</label>
-        <input type="tel" id="admin-staff-phone" placeholder="e.g. 0977123456">
-        <label class="field">PIN</label>
-        <input type="password" inputmode="numeric" id="admin-pin" maxlength="12" autocomplete="current-password">
-        <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-login-btn">Enter</button>
+        <div class="plan-tabs" id="admin-mode-tabs">
+          <button type="button" class="active" id="admin-mode-main">Main admin</button>
+          <button type="button" id="admin-mode-staff">Staff member</button>
+        </div>
+
+        <div id="admin-login-main">
+          <label class="field">Email</label>
+          <input type="email" id="admin-email" autocomplete="username">
+          <label class="field">Password</label>
+          <input type="password" id="admin-password" autocomplete="current-password">
+          <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-login-btn">Enter</button>
+          <p class="note" style="text-align:right;margin-top:8px;"><a href="#" id="admin-forgot-link">Forgot password?</a></p>
+        </div>
+
+        <div id="admin-login-staff" class="hidden">
+          <label class="field">Staff phone</label>
+          <input type="tel" id="admin-staff-phone" placeholder="e.g. 0977123456">
+          <label class="field">PIN</label>
+          <input type="password" inputmode="numeric" id="admin-pin" maxlength="12" autocomplete="current-password">
+          <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-staff-login-btn">Enter</button>
+        </div>
       </div>
     </div>
-    <div id="admin-change-pin" class="hidden">
-      <h2 class="section-title">Set a new admin PIN</h2>
-      <p class="section-sub">This account is still on the factory default PIN. Choose a new one before continuing — it's the only thing gating site approvals, payment confirmations, and platform settings.</p>
+    <div id="admin-setup" class="hidden">
+      <h2 class="section-title">Create the admin account</h2>
+      <p class="section-sub">No admin account exists yet for this Tukule installation — set one up now. This is the only login that can approve listings, confirm payments, and change platform settings.</p>
       <div class="side-card login-box">
-        <div id="admin-change-msg"></div>
-        <label class="field">New PIN (4–12 digits)</label>
-        <input type="password" inputmode="numeric" id="admin-new-pin" maxlength="12" autocomplete="new-password">
-        <label class="field">Confirm new PIN</label>
-        <input type="password" inputmode="numeric" id="admin-new-pin-confirm" maxlength="12" autocomplete="new-password">
-        <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-set-pin-btn">Set PIN and continue</button>
+        <div id="admin-setup-msg"></div>
+        <label class="field">Email</label>
+        <input type="email" id="admin-setup-email" autocomplete="username">
+        <label class="field">Password (at least 6 characters)</label>
+        <input type="password" id="admin-setup-password" autocomplete="new-password">
+        <label class="field">Confirm password</label>
+        <input type="password" id="admin-setup-password-confirm" autocomplete="new-password">
+        <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-setup-btn">Create account and continue</button>
       </div>
     </div>
     <div id="admin-dashboard" class="hidden"></div>
@@ -242,6 +260,12 @@ let auth, db;
 if(FIREBASE_SDK_OK){
   firebase.initializeApp(firebaseConfig);
   auth = firebase.auth();
+  // Session-only persistence: matches the sessionStorage-based login
+  // restore below — a closed browser/tab means logging in again, for both
+  // the anonymous connectivity session and a real admin email/password one.
+  auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(err=>{
+    console.error('Tukule: could not set auth persistence', err);
+  });
   db = firebase.database();
 } else {
   console.error('Tukule: Firebase SDK failed to load — check internet connection or blocked CDN (gstatic.com).');
@@ -283,7 +307,7 @@ function plotSizeSummary(site, plotIds){
 
 function defaultState(){
   return {
-    settings:{ nexliteContact:'0977638790 / 0960271128', defaultCommissionPct:10, adminPinHash:'0889c39fbe2987060378014caac47694cde6e56370261a504b33109674f15e7b', adminPinIsDefault:true },
+    settings:{ nexliteContact:'0977638790 / 0960271128', defaultCommissionPct:10, adminAuthConfigured:false, adminEmail:null },
     staff:{},
     auditLog:[],
     sites:{},
@@ -325,7 +349,7 @@ function restoreSessionOnce(){
   // called into (renderAccount/renderOwnerDashboard don't exist in this
   // file) — only the admin/staff session ever gets restored here.
   const session = loadSessionRaw();
-  if(session.isAdmin && !state.settings.adminPinIsDefault){
+  if(session.isAdmin && state.settings.adminAuthConfigured){
     if(session.adminPhone){
       const staffRecord = (state.staff||{})[session.adminPhone];
       if(staffRecord && staffRecord.active){
@@ -338,6 +362,9 @@ function restoreSessionOnce(){
       // else: staff account was deactivated/removed since this session was
       // created — leave isAdmin false and let them log back in via the gate.
     } else {
+      // Super admin: sessionStorage says they were logged in, and since
+      // Firebase Auth persistence is also SESSION-scoped (set above), the
+      // real signed-in user should still be the admin account too.
       isAdmin = true;
       currentAdminActor = null;
       document.getElementById('admin-gate').classList.add('hidden');
@@ -345,6 +372,17 @@ function restoreSessionOnce(){
       renderAdmin();
     }
   }
+  if(!isAdmin) renderAdminGateState();
+}
+
+// Shows the "create admin account" screen until one exists, then the normal
+// login gate — decided by state.settings.adminAuthConfigured since the
+// client can't otherwise ask Firebase Auth whether an admin user exists yet.
+function renderAdminGateState(){
+  if(isAdmin || !state) return;
+  const configured = !!(state.settings && state.settings.adminAuthConfigured);
+  document.getElementById('admin-setup').classList.toggle('hidden', configured);
+  document.getElementById('admin-gate').classList.toggle('hidden', !configured);
 }
 
 // onError (optional) fires if the cloud write itself is rejected (e.g. a
@@ -385,7 +423,13 @@ function rerenderCurrentView(){
   else if(name==='admin' && isAdmin) renderAdmin();
 }
 
+let cloudListenerAttached = false;
 function attachCloudListener(){
+  // onAuthStateChanged fires again when the admin's real sign-in replaces
+  // the anonymous session below — without this guard that would attach a
+  // second 'value' listener and double every render.
+  if(cloudListenerAttached) return;
+  cloudListenerAttached = true;
   db.ref(DATA_PATH).on('value', snap=>{
     const val = snap.val();
     if(val){
@@ -409,6 +453,7 @@ function attachCloudListener(){
     if(firstLoad){ hideLoadingOverlay(); expireStaleReservations(); }
     else if(Date.now() > syncSuppressUntil){ rerenderCurrentView(); }
     restoreSessionOnce();
+    if(!isAdmin) renderAdminGateState();
   }, err=>{
     console.error('Tukule: cloud sync error', err);
     setSyncPill('offline', 'Offline');
@@ -1404,70 +1449,124 @@ function notifyBuyerPaymentConfirmed(buyer, payment){
   window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`, '_blank');
 }
 /* ---------- admin ---------- */
+document.getElementById('admin-mode-main').addEventListener('click', ()=>{
+  document.getElementById('admin-mode-main').classList.add('active');
+  document.getElementById('admin-mode-staff').classList.remove('active');
+  document.getElementById('admin-login-main').classList.remove('hidden');
+  document.getElementById('admin-login-staff').classList.add('hidden');
+  document.getElementById('admin-msg').innerHTML='';
+});
+document.getElementById('admin-mode-staff').addEventListener('click', ()=>{
+  document.getElementById('admin-mode-staff').classList.add('active');
+  document.getElementById('admin-mode-main').classList.remove('active');
+  document.getElementById('admin-login-staff').classList.remove('hidden');
+  document.getElementById('admin-login-main').classList.add('hidden');
+  document.getElementById('admin-msg').innerHTML='';
+});
+
+// Main admin: real Firebase Authentication (email/password), replacing the
+// old shared-PIN check against a hash stored in the RTDB blob.
 document.getElementById('admin-login-btn').addEventListener('click', async ()=>{
-  const staffPhoneRaw = document.getElementById('admin-staff-phone').value.trim();
-  const pin = document.getElementById('admin-pin').value.trim();
+  const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
   const msg = document.getElementById('admin-msg');
   const btn = document.getElementById('admin-login-btn');
-  if(!pin){ msg.innerHTML = '<div class="msg err">Incorrect PIN.</div>'; return; }
+  if(!email || !password){ msg.innerHTML = '<div class="msg err">Enter your email and password.</div>'; return; }
   btn.disabled = true;
-  const pinHash = await hashPin(pin);
-  btn.disabled = false;
-
-  if(staffPhoneRaw){
-    // Staff login: looked up by phone in state.staff, own PIN, own audit identity.
-    const staffPhone = normPhone(staffPhoneRaw);
-    const staffRecord = (state.staff||{})[staffPhone];
-    if(!staffRecord || !staffRecord.active || pinHash !== staffRecord.pinHash){
-      msg.innerHTML = '<div class="msg err">Incorrect phone or PIN, or this account is inactive.</div>';
-      return;
-    }
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+    document.getElementById('admin-password').value=''; msg.innerHTML='';
     isAdmin = true;
-    currentAdminActor = { phone: staffRecord.phone, name: staffRecord.name, role: staffRecord.role||'staff' };
-    document.getElementById('admin-staff-phone').value='';
-    document.getElementById('admin-pin').value=''; msg.innerHTML='';
+    currentAdminActor = null; // super admin
     document.getElementById('admin-gate').classList.add('hidden');
-    updateSession({ isAdmin: true, adminPhone: staffRecord.phone });
     document.getElementById('admin-dashboard').classList.remove('hidden');
-    logAudit('Logged in'); saveState();
-    renderAdmin();
-    return;
-  }
-
-  if(pinHash !== state.settings.adminPinHash){ msg.innerHTML = '<div class="msg err">Incorrect PIN.</div>'; return; }
-  isAdmin = true;
-  currentAdminActor = null; // super admin
-  document.getElementById('admin-pin').value=''; msg.innerHTML='';
-  document.getElementById('admin-gate').classList.add('hidden');
-  if(state.settings.adminPinIsDefault){
-    document.getElementById('admin-change-pin').classList.remove('hidden');
-  } else {
     updateSession({ isAdmin: true, adminPhone: '' });
-    document.getElementById('admin-dashboard').classList.remove('hidden');
     logAudit('Logged in'); saveState();
     renderAdmin();
+  } catch(err){
+    console.error('Tukule: admin login failed', err);
+    msg.innerHTML = '<div class="msg err">Incorrect email or password.</div>';
+  } finally {
+    btn.disabled = false;
   }
 });
 
-document.getElementById('admin-set-pin-btn').addEventListener('click', async ()=>{
-  const msg = document.getElementById('admin-change-msg');
-  const btn = document.getElementById('admin-set-pin-btn');
-  const newPin = document.getElementById('admin-new-pin').value.trim();
-  const confirmPin = document.getElementById('admin-new-pin-confirm').value.trim();
-  if(!validAdminPin(newPin)){ msg.innerHTML = '<div class="msg err">PIN must be 4–12 digits.</div>'; return; }
-  if(newPin !== confirmPin){ msg.innerHTML = '<div class="msg err">PINs don\'t match.</div>'; return; }
-  if(newPin === '9500'){ msg.innerHTML = '<div class="msg err">Choose something other than the factory default.</div>'; return; }
+document.getElementById('admin-forgot-link').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  const msg = document.getElementById('admin-msg');
+  const email = document.getElementById('admin-email').value.trim();
+  if(!email){ msg.innerHTML = '<div class="msg err">Enter your email above, then tap "Forgot password?" again.</div>'; return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    msg.innerHTML = '<div class="msg" style="color:#1f4b2c;">Password reset link sent — check that inbox.</div>';
+  } catch(err){
+    console.error('Tukule: password reset failed', err);
+    msg.innerHTML = '<div class="msg err">Couldn\'t send a reset email — check the address and try again.</div>';
+  }
+});
+
+// Staff: unchanged phone + PIN check against state.staff, own audit identity.
+document.getElementById('admin-staff-login-btn').addEventListener('click', async ()=>{
+  const staffPhoneRaw = document.getElementById('admin-staff-phone').value.trim();
+  const pin = document.getElementById('admin-pin').value.trim();
+  const msg = document.getElementById('admin-msg');
+  const btn = document.getElementById('admin-staff-login-btn');
+  if(!staffPhoneRaw || !pin){ msg.innerHTML = '<div class="msg err">Enter phone and PIN.</div>'; return; }
   btn.disabled = true;
-  state.settings.adminPinHash = await hashPin(newPin);
-  state.settings.adminPinIsDefault = false;
-  saveState();
+  const pinHash = await hashPin(pin);
   btn.disabled = false;
-  document.getElementById('admin-new-pin').value=''; document.getElementById('admin-new-pin-confirm').value='';
-  document.getElementById('admin-change-pin').classList.add('hidden');
+  const staffPhone = normPhone(staffPhoneRaw);
+  const staffRecord = (state.staff||{})[staffPhone];
+  if(!staffRecord || !staffRecord.active || pinHash !== staffRecord.pinHash){
+    msg.innerHTML = '<div class="msg err">Incorrect phone or PIN, or this account is inactive.</div>';
+    return;
+  }
+  isAdmin = true;
+  currentAdminActor = { phone: staffRecord.phone, name: staffRecord.name, role: staffRecord.role||'staff' };
+  document.getElementById('admin-staff-phone').value='';
+  document.getElementById('admin-pin').value=''; msg.innerHTML='';
+  document.getElementById('admin-gate').classList.add('hidden');
+  updateSession({ isAdmin: true, adminPhone: staffRecord.phone });
   document.getElementById('admin-dashboard').classList.remove('hidden');
-  updateSession({ isAdmin: true, adminPhone: '' });
-  logAudit('Set new admin PIN (first-time setup)'); saveState();
+  logAudit('Logged in'); saveState();
   renderAdmin();
+});
+
+// First-run only: creates the single super-admin account in Firebase Auth.
+// Shown instead of the login gate until state.settings.adminAuthConfigured
+// is true (see renderAdminGateState).
+document.getElementById('admin-setup-btn').addEventListener('click', async ()=>{
+  const msg = document.getElementById('admin-setup-msg');
+  const btn = document.getElementById('admin-setup-btn');
+  const email = document.getElementById('admin-setup-email').value.trim();
+  const password = document.getElementById('admin-setup-password').value;
+  const confirmPassword = document.getElementById('admin-setup-password-confirm').value;
+  if(!email){ msg.innerHTML = '<div class="msg err">Enter an email address.</div>'; return; }
+  if(password.length < 6){ msg.innerHTML = '<div class="msg err">Password must be at least 6 characters.</div>'; return; }
+  if(password !== confirmPassword){ msg.innerHTML = '<div class="msg err">Passwords don\'t match.</div>'; return; }
+  btn.disabled = true;
+  try {
+    await auth.createUserWithEmailAndPassword(email, password);
+    state.settings.adminAuthConfigured = true;
+    state.settings.adminEmail = email;
+    isAdmin = true;
+    currentAdminActor = null;
+    document.getElementById('admin-setup').classList.add('hidden');
+    document.getElementById('admin-dashboard').classList.remove('hidden');
+    updateSession({ isAdmin: true, adminPhone: '' });
+    logAudit('Created admin account (first-time setup)');
+    saveState();
+    renderAdmin();
+  } catch(err){
+    console.error('Tukule: admin account creation failed', err);
+    const readable = err && err.code === 'auth/email-already-in-use' ? 'That email is already registered — try logging in instead.'
+      : err && err.code === 'auth/invalid-email' ? 'Enter a valid email address.'
+      : err && err.code === 'auth/weak-password' ? 'Choose a stronger password.'
+      : 'Couldn\'t create the account — try again.';
+    msg.innerHTML = `<div class="msg err">${readable}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 function renderAdmin(){
@@ -1659,14 +1758,14 @@ function renderAdmin(){
       </div>
       <button class="btn btn-primary" style="margin-top:14px;" id="save-platform-btn">Save settings</button>
       <span id="platform-msg"></span>
-      <h3 style="margin-top:18px;">Change admin PIN</h3>
-      <p class="note" style="margin-top:-4px;">Leave both blank to keep your current PIN. This is the main shared admin PIN — staff accounts below have their own.</p>
+      <h3 style="margin-top:18px;">Change admin password</h3>
+      <p class="note" style="margin-top:-4px;">Leave both blank to keep your current password. Signed in as <strong>${esc(state.settings.adminEmail||'—')}</strong> — staff accounts below have their own PIN logins.</p>
       <div class="grid-two">
-        <div><label class="field">New PIN (4–12 digits)</label><input type="password" inputmode="numeric" id="set-pin-new" maxlength="12" autocomplete="new-password"></div>
-        <div><label class="field">Confirm new PIN</label><input type="password" inputmode="numeric" id="set-pin-confirm" maxlength="12" autocomplete="new-password"></div>
+        <div><label class="field">New password (6+ characters)</label><input type="password" id="set-admin-password" autocomplete="new-password"></div>
+        <div><label class="field">Confirm new password</label><input type="password" id="set-admin-password-confirm" autocomplete="new-password"></div>
       </div>
-      <button class="btn btn-secondary" style="margin-top:10px;" id="save-pin-btn">Update PIN</button>
-      <span id="pin-msg"></span>
+      <button class="btn btn-secondary" style="margin-top:10px;" id="save-admin-password-btn">Update password</button>
+      <span id="admin-password-msg"></span>
     </div>
 
     <div class="side-card" style="margin-bottom:16px;">
@@ -1712,13 +1811,26 @@ function renderAdmin(){
   `;
 
   document.getElementById('admin-logout-btn').addEventListener('click', ()=>{
+    const wasSuperAdmin = !currentAdminActor;
     isAdmin = false;
     currentAdminActor = null;
     updateSession({ isAdmin: false, adminPhone: '' });
     document.getElementById('admin-dashboard').classList.add('hidden');
-    document.getElementById('admin-change-pin').classList.add('hidden');
-    document.getElementById('admin-gate').classList.remove('hidden');
-    document.getElementById('admin-pin').value=''; document.getElementById('admin-msg').innerHTML='';
+    document.getElementById('admin-email').value=''; document.getElementById('admin-password').value='';
+    document.getElementById('admin-staff-phone').value=''; document.getElementById('admin-pin').value='';
+    document.getElementById('admin-msg').innerHTML='';
+    document.getElementById('admin-mode-main').classList.add('active');
+    document.getElementById('admin-mode-staff').classList.remove('active');
+    document.getElementById('admin-login-main').classList.remove('hidden');
+    document.getElementById('admin-login-staff').classList.add('hidden');
+    renderAdminGateState();
+    if(wasSuperAdmin && auth.currentUser && !auth.currentUser.isAnonymous){
+      // Drop the real admin session and fall back to an anonymous one so
+      // the gate/staff logins keep working without a page reload.
+      auth.signOut().then(()=>auth.signInAnonymously()).catch(err=>{
+        console.error('Tukule: admin sign-out failed', err);
+      });
+    }
   });
 
   dash.querySelectorAll('[data-approve-site]').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -1869,23 +1981,30 @@ function renderAdmin(){
   const exportSitesBtn = document.getElementById('export-sites-btn');
   if(exportSitesBtn) exportSitesBtn.addEventListener('click', exportSitesCsv);
 
-  const savePinBtn = document.getElementById('save-pin-btn');
-  if(savePinBtn) savePinBtn.addEventListener('click', async ()=>{
-    const pinMsg = document.getElementById('pin-msg');
-    const btn = document.getElementById('save-pin-btn');
-    const newPin = document.getElementById('set-pin-new').value.trim();
-    const confirmPin = document.getElementById('set-pin-confirm').value.trim();
-    if(!newPin && !confirmPin){ pinMsg.innerHTML = ''; return; }
-    if(!validAdminPin(newPin)){ pinMsg.innerHTML = ' <span style="color:#6b2323;font-size:0.85rem;">PIN must be 4–12 digits.</span>'; return; }
-    if(newPin !== confirmPin){ pinMsg.innerHTML = ' <span style="color:#6b2323;font-size:0.85rem;">PINs don\'t match.</span>'; return; }
+  const savePasswordBtn = document.getElementById('save-admin-password-btn');
+  if(savePasswordBtn) savePasswordBtn.addEventListener('click', async ()=>{
+    const pwMsg = document.getElementById('admin-password-msg');
+    const btn = document.getElementById('save-admin-password-btn');
+    const newPassword = document.getElementById('set-admin-password').value;
+    const confirmPassword = document.getElementById('set-admin-password-confirm').value;
+    if(!newPassword && !confirmPassword){ pwMsg.innerHTML = ''; return; }
+    if(newPassword.length < 6){ pwMsg.innerHTML = ' <span style="color:#6b2323;font-size:0.85rem;">Password must be at least 6 characters.</span>'; return; }
+    if(newPassword !== confirmPassword){ pwMsg.innerHTML = ' <span style="color:#6b2323;font-size:0.85rem;">Passwords don\'t match.</span>'; return; }
     btn.disabled = true;
-    state.settings.adminPinHash = await hashPin(newPin);
-    state.settings.adminPinIsDefault = false;
-    logAudit('Changed main admin PIN');
-    saveState();
-    btn.disabled = false;
-    document.getElementById('set-pin-new').value=''; document.getElementById('set-pin-confirm').value='';
-    pinMsg.innerHTML = ' <span style="color:#1f4b2c;font-size:0.85rem;">PIN updated.</span>';
+    try {
+      await auth.currentUser.updatePassword(newPassword);
+      logAudit('Changed admin password'); saveState();
+      document.getElementById('set-admin-password').value=''; document.getElementById('set-admin-password-confirm').value='';
+      pwMsg.innerHTML = ' <span style="color:#1f4b2c;font-size:0.85rem;">Password updated.</span>';
+    } catch(err){
+      console.error('Tukule: admin password update failed', err);
+      const readable = err && err.code === 'auth/requires-recent-login'
+        ? 'For security, log out and back in, then try again.'
+        : 'Couldn\'t update the password — try again.';
+      pwMsg.innerHTML = ` <span style="color:#6b2323;font-size:0.85rem;">${readable}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   const staffAddBtn = document.getElementById('staff-add-btn');
