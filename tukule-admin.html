@@ -1570,6 +1570,18 @@ document.getElementById('admin-setup-btn').addEventListener('click', async ()=>{
 });
 
 function renderAdmin(){
+  try {
+    renderAdminInner();
+  } catch(err){
+    console.error('Tukule: renderAdmin failed', err);
+    const dash = document.getElementById('admin-dashboard');
+    if(dash){
+      dash.classList.remove('hidden');
+      dash.innerHTML = '<div class="side-card"><p class="note">Something went wrong loading the dashboard. Try reloading the page — if it keeps happening, check the browser console for the error and share it.</p></div>';
+    }
+  }
+}
+function renderAdminInner(){
   if(!isAdmin) return;
   clearBoundaryEditMaps('admin');
   const dash = document.getElementById('admin-dashboard');
