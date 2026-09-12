@@ -221,6 +221,7 @@
         <label class="field">Confirm password</label>
         <input type="password" id="admin-setup-password-confirm" autocomplete="new-password">
         <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="admin-setup-btn">Create account and continue</button>
+        <p class="note" style="text-align:center;margin-top:10px;">Already created your admin account? <a href="#" id="admin-setup-show-login">Log in instead</a></p>
       </div>
     </div>
     <div id="admin-dashboard" class="hidden"></div>
@@ -1448,6 +1449,21 @@ function notifyBuyerPaymentConfirmed(buyer, payment){
   const waPhone = normPhone(buyer.phone).replace(/^0/, '260');
   window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`, '_blank');
 }
+document.getElementById('admin-setup-show-login').addEventListener('click', (e)=>{
+  e.preventDefault();
+  // Manual override: if account creation succeeded in Firebase Auth but the
+  // follow-up save that flips adminAuthConfigured failed (e.g. a rules
+  // rejection), this flag can be stuck false forever with no other way to
+  // reach the login form. Don't touch the flag itself — just show the gate.
+  document.getElementById('admin-setup').classList.add('hidden');
+  document.getElementById('admin-gate').classList.remove('hidden');
+  document.getElementById('admin-mode-main').classList.add('active');
+  document.getElementById('admin-mode-staff').classList.remove('active');
+  document.getElementById('admin-login-main').classList.remove('hidden');
+  document.getElementById('admin-login-staff').classList.add('hidden');
+  document.getElementById('admin-msg').innerHTML='';
+});
+
 /* ---------- admin ---------- */
 document.getElementById('admin-mode-main').addEventListener('click', ()=>{
   document.getElementById('admin-mode-main').classList.add('active');
@@ -1481,6 +1497,13 @@ document.getElementById('admin-login-btn').addEventListener('click', async ()=>{
     document.getElementById('admin-gate').classList.add('hidden');
     document.getElementById('admin-dashboard').classList.remove('hidden');
     updateSession({ isAdmin: true, adminPhone: '' });
+    // Self-heal: if an earlier setup attempt created the Firebase Auth
+    // account but the DB write marking it configured failed, a successful
+    // login here confirms the account is real — fix the flag now.
+    if(!state.settings.adminAuthConfigured || state.settings.adminEmail !== email){
+      state.settings.adminAuthConfigured = true;
+      state.settings.adminEmail = email;
+    }
     logAudit('Logged in'); saveState();
     renderAdmin();
   } catch(err){
