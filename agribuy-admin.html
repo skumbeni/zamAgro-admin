@@ -102,6 +102,11 @@ input,select,textarea{font-family:inherit;}
 .acct-btn.ghost{background:none;border:1px solid var(--line);color:var(--soil-70);}
 .acct-btn.danger{background:var(--red);}
 .empty-note{text-align:center;color:var(--soil-40);font-size:13px;padding:40px 0;}
+.fee-link-card{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+.fee-link-card .flc-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+.fee-link-card .flc-name{font-weight:600;font-size:14px;}
+.fee-link-card .flc-rate{font-size:11.5px;color:var(--soil-70);}
+.fee-link-card .flc-save{width:100%;margin-top:2px;}
 
 /* Modal */
 .modal-backdrop{position:fixed;inset:0;background:rgba(43,35,24,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
@@ -210,6 +215,19 @@ input,select,textarea{font-family:inherit;}
     <div class="field"><label>Grace period ends (billing bypassed until this date — set by unlink approvals, blank to clear)</label><input id="edit-grace-end" type="date"></div>
     <div class="field"><label>Admin notes (internal only)</label><input id="edit-notes" placeholder="e.g. paid via mobile money, ref #..."></div>
     <button class="submit-btn" onclick="saveSubscription()">Save changes</button>
+  </div>
+</div>
+
+<!-- Edit NEXLITE fee links modal (agents only) — one row per company link,
+     since an agent can be linked to several buying companies at once, each
+     on its own fee model. Never shown to companies; this is purely how
+     NEXLITE settles with the agent, out of his own commission. -->
+<div class="modal-backdrop" id="fee-links-modal">
+  <div class="modal-box" style="max-width:560px;">
+    <button class="modal-close" onclick="closeFeeLinksModal()">&times;</button>
+    <h3 id="fee-links-title">Fee links</h3>
+    <p class="sub" id="fee-links-sub">NEXLITE's fee on this agent's commission, per buying company. Never billed to or shown to the company.</p>
+    <div id="fee-links-body"></div>
   </div>
 </div>
 
@@ -379,6 +397,7 @@ function switchTab(tab){
 // Kept in sync with the equivalent formatter in index.html (partnershipSummary()).
 const PARTNERSHIP_LABELS = { origination_commission:'Origination Commission', managed_origination:'Managed Origination', trading_margin:'Trading Margin' };
 function fmtNumAdmin(n){ return Number(n||0).toLocaleString('en-ZM',{maximumFractionDigits:0}); }
+function fmtKAdmin(n){ return 'K' + Number(n||0).toLocaleString('en-ZM',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function partnershipSummary(pt){
   if(!pt) return '';
   if(pt.model === 'origination_commission'){
@@ -668,6 +687,7 @@ function renderList(){
       <div class="acct-right">
         ${expiryNote(a)}
         <span class="status-badge status-${status}">${status==='none'?'No subscription':status}</span>
+        ${currentTab==='agents' ? `<button class="acct-btn ghost" onclick="openFeeLinksModal('${a.id}')">Fee links</button>` : ''}
         <button class="acct-btn ghost" onclick="openEditModal('${currentTab}','${a.id}')">Edit</button>
         <button class="acct-btn danger" onclick="confirmDelete('${currentTab}','${a.id}')">Delete</button>
       </div>
@@ -723,6 +743,174 @@ async function saveSubscription(){
   }
 }
 
+/* ---------- NEXLITE fee links modal (agents only) ----------
+   Reuses the exact same agentLinks[] records index.html reads —
+   nexliteFeeModel / nexliteCutPct / nexliteFlatMonthlyZMW / nexliteFlatPerMT /
+   linkedDate. Defaults here match index.html's own migration defaults, so
+   an unsaved/legacy link shows the same numbers here as it would there. */
+const FEE_MODEL_LABELS = { pct_commission:'Percentage of commission', flat_monthly:'Flat monthly fee', flat_per_mt:'Flat per MT' };
+function withFeeDefaults(link){
+  return Object.assign({
+    nexliteFeeModel: 'pct_commission',
+    nexliteCutPct: 15,
+    nexliteFlatMonthlyZMW: 200,
+    nexliteFlatPerMT: 10,
+    nexlitePayments: [],
+    nexliteGraceEndsAt: null,
+  }, link);
+}
+// Mirrors index.html's DB.linkLedger for the platform-fee math only — this
+// panel doesn't need the full agent/company ledger, just what's owed on
+// this link so an admin can decide whether/when to enforce it.
+const UNIT_KG_ADMIN = { 'kg': 1, 'bags (50kg)': 50, 'tonne': 1000 };
+function purchaseMTAdmin(p){ const f = UNIT_KG_ADMIN[p.unit]; return f ? (p.quantity*f)/1000 : 0; }
+function monthsElapsedSinceAdmin(dateStr){
+  if(!dateStr) return 1;
+  const start = new Date(dateStr+'T00:00:00'), now = new Date();
+  return Math.max(1, (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth()) + 1);
+}
+function computeLinkLedger(rawLink){
+  const link = withFeeDefaults(rawLink);
+  const purchases = (Array.isArray(db.purchases)?db.purchases:[]).filter(p=>p.agentId===link.agentId && p.companyId===link.companyId);
+  const commissionable = purchases.filter(p=>p.status==='approved'||p.status==='paid');
+  const totalValue = commissionable.reduce((s,p)=>s+p.quantity*p.price,0);
+  const totalMT = commissionable.reduce((s,p)=>s+purchaseMTAdmin(p),0);
+  const commissionAccrued = totalValue * (link.commissionRate/100);
+  let nexliteCut = 0;
+  if(link.nexliteFeeModel==='flat_monthly') nexliteCut = (link.nexliteFlatMonthlyZMW||0) * monthsElapsedSinceAdmin(link.linkedDate);
+  else if(link.nexliteFeeModel==='flat_per_mt') nexliteCut = (link.nexliteFlatPerMT||0) * totalMT;
+  else nexliteCut = commissionAccrued * ((link.nexliteCutPct||0)/100);
+  const nexlitePaid = link.nexlitePayments.reduce((s,p)=>s+Number(p.amount||0),0);
+  const nexliteOwed = Math.max(0, nexliteCut - nexlitePaid);
+  return { commissionAccrued, nexliteCut, nexlitePaid, nexliteOwed };
+}
+async function recordNexlitePayment(linkId){
+  const link = (db.agentLinks||[]).find(l=>l.id===linkId);
+  if(!link) return;
+  const amtEl = document.getElementById('pay-amt-'+linkId);
+  const noteEl = document.getElementById('pay-note-'+linkId);
+  const amount = Number(amtEl.value);
+  if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
+  if(!Array.isArray(link.nexlitePayments)) link.nexlitePayments = [];
+  link.nexlitePayments.push({ id: 'np_'+Math.random().toString(36).slice(2,9), amount, note: noteEl.value.trim(), date: new Date().toISOString().slice(0,10), recordedAt: new Date().toISOString() });
+  try{
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    toast('Payment recorded');
+    renderFeeLinksBody();
+  }catch(e){
+    console.error('Failed to record payment:', e);
+    toast('Save failed — check your connection');
+  }
+}
+async function saveGraceDate(linkId){
+  const link = (db.agentLinks||[]).find(l=>l.id===linkId);
+  if(!link) return;
+  const val = document.getElementById('grace-'+linkId).value;
+  link.nexliteGraceEndsAt = val || null;
+  try{
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    toast(val ? 'Enforcement deadline set — this link blocks if still owed after '+val : 'Enforcement deadline cleared');
+    renderFeeLinksBody();
+  }catch(e){
+    console.error('Failed to save deadline:', e);
+    toast('Save failed — check your connection');
+  }
+}
+let feeModalAgentId = null;
+function openFeeLinksModal(agentId){
+  feeModalAgentId = agentId;
+  const agent = (db.agents||[]).find(a=>a.id===agentId);
+  if(!agent) return;
+  document.getElementById('fee-links-title').textContent = 'Fee links — ' + (agent.name||'Unnamed agent');
+  renderFeeLinksBody();
+  document.getElementById('fee-links-modal').classList.add('active');
+}
+function closeFeeLinksModal(){
+  document.getElementById('fee-links-modal').classList.remove('active');
+  feeModalAgentId = null;
+}
+function renderFeeLinksBody(){
+  const links = (db.agentLinks||[]).filter(l=>l.agentId===feeModalAgentId);
+  const body = document.getElementById('fee-links-body');
+  if(!links.length){
+    body.innerHTML = `<div class="empty-note">This agent isn't linked to any buying company yet.</div>`;
+    return;
+  }
+  body.innerHTML = links.map(rawLink => {
+    const link = withFeeDefaults(rawLink);
+    const company = (db.companies||[]).find(c=>c.id===link.companyId);
+    const id = link.id;
+    const led = computeLinkLedger(rawLink);
+    const paymentsHtml = link.nexlitePayments.length
+      ? `<div class="req-terms" style="margin-top:8px;">${link.nexlitePayments.slice().reverse().map(p=>`${p.date} — K${Number(p.amount).toFixed(2)}${p.note?' ('+escapeHTML(p.note)+')':''}`).join('<br>')}</div>`
+      : '';
+    return `
+    <div class="fee-link-card">
+      <div class="flc-head">
+        <span class="flc-name">${escapeHTML(company?company.name:'(company removed)')}</span>
+        <span class="flc-rate">Agent's own rate: ${link.commissionRate}%</span>
+      </div>
+      <div class="field" style="margin-bottom:10px;">
+        <label>Fee model</label>
+        <select id="fm-model-${id}" onchange="toggleFeeModelInputs('${id}')">
+          ${Object.keys(FEE_MODEL_LABELS).map(k=>`<option value="${k}" ${link.nexliteFeeModel===k?'selected':''}>${FEE_MODEL_LABELS[k]}</option>`).join('')}
+        </select>
+      </div>
+      <div class="two-col">
+        <div class="field" id="fm-pct-wrap-${id}"><label>% of agent's commission</label><input id="fm-pct-${id}" type="number" step="0.5" value="${link.nexliteCutPct}"></div>
+        <div class="field" id="fm-monthly-wrap-${id}"><label>ZMW / month</label><input id="fm-monthly-${id}" type="number" step="10" value="${link.nexliteFlatMonthlyZMW}"></div>
+        <div class="field" id="fm-permt-wrap-${id}"><label>ZMW / MT</label><input id="fm-permt-${id}" type="number" step="1" value="${link.nexliteFlatPerMT}"></div>
+      </div>
+      <button class="acct-btn flc-save" onclick="saveFeeLink('${id}')">Save this link</button>
+
+      <div class="req-terms" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px;">
+        <b>Platform fee ledger</b><br>
+        Accrued: K${led.nexliteCut.toFixed(2)} · Paid: K${led.nexlitePaid.toFixed(2)} ·
+        <span style="font-weight:700;color:${led.nexliteOwed>0?'var(--red)':'var(--green-ok)'}">Owed: K${led.nexliteOwed.toFixed(2)}</span>
+      </div>
+      <div class="two-col">
+        <div class="field"><label>Record payment (ZMW)</label><input id="pay-amt-${id}" type="number" step="1" placeholder="e.g. 200"></div>
+        <div class="field"><label>Note (optional)</label><input id="pay-note-${id}" placeholder="e.g. Mobile money ref"></div>
+      </div>
+      <button class="acct-btn" onclick="recordNexlitePayment('${id}')">Record payment</button>
+      ${paymentsHtml}
+
+      <div class="field" style="margin-top:14px;">
+        <label>Enforcement deadline</label>
+        <input id="grace-${id}" type="date" value="${link.nexliteGraceEndsAt||''}">
+      </div>
+      <div class="expiry-note" style="margin-bottom:8px;">If still owed after this date, this agent can't log new purchases against this one company (his other clients are unaffected). Leave blank — the default — and an unpaid balance never blocks anything on its own.</div>
+      <button class="acct-btn" onclick="saveGraceDate('${id}')">Save deadline</button>
+    </div>`;
+  }).join('');
+  links.forEach(l => toggleFeeModelInputs(l.id));
+}
+// Only shows the one input field relevant to the selected model — the other
+// two stay in the DOM (so their values round-trip if the admin flips models
+// back and forth before saving) but hidden.
+function toggleFeeModelInputs(linkId){
+  const model = document.getElementById('fm-model-'+linkId).value;
+  document.getElementById('fm-pct-wrap-'+linkId).style.display = model==='pct_commission' ? '' : 'none';
+  document.getElementById('fm-monthly-wrap-'+linkId).style.display = model==='flat_monthly' ? '' : 'none';
+  document.getElementById('fm-permt-wrap-'+linkId).style.display = model==='flat_per_mt' ? '' : 'none';
+}
+async function saveFeeLink(linkId){
+  const link = (db.agentLinks||[]).find(l=>l.id===linkId);
+  if(!link) return;
+  link.nexliteFeeModel = document.getElementById('fm-model-'+linkId).value;
+  link.nexliteCutPct = Number(document.getElementById('fm-pct-'+linkId).value) || 0;
+  link.nexliteFlatMonthlyZMW = Number(document.getElementById('fm-monthly-'+linkId).value) || 0;
+  link.nexliteFlatPerMT = Number(document.getElementById('fm-permt-'+linkId).value) || 0;
+  if(!link.linkedDate) link.linkedDate = new Date().toISOString().slice(0,10);
+  try{
+    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    toast('Fee link updated');
+  }catch(e){
+    console.error('Failed to save fee link:', e);
+    toast('Save failed — check your connection');
+  }
+}
+
 /* ---------- Delete account ---------- */
 async function confirmDelete(type, id){
   const list = type==='companies' ? db.companies : db.agents;
@@ -763,6 +951,10 @@ window.saveSubscription = saveSubscription;
 window.confirmDelete = confirmDelete;
 window.approvePartnershipRequest = approvePartnershipRequest;
 window.rejectPartnershipRequest = rejectPartnershipRequest;
+window.openFeeLinksModal = openFeeLinksModal;
+window.closeFeeLinksModal = closeFeeLinksModal;
+window.toggleFeeModelInputs = toggleFeeModelInputs;
+window.saveFeeLink = saveFeeLink;
 </script>
 </body>
 </html>
