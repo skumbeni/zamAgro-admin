@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>AgriBuy Connect — Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -62,7 +62,7 @@ input,select,textarea{font-family:inherit;}
 .logout-btn{padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:none;color:#D8D0BE;font-size:12.5px;font-weight:500;}
 .logout-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
 
-.main{flex:1;padding:22px;max-width:1200px;width:100%;margin:0 auto;}
+.main{flex:1;padding:22px;padding-bottom:calc(22px + env(safe-area-inset-bottom, 0px) + 48px);max-width:1200px;width:100%;margin:0 auto;}
 .stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
 @media(max-width:900px){.stat-row{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:560px){.stat-row{grid-template-columns:repeat(2,1fr);}}
@@ -201,11 +201,11 @@ input,select,textarea{font-family:inherit;}
     <div class="field">
       <label>Plan</label>
       <select id="edit-plan">
-        <option value="trial">Trial</option>
-        <option value="starter">Starter</option>
-        <option value="growth">Growth</option>
-        <option value="enterprise">Enterprise</option>
-        <option value="payperpurchase">Pay-per-purchase</option>
+        <option value="trial">Trial — free</option>
+        <option value="starter">Starter — K200/month</option>
+        <option value="growth">Growth — K350/month</option>
+        <option value="enterprise">Enterprise — K500/month</option>
+        <option value="payperpurchase">Pay-per-purchase — K3,500/purchase</option>
         <option value="custom">Custom / negotiated</option>
       </select>
     </div>
