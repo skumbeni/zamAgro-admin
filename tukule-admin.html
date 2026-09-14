@@ -446,6 +446,16 @@ function attachCloudListener(){
       if(!state.sites) state.sites = {};
       if(!state.buyers) state.buyers = {};
       if(!state.pinResetRequests) state.pinResetRequests = {};
+      // Same empty-array-drop problem, one level deeper: a buyer with no
+      // reservations yet or no payments logged yet comes back with `plans`
+      // and/or `payments` missing entirely, not as []. The admin dashboard
+      // does buyer.plans.forEach/.map/.find and buyer.payments.forEach with
+      // no guard, so one such buyer crashes renderAdminInner() for
+      // everyone — backfill it here once instead.
+      Object.values(state.buyers).forEach(b=>{
+        if(!b.plans) b.plans = [];
+        if(!b.payments) b.payments = [];
+      });
     } else if(!state){
       state = defaultState();
       db.ref(DATA_PATH).set(state);
