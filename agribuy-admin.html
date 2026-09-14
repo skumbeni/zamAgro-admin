@@ -148,6 +148,7 @@ input,select,textarea{font-family:inherit;}
     <div class="brand"><div class="brand-mark">A</div><div class="brand-name">AgriBuy Connect — Admin</div></div>
     <div class="topbar-right">
       <span><span class="conn-dot" id="conn-dot"></span><span class="conn-label" id="conn-label">Connecting…</span></span>
+      <button class="logout-btn" style="background:none;border:1px solid #fff;opacity:.85;" onclick="runDiagnostics()">Debug</button>
       <button class="logout-btn" onclick="adminLogout()">Sign out</button>
     </div>
   </div>
@@ -215,6 +216,17 @@ input,select,textarea{font-family:inherit;}
     <div class="field"><label>Grace period ends (billing bypassed until this date — set by unlink approvals, blank to clear)</label><input id="edit-grace-end" type="date"></div>
     <div class="field"><label>Admin notes (internal only)</label><input id="edit-notes" placeholder="e.g. paid via mobile money, ref #..."></div>
     <button class="submit-btn" onclick="saveSubscription()">Save changes</button>
+  </div>
+</div>
+
+<!-- Temporary debug modal — safe to delete once the requests/edit bugs are fixed -->
+<div class="modal-backdrop" id="debug-modal">
+  <div class="modal-box" style="max-width:640px;">
+    <button class="modal-close" onclick="document.getElementById('debug-modal').classList.remove('active')">&times;</button>
+    <h3>Diagnostics</h3>
+    <p class="sub">Copy this and send it back.</p>
+    <pre id="debug-output" style="white-space:pre-wrap;word-break:break-word;background:var(--paper-2);border-radius:9px;padding:12px;font-size:11.5px;line-height:1.5;max-height:50vh;overflow:auto;user-select:text;-webkit-user-select:text;"></pre>
+    <button class="submit-btn" onclick="copyDebugOutput()">Copy to clipboard</button>
   </div>
 </div>
 
@@ -695,6 +707,47 @@ function renderList(){
   }).join('');
 }
 
+/* ---------- Temporary diagnostics — safe to delete once fixed ---------- */
+function runDiagnostics(){
+  const lines = [];
+  lines.push('db is null? ' + (db===null));
+  try{
+    lines.push('');
+    lines.push('--- Partnership requests ---');
+    lines.push('partnershipRequests: ' + JSON.stringify(partnershipRequests));
+    lines.push('company id/name/uid: ' + JSON.stringify((db.companies||[]).map(c=>({id:c.id,name:c.name,uid:c.uid}))));
+    lines.push('pendingRequestEntries(): ' + JSON.stringify(pendingRequestEntries()));
+  }catch(e){
+    lines.push('ERROR in partnership diagnostics: ' + (e && (e.stack||e.message||e)));
+  }
+  try{
+    lines.push('');
+    lines.push('--- Edit modal test ---');
+    const sample = (db.companies||[])[0];
+    lines.push('sample company: ' + JSON.stringify(sample));
+    if(sample){
+      openEditModal('companies', sample.id);
+      const opened = document.getElementById('edit-modal').classList.contains('active');
+      lines.push('openEditModal ran with no throw. modal active = ' + opened);
+      closeEditModal();
+    } else {
+      lines.push('No companies in db.companies to test with.');
+    }
+  }catch(e){
+    lines.push('ERROR calling openEditModal: ' + (e && (e.stack||e.message||e)));
+  }
+  document.getElementById('debug-output').textContent = lines.join('\n');
+  document.getElementById('debug-modal').classList.add('active');
+}
+function copyDebugOutput(){
+  const text = document.getElementById('debug-output').textContent;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast('Copied')).catch(()=>toast('Copy failed — long-press the text to select it manually'));
+  } else {
+    toast('Copy not supported here — long-press the text to select it manually');
+  }
+}
+
 function escapeHTML(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -955,6 +1008,8 @@ window.openFeeLinksModal = openFeeLinksModal;
 window.closeFeeLinksModal = closeFeeLinksModal;
 window.toggleFeeModelInputs = toggleFeeModelInputs;
 window.saveFeeLink = saveFeeLink;
+window.runDiagnostics = runDiagnostics;
+window.copyDebugOutput = copyDebugOutput;
 </script>
 </body>
 </html>
