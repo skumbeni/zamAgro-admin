@@ -307,15 +307,17 @@ function toast(msg){
 
 /* ---------- Gate: Firebase Auth email/password, restricted to ADMIN_UID ---------- */
 let authChecked = false;
-window.__adminFirebase.onAuthStateChanged(window.__adminFirebase.auth, (user) => {
-  if(!authChecked){
-    // First callback after page load — Firebase Auth restores a previous
-    // session automatically, so this covers "already signed in" reloads.
-    authChecked = true;
-    if(user && user.uid === window.__adminFirebase.ADMIN_UID){
-      enterAdmin();
+document.addEventListener('DOMContentLoaded', () => {
+  window.__adminFirebase.onAuthStateChanged(window.__adminFirebase.auth, (user) => {
+    if(!authChecked){
+      // First callback after page load — Firebase Auth restores a previous
+      // session automatically, so this covers "already signed in" reloads.
+      authChecked = true;
+      if(user && user.uid === window.__adminFirebase.ADMIN_UID){
+        enterAdmin();
+      }
     }
-  }
+  });
 });
 
 async function attemptAdminLogin(){
