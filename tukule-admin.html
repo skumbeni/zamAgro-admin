@@ -1927,6 +1927,7 @@ function renderAdminInner(){
   `;
 
   document.getElementById('admin-logout-btn').addEventListener('click', ()=>{
+    if(!confirm('Log out of the admin dashboard?')) return;
     const wasSuperAdmin = !currentAdminActor;
     isAdmin = false;
     currentAdminActor = null;
