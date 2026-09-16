@@ -273,10 +273,29 @@ if(FIREBASE_SDK_OK){
 }
 /* ====== end Firebase setup ====== */
 
-function buildPlots(rows, cols, seedPattern){
+// --- Listing fee (data-model prep only — no payment gate wired up yet) ---
+// Kept in sync with index.html's buildPlots/fee-tier logic; see the
+// comment there for why the tier is locked by plot index, not price.
+// Threshold/rates are admin-configurable (state.settings), same pattern as
+// defaultCommissionPct — the numbers below are just the first-install
+// defaults, set on state.settings in defaultState().
+function listingFeeTierForIndex(idx){
+  const threshold = state.settings.listingFeeTierThreshold ?? 100;
+  const fullRate = state.settings.listingFeeFullRatePct ?? 2;
+  const discountRate = state.settings.listingFeeDiscountRatePct ?? 1;
+  return idx < threshold ? fullRate : discountRate;
+}
+function plotFeeDue(price, feeTierPct){ return Math.round(price * (feeTierPct/100) * 100)/100; }
+function siteListingFeeTotal(plots){ return Math.round(plots.reduce((sum,p)=>sum + (p.feeDue||0), 0) * 100)/100; }
+
+function buildPlots(rows, cols, seedPattern, pricePerPlot){
   const total = rows*cols;
   const plots = [];
-  for(let i=0;i<total;i++) plots.push({ id:i+1, status:'available', buyerPhone:null, price:null, sizeLabel:null });
+  for(let i=0;i<total;i++){
+    const feeTier = listingFeeTierForIndex(i);
+    const feeDue = plotFeeDue(pricePerPlot, feeTier);
+    plots.push({ id:i+1, status:'available', buyerPhone:null, price:null, sizeLabel:null, feeTier, feeDue, feePaid:false });
+  }
   (seedPattern||[]).forEach((n,idx)=>{ if(plots[n-1]) plots[n-1].status = idx % 3 === 0 ? 'sold' : 'reserved'; });
   return plots;
 }
@@ -308,7 +327,8 @@ function plotSizeSummary(site, plotIds){
 
 function defaultState(){
   return {
-    settings:{ nexliteContact:'0977638790 / 0960271128', defaultCommissionPct:10, adminAuthConfigured:false, adminEmail:null },
+    settings:{ nexliteContact:'0977638790 / 0960271128', defaultCommissionPct:0, adminAuthConfigured:false, adminEmail:null,
+      listingFeeTierThreshold:100, listingFeeFullRatePct:2, listingFeeDiscountRatePct:1 },
     staff:{},
     auditLog:[],
     sites:{},
@@ -456,6 +476,16 @@ function attachCloudListener(){
         if(!b.plans) b.plans = [];
         if(!b.payments) b.payments = [];
       });
+      // The 10% sale-time commission is retired — the listing fee is now
+      // the only revenue model. Forcing commissionPct to 0 on every site
+      // (old and new) means any plan created FROM NOW ON locks in 0%,
+      // since plan.commissionPct is copied from site.commissionPct at
+      // reservation time. This does NOT touch history: plans/payments
+      // created before this change already locked in their own
+      // commissionPct/commissionAmount, so past accrued/outstanding
+      // commission stays exactly as it was and remains collectible via
+      // "Record commission received".
+      Object.values(state.sites).forEach(s=>{ s.commissionPct = 0; });
     } else if(!state){
       state = defaultState();
       db.ref(DATA_PATH).set(state);
@@ -660,9 +690,10 @@ const NUMERIC_BOUNDS = {
   pricePerPlot: [1, 10000000],
   outrightDiscountPct: [0, 100],
   depositPct: [0, 100],
-  commissionPct: [0, 100],
-  defaultCommissionPct: [0, 100],
-  totalPlots: [1, 2000]
+  totalPlots: [1, 2000],
+  listingFeeTierThreshold: [1, 2000],
+  listingFeeFullRatePct: [0, 100],
+  listingFeeDiscountRatePct: [0, 100]
 };
 function inRange(n, [min,max]){ return Number.isFinite(n) && n>=min && n<=max; }
 async function hashPin(pin){
@@ -1635,6 +1666,9 @@ function renderAdminInner(){
 
   const pendingSites = sites.filter(s=>s.status==='pending');
   const activeSitesList = sites.filter(s=>s.status==='active');
+  const pendingTopUps = sites.flatMap(s=>(s.plots||[])
+    .filter(p=>p.pendingPrice!=null)
+    .map(p=>({ site: s, plot: p })));
 
   // Buyers/owners who tapped "Forgot PIN" — resolving these means picking a
   // new PIN for them and calling/WhatsApping it over, since there's no
@@ -1649,7 +1683,14 @@ function renderAdminInner(){
       </span>
     </div>`).join('') : '';
 
-  const pendingSitesHtml = pendingSites.length ? pendingSites.map(s=>`
+  const pendingSitesHtml = pendingSites.length ? pendingSites.map(s=>{
+    // A site created before the listing-fee feature existed has no feeDue
+    // at all — treat that as nothing owed rather than silently blocking an
+    // old, already-in-flight listing. Only sites with a real feeDue > 0
+    // are actually gated on feePaid.
+    const feeRequired = (s.feeDue||0) > 0;
+    const feeCleared = !feeRequired || s.feePaid;
+    return `
     <div class="side-card">
       ${s.photoUrl ? `<img src="${s.photoUrl}" alt="${esc(s.name)}" style="width:100%;max-height:160px;object-fit:cover;border-radius:6px;margin-bottom:10px;">` : ''}
       <h3>${esc(s.name)}</h3>
@@ -1658,11 +1699,29 @@ function renderAdminInner(){
       <div class="schedule-line"><span>Owner ID</span><span>${s.ownerNrc ? esc(s.ownerNrc) : 'Not provided'}</span></div>
       <div class="schedule-line"><span>Price / plot</span><span>${money(s.pricePerPlot)} (${esc(s.plotLabel)})</span></div>
       <div class="schedule-line"><span>Total plots</span><span>${s.plots.length}</span></div>
+      ${feeRequired ? `<div class="schedule-line"><span>Listing fee</span><span>${feeCleared ? `<span style="color:#1f4b2c;">Paid ✓</span>` : `<span style="color:#6b2323;">${money(s.feeDue)} outstanding</span>`}</span></div>` : ''}
       <div style="margin-top:10px;display:flex;gap:8px;">
-        <button class="btn btn-primary btn-sm" data-approve-site="${s.id}">Approve listing</button>
+        ${feeCleared
+          ? `<button class="btn btn-primary btn-sm" data-approve-site="${s.id}">Approve listing</button>`
+          : `<button class="btn btn-primary btn-sm" data-record-listing-fee="${s.id}">Record fee payment (${money(s.feeDue)})</button>`
+        }
         <button class="btn btn-ghost btn-sm" data-reject-site="${s.id}">Reject</button>
       </div>
-    </div>`).join('') : '<div class="empty">No pending listings.</div>';
+    </div>`;
+  }).join('') : '<div class="empty">No pending listings.</div>';
+
+  const pendingTopUpsHtml = pendingTopUps.length ? pendingTopUps.map(({site,plot})=>`
+    <div class="side-card">
+      <h3>${esc(site.name)} · Plot ${String(plot.id).padStart(2,'0')}</h3>
+      <div class="schedule-line"><span>Owner</span><span>${esc(site.ownerName)} · ${esc(site.ownerPhone)}</span></div>
+      <div class="schedule-line"><span>Current price</span><span>${money(plotPrice(site, plot))}</span></div>
+      <div class="schedule-line"><span>Requested price</span><span>${money(plot.pendingPrice)}</span></div>
+      <div class="schedule-line"><strong>Top-up fee due</strong><strong>${money(plot.pendingFeeTopUp)}</strong></div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" data-record-topup="${site.id}:${plot.id}">Record top-up &amp; apply price</button>
+        <button class="btn btn-ghost btn-sm" data-cancel-topup="${site.id}:${plot.id}">Cancel request</button>
+      </div>
+    </div>`).join('') : '<div class="empty">No pending price top-ups.</div>';
 
   const activeSitesHtml = activeSitesList.map(s=>{
     const counts = {available:0,reserved:0,sold:0};
@@ -1715,6 +1774,19 @@ function renderAdminInner(){
         </div>`;
     }).join('') : '<p class="note">No open reservations.</p>';
 
+    const hasLegacyCommission = accrued > 0 || outstanding > 0 || (s.commissionSettlements||[]).length > 0;
+    const commissionBlockHtml = hasLegacyCommission ? `
+      <div class="schedule-line"><strong>Commission owed to Nexlite</strong><strong>${money(outstanding)}</strong></div>
+      <p class="note" style="margin:8px 0 4px;"><strong>Commission received from owner</strong></p>
+      ${settlementHistory}
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-secondary btn-sm" data-save-site="${s.id}">Save changes</button>
+        <button class="btn btn-primary btn-sm" data-record-commission="${s.id}">Record commission received</button>
+      </div>` : `
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-secondary btn-sm" data-save-site="${s.id}">Save changes</button>
+      </div>`;
+
     return `
     <div class="side-card">
       <h3>${esc(s.name)} ${s.isNexliteOwned ? '<span class="pill active">Nexlite-owned</span>' : ''}</h3>
@@ -1722,15 +1794,8 @@ function renderAdminInner(){
       <div class="schedule-line"><span>Price / plot (K)</span><span><input type="number" data-site-field="pricePerPlot:${s.id}" value="${s.pricePerPlot}" min="1" max="10000000"></span></div>
       <div class="schedule-line"><span>Outright discount %</span><span><input type="number" data-site-field="outrightDiscountPct:${s.id}" value="${s.outrightDiscountPct}" min="0" max="100"></span></div>
       <div class="schedule-line"><span>Deposit %</span><span><input type="number" data-site-field="depositPct:${s.id}" value="${s.depositPct}" min="0" max="100"></span></div>
-      <div class="schedule-line"><span>Commission %</span><span><input type="number" data-site-field="commissionPct:${s.id}" value="${s.commissionPct}" min="0" max="100"></span></div>
       <div class="schedule-line"><span>Plots</span><span>${counts.available} available · ${counts.reserved} reserved · ${counts.sold} sold</span></div>
-      <div class="schedule-line"><strong>Commission owed to Nexlite</strong><strong>${money(outstanding)}</strong></div>
-      <p class="note" style="margin:8px 0 4px;"><strong>Commission received from owner</strong></p>
-      ${settlementHistory}
-      <div style="display:flex;gap:8px;margin-top:8px;">
-        <button class="btn btn-secondary btn-sm" data-save-site="${s.id}">Save changes</button>
-        <button class="btn btn-primary btn-sm" data-record-commission="${s.id}">Record commission received</button>
-      </div>
+      ${commissionBlockHtml}
       ${plotDetailsHtmlAdmin}
       ${boundaryDetailsHtml(s, 'admin')}
       <p class="note" style="margin:10px 0 4px;"><strong>Open reservations</strong></p>
@@ -1795,8 +1860,14 @@ function renderAdminInner(){
     <div class="side-card" style="margin-bottom:16px;">
       <h3>Platform settings</h3>
       <div class="grid-two">
-        <div><label class="field">Default commission % for new listings</label><input type="number" id="set-commission" value="${state.settings.defaultCommissionPct}" min="0" max="100"></div>
         <div><label class="field">Nexlite contact number</label><input type="text" id="set-contact" value="${esc(state.settings.nexliteContact)}"></div>
+      </div>
+      <h3 style="margin-top:18px;">Listing fee tiers</h3>
+      <p class="note" style="margin-top:-4px;">Charged upfront when a site is listed — the first N plots pay the full rate, anything beyond that pays the discounted rate.</p>
+      <div class="grid-two">
+        <div><label class="field">Full-rate plot count (first N plots)</label><input type="number" id="set-fee-threshold" value="${state.settings.listingFeeTierThreshold ?? 100}" min="1" max="2000"></div>
+        <div><label class="field">Full rate (%)</label><input type="number" id="set-fee-full-rate" value="${state.settings.listingFeeFullRatePct ?? 2}" min="0" max="100" step="0.5"></div>
+        <div><label class="field">Discounted rate beyond N (%)</label><input type="number" id="set-fee-discount-rate" value="${state.settings.listingFeeDiscountRatePct ?? 1}" min="0" max="100" step="0.5"></div>
       </div>
       <button class="btn btn-primary" style="margin-top:14px;" id="save-platform-btn">Save settings</button>
       <span id="platform-msg"></span>
@@ -1845,6 +1916,9 @@ function renderAdminInner(){
     <h3>Pending property listings</h3>
     <div class="grid-two" style="margin-bottom:16px;">${pendingSitesHtml}</div>
 
+    <h3>Pending price top-ups</h3>
+    <div class="grid-two" style="margin-bottom:16px;">${pendingTopUpsHtml}</div>
+
     <h3>Active sites</h3>
     <div class="grid-two" style="margin-bottom:16px;">${activeSitesHtml}</div>
 
@@ -1877,6 +1951,12 @@ function renderAdminInner(){
 
   dash.querySelectorAll('[data-approve-site]').forEach(btn=>btn.addEventListener('click', ()=>{
     const site = state.sites[btn.dataset.approveSite];
+    const feeRequired = (site.feeDue||0) > 0;
+    if(feeRequired && !site.feePaid){
+      alert(`The listing fee (${money(site.feeDue)}) hasn't been recorded as paid yet. Record the payment first.`);
+      renderAdmin();
+      return;
+    }
     logAudit(`Approved listing "${site.name}"`);
     site.status = 'active';
     site.statusUnread = true;
@@ -1885,6 +1965,40 @@ function renderAdminInner(){
     const waPhone = normPhone(site.ownerPhone).replace(/^0/, '260');
     const waMsg = encodeURIComponent(`Hi ${site.ownerName}, good news from Tukule — your listing "${site.name}" has been approved and is now live for buyers. - Nexlite Digital Solutions`);
     window.open(`https://wa.me/${waPhone}?text=${waMsg}`, '_blank');
+  }));
+  dash.querySelectorAll('[data-record-listing-fee]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const site = state.sites[btn.dataset.recordListingFee];
+    if(!site) return;
+    if(!confirm(`Confirm ${money(site.feeDue)} listing fee received from ${site.ownerName} for "${site.name}"?`)) return;
+    site.feePaid = true;
+    site.feePaidAt = todayISO();
+    logAudit(`Recorded listing fee of ${money(site.feeDue)} received from ${site.ownerName} (${site.name})`);
+    saveState(); renderAdmin();
+  }));
+  dash.querySelectorAll('[data-record-topup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const [siteId, plotIdStr] = btn.dataset.recordTopup.split(':');
+    const site = state.sites[siteId];
+    const plot = site && site.plots.find(p=>p.id===Number(plotIdStr));
+    if(!site || !plot || plot.pendingPrice==null) return;
+    if(!confirm(`Confirm ${money(plot.pendingFeeTopUp)} top-up fee received from ${site.ownerName}, applying plot ${plot.id}'s price to ${money(plot.pendingPrice)}?`)) return;
+    logAudit(`Recorded ${money(plot.pendingFeeTopUp)} top-up fee for plot ${plot.id} on "${site.name}" — price now ${money(plot.pendingPrice)}`);
+    plot.price = plot.pendingPrice;
+    plot.feeDue = plotFeeDue(plotPrice(site, plot), plot.feeTier ?? 2);
+    plot.feePaid = true;
+    delete plot.pendingPrice;
+    delete plot.pendingFeeTopUp;
+    saveState(); renderAdmin();
+  }));
+  dash.querySelectorAll('[data-cancel-topup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const [siteId, plotIdStr] = btn.dataset.cancelTopup.split(':');
+    const site = state.sites[siteId];
+    const plot = site && site.plots.find(p=>p.id===Number(plotIdStr));
+    if(!site || !plot) return;
+    if(!confirm(`Cancel the pending price change for plot ${plot.id} on "${site.name}"? It'll stay at its current price.`)) return;
+    logAudit(`Cancelled pending price change for plot ${plot.id} on "${site.name}"`);
+    delete plot.pendingPrice;
+    delete plot.pendingFeeTopUp;
+    saveState(); renderAdmin();
   }));
   dash.querySelectorAll('[data-reject-site]').forEach(btn=>btn.addEventListener('click', ()=>{
     const site = state.sites[btn.dataset.rejectSite];
@@ -2004,13 +2118,21 @@ function renderAdminInner(){
   const savePlatformBtn = document.getElementById('save-platform-btn');
   if(savePlatformBtn) savePlatformBtn.addEventListener('click', ()=>{
     const platformMsg = document.getElementById('platform-msg');
-    const commission = Number(document.getElementById('set-commission').value);
-    if(!inRange(commission, NUMERIC_BOUNDS.defaultCommissionPct)){
-      platformMsg.innerHTML = ` <span style="color:#6b2323;font-size:0.85rem;">Commission must be between ${NUMERIC_BOUNDS.defaultCommissionPct[0]} and ${NUMERIC_BOUNDS.defaultCommissionPct[1]}.</span>`;
+    const feeThreshold = Number(document.getElementById('set-fee-threshold').value);
+    const feeFullRate = Number(document.getElementById('set-fee-full-rate').value);
+    const feeDiscountRate = Number(document.getElementById('set-fee-discount-rate').value);
+    if(!inRange(feeThreshold, NUMERIC_BOUNDS.listingFeeTierThreshold)){
+      platformMsg.innerHTML = ` <span style="color:#6b2323;font-size:0.85rem;">Full-rate plot count must be between ${NUMERIC_BOUNDS.listingFeeTierThreshold[0]} and ${NUMERIC_BOUNDS.listingFeeTierThreshold[1]}.</span>`;
       return;
     }
-    state.settings.defaultCommissionPct = commission;
+    if(!inRange(feeFullRate, NUMERIC_BOUNDS.listingFeeFullRatePct) || !inRange(feeDiscountRate, NUMERIC_BOUNDS.listingFeeDiscountRatePct)){
+      platformMsg.innerHTML = ` <span style="color:#6b2323;font-size:0.85rem;">Listing fee rates must be between 0 and 100.</span>`;
+      return;
+    }
     state.settings.nexliteContact = document.getElementById('set-contact').value.trim() || state.settings.nexliteContact;
+    state.settings.listingFeeTierThreshold = feeThreshold;
+    state.settings.listingFeeFullRatePct = feeFullRate;
+    state.settings.listingFeeDiscountRatePct = feeDiscountRate;
     logAudit('Updated platform settings');
     saveState();
     platformMsg.innerHTML = ' <span style="color:#1f4b2c;font-size:0.85rem;">Saved.</span>';
