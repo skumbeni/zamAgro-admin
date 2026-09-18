@@ -724,6 +724,55 @@ async function hashPin(pin){
   });
   return words.join('');
 }
+/* ---------- auth secrets (kept OUT of the bulk-synced state tree) ----------
+   Mirrors the same change in index.html: staff (and buyer/owner, for the
+   PIN-reset flows below) PIN hashes now live in a separate `tukule_auth_v1`
+   tree that attachCloudListener() never subscribes to, instead of on the
+   state.staff/state.buyers/state.sites records that get downloaded whole by
+   every client. Reads/writes here only ever touch one exact phone path, so
+   there's no single request that dumps every hash at once. See index.html
+   for the full writeup. */
+const AUTH_PATH = 'tukule_auth_v1';
+async function fetchAuthSecret(kind, id){
+  try{ const snap = await db.ref(`${AUTH_PATH}/${kind}/${id}`).once('value'); return snap.val(); }
+  catch(e){ return null; }
+}
+async function writeAuthSecret(kind, id, data){
+  try{ await db.ref(`${AUTH_PATH}/${kind}/${id}`).set(data); return true; }
+  catch(e){ return false; }
+}
+async function updateAuthSecret(kind, id, patch){
+  try{ await db.ref(`${AUTH_PATH}/${kind}/${id}`).update(patch); return true; }
+  catch(e){ return false; }
+}
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCK_MINUTES = 15;
+function isLockedSecret(secret){
+  return !!(secret && secret.lockedUntil && new Date(secret.lockedUntil).getTime() > Date.now());
+}
+function lockoutRemainingMinutes(secret){
+  if(!secret || !secret.lockedUntil) return 0;
+  return Math.max(1, Math.ceil((new Date(secret.lockedUntil).getTime() - Date.now()) / 60000));
+}
+function lockoutMessageHtml(secret){
+  const mins = lockoutRemainingMinutes(secret);
+  return `<div class="msg err">Too many incorrect attempts. Try again in ${mins} minute${mins===1?'':'s'}.</div>`;
+}
+async function registerFailedAttempt(kind, id, secret){
+  const attempts = (secret.failedAttempts||0) + 1;
+  const patch = { failedAttempts: attempts };
+  if(attempts >= LOGIN_MAX_ATTEMPTS){
+    patch.lockedUntil = new Date(Date.now() + LOGIN_LOCK_MINUTES*60000).toISOString();
+  }
+  Object.assign(secret, patch);
+  await updateAuthSecret(kind, id, patch);
+}
+async function clearFailedAttempts(kind, id, secret){
+  if(!secret.failedAttempts && !secret.lockedUntil) return;
+  secret.failedAttempts = 0; secret.lockedUntil = null;
+  await updateAuthSecret(kind, id, { failedAttempts: 0, lockedUntil: null });
+}
+
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function addDays(dateStr, days){ const d=new Date(dateStr); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
 function addMonths(dateStr, months){ const d=new Date(dateStr); d.setMonth(d.getMonth()+months); return d.toISOString().slice(0,10); }
@@ -1574,24 +1623,48 @@ document.getElementById('admin-staff-login-btn').addEventListener('click', async
   const msg = document.getElementById('admin-msg');
   const btn = document.getElementById('admin-staff-login-btn');
   if(!staffPhoneRaw || !pin){ msg.innerHTML = '<div class="msg err">Enter phone and PIN.</div>'; return; }
-  btn.disabled = true;
-  const pinHash = await hashPin(pin);
-  btn.disabled = false;
   const staffPhone = normPhone(staffPhoneRaw);
   const staffRecord = (state.staff||{})[staffPhone];
-  if(!staffRecord || !staffRecord.active || pinHash !== staffRecord.pinHash){
+  if(!staffRecord || !staffRecord.active){
     msg.innerHTML = '<div class="msg err">Incorrect phone or PIN, or this account is inactive.</div>';
     return;
   }
-  isAdmin = true;
-  currentAdminActor = { phone: staffRecord.phone, name: staffRecord.name, role: staffRecord.role||'staff' };
-  document.getElementById('admin-staff-phone').value='';
-  document.getElementById('admin-pin').value=''; msg.innerHTML='';
-  document.getElementById('admin-gate').classList.add('hidden');
-  updateSession({ isAdmin: true, adminPhone: staffRecord.phone });
-  document.getElementById('admin-dashboard').classList.remove('hidden');
-  logAudit('Logged in'); saveState();
-  renderAdmin();
+  btn.disabled = true;
+  try{
+    let secret = await fetchAuthSecret('staff', staffPhone);
+    const usingLegacy = !secret;
+    if(usingLegacy){
+      if(!staffRecord.pinHash){ msg.innerHTML = '<div class="msg err">Incorrect phone or PIN, or this account is inactive.</div>'; return; }
+      secret = { pinHash: staffRecord.pinHash, failedAttempts:0, lockedUntil:null };
+    }
+    if(isLockedSecret(secret)){ msg.innerHTML = lockoutMessageHtml(secret); return; }
+    const pinHash = await hashPin(pin);
+    if(pinHash !== secret.pinHash){
+      await registerFailedAttempt('staff', staffPhone, secret);
+      msg.innerHTML = isLockedSecret(secret) ? lockoutMessageHtml(secret) : '<div class="msg err">Incorrect phone or PIN, or this account is inactive.</div>';
+      return;
+    }
+    if(usingLegacy){
+      await writeAuthSecret('staff', staffPhone, { pinHash: secret.pinHash, failedAttempts:0, lockedUntil:null });
+      db.ref(`${DATA_PATH}/staff/${staffPhone}/pinHash`).remove().catch(()=>{});
+      delete staffRecord.pinHash;
+    } else {
+      await clearFailedAttempts('staff', staffPhone, secret);
+    }
+    isAdmin = true;
+    currentAdminActor = { phone: staffRecord.phone, name: staffRecord.name, role: staffRecord.role||'staff' };
+    document.getElementById('admin-staff-phone').value='';
+    document.getElementById('admin-pin').value=''; msg.innerHTML='';
+    document.getElementById('admin-gate').classList.add('hidden');
+    updateSession({ isAdmin: true, adminPhone: staffRecord.phone });
+    document.getElementById('admin-dashboard').classList.remove('hidden');
+    logAudit('Logged in'); saveState();
+    renderAdmin();
+  }catch(e){
+    msg.innerHTML = '<div class="msg err">Something went wrong logging in — please try again.</div>';
+  }finally{
+    btn.disabled = false;
+  }
 });
 
 // First-run only: creates the single super-admin account in Firebase Auth.
@@ -2206,9 +2279,11 @@ function renderAdminInner(){
     if(state.staff && state.staff[phone]){ msg.innerHTML = '<div class="msg err">A staff account with this phone already exists.</div>'; return; }
     staffAddBtn.disabled = true;
     const pinHash = await hashPin(pin);
+    const ok = await writeAuthSecret('staff', phone, { pinHash, failedAttempts:0, lockedUntil:null });
     staffAddBtn.disabled = false;
+    if(!ok){ msg.innerHTML = '<div class="msg err">Something went wrong saving the PIN — check your connection and try again.</div>'; return; }
     if(!state.staff) state.staff = {};
-    state.staff[phone] = { phone, name, pinHash, role:'staff', active:true, createdAt: todayISO() };
+    state.staff[phone] = { phone, name, role:'staff', active:true, createdAt: todayISO() };
     logAudit(`Added staff account for ${name} (${phone})`);
     saveState(); renderAdmin();
   });
@@ -2229,7 +2304,10 @@ function renderAdminInner(){
     const newPin = prompt(`New temporary PIN for ${rec.name} (4–12 digits):`);
     if(newPin===null) return;
     if(!validAdminPin(newPin.trim())){ alert('PIN must be 4–12 digits.'); return; }
-    rec.pinHash = await hashPin(newPin.trim());
+    const pinHash = await hashPin(newPin.trim());
+    const ok = await writeAuthSecret('staff', rec.phone, { pinHash, failedAttempts:0, lockedUntil:null });
+    if(!ok){ alert("Couldn't save the new PIN — check your connection and try again."); return; }
+    if(rec.pinHash){ db.ref(`${DATA_PATH}/staff/${rec.phone}/pinHash`).remove().catch(()=>{}); delete rec.pinHash; }
     logAudit(`Reset PIN for staff account ${rec.name} (${rec.phone})`);
     saveState(); renderAdmin();
   }));
@@ -2245,11 +2323,17 @@ function renderAdminInner(){
     if(req.type==='buyer'){
       const buyer = state.buyers[req.phone];
       if(!buyer){ alert('That buyer account no longer exists.'); return; }
-      buyer.pinHash = pinHash;
+      const ok = await writeAuthSecret('buyers', req.phone, { pinHash, failedAttempts:0, lockedUntil:null });
+      if(!ok){ alert("Couldn't save the new PIN — check your connection and try again."); return; }
+      if(buyer.pinHash){ db.ref(`${DATA_PATH}/buyers/${req.phone}/pinHash`).remove().catch(()=>{}); delete buyer.pinHash; }
     } else {
       const ownerSites = Object.values(state.sites).filter(s=>normPhone(s.ownerPhone)===req.phone);
       if(!ownerSites.length){ alert('That owner has no listings on file anymore.'); return; }
-      ownerSites.forEach(s=>{ s.ownerPinHash = pinHash; });
+      const ok = await writeAuthSecret('owners', req.phone, { pinHash, failedAttempts:0, lockedUntil:null });
+      if(!ok){ alert("Couldn't save the new PIN — check your connection and try again."); return; }
+      ownerSites.forEach(s=>{
+        if(s.ownerPinHash){ db.ref(`${DATA_PATH}/sites/${s.id}/ownerPinHash`).remove().catch(()=>{}); delete s.ownerPinHash; }
+      });
     }
     req.resolved = true;
     logAudit(`Reset PIN for ${req.type} ${req.name} (${req.phone})`);
