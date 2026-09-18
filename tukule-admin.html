@@ -1664,6 +1664,22 @@ function renderAdminInner(){
   });
   const commissionOutstanding = Math.round((commissionAccrued - commissionCollected)*100)/100;
 
+  // Listing fees are the current revenue model (commission was retired —
+  // see the commissionPct=0 backfill above), so the top overview needs its
+  // own live totals for them. Without this, approving/recording a listing
+  // fee payment changed `state.sites` but nothing in the summary cards
+  // above ever reflected it, since those only tracked the old commission
+  // figures.
+  let feesCollected=0, feesOutstanding=0, sitesAwaitingFee=0;
+  sites.forEach(s=>{
+    const feeRequired = (s.feeDue||0) > 0;
+    if(!feeRequired) return;
+    if(s.feePaid) feesCollected += s.feeDue;
+    else { feesOutstanding += s.feeDue; sitesAwaitingFee++; }
+  });
+  feesCollected = Math.round(feesCollected*100)/100;
+  feesOutstanding = Math.round(feesOutstanding*100)/100;
+
   const pendingSites = sites.filter(s=>s.status==='pending');
   const activeSitesList = sites.filter(s=>s.status==='active');
   const pendingTopUps = sites.flatMap(s=>(s.plots||[])
@@ -1844,10 +1860,15 @@ function renderAdminInner(){
     <p class="note" style="margin:-6px 0 6px;">Logged in as <strong>${esc(adminActorLabel())}</strong>${isSuperAdmin ? '' : ' (staff)'}.</p>
     <p class="note" style="margin:0 0 14px;">Buyers pay property owners directly — Tukule never holds buyer funds. These figures track what's owed to Nexlite, not money in hand.</p>
     <div class="grid-three" style="margin-bottom:16px;">
-      <div class="side-card"><h3>Commission accrued</h3><div class="price" style="font-size:1.3rem;">${money(commissionAccrued)}</div></div>
-      <div class="side-card"><h3>Commission outstanding</h3><div class="price" style="font-size:1.3rem;">${money(commissionOutstanding)}</div></div>
+      <div class="side-card"><h3>Listing fees collected</h3><div class="price" style="font-size:1.3rem;">${money(feesCollected)}</div></div>
+      <div class="side-card"><h3>Listing fees outstanding</h3><div class="price" style="font-size:1.3rem;">${money(feesOutstanding)}${sitesAwaitingFee ? ` <span class="note" style="font-size:0.75rem;">(${sitesAwaitingFee} site${sitesAwaitingFee===1?'':'s'})</span>` : ''}</div></div>
       <div class="side-card"><h3>Payments awaiting confirmation</h3><div class="price" style="font-size:1.3rem;">${pendingCount}</div></div>
     </div>
+    ${(commissionAccrued>0 || commissionOutstanding>0) ? `
+    <div class="grid-two" style="margin-bottom:16px;">
+      <div class="side-card"><h3>Commission accrued (legacy)</h3><div class="price" style="font-size:1.3rem;">${money(commissionAccrued)}</div></div>
+      <div class="side-card"><h3>Commission outstanding (legacy)</h3><div class="price" style="font-size:1.3rem;">${money(commissionOutstanding)}</div></div>
+    </div>` : ''}
 
     ${resetRequests.length ? `
     <div class="side-card" style="margin-bottom:16px;border:1px solid var(--gold-dark);">
