@@ -88,32 +88,6 @@
       .topbar h1 { font-size: 16px; }
       .content { padding: 16px; }
       .modal-content { padding: 20px; max-width: 92vw; }
-
-      /* Responsive tables → stacked cards, so nothing (e.g. Actions) gets clipped */
-      .table-container { overflow: visible; border: none; background: transparent; }
-      .table, .table tbody { display: block; width: 100%; }
-      .table thead { display: none; }
-      .table tbody tr {
-        display: block; background: var(--surface); border: 1px solid var(--line);
-        border-radius: 12px; margin-bottom: 12px; overflow: hidden;
-      }
-      .table tbody tr:last-child { margin-bottom: 0; }
-      .table tbody td {
-        display: flex; justify-content: space-between; align-items: center; gap: 12px;
-        padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: right; white-space: normal;
-      }
-      .table tbody tr td:last-child { border-bottom: none; }
-      .table tbody td[data-label]::before {
-        content: attr(data-label); font-weight: 600; color: var(--ink-soft); text-align: left;
-        flex-shrink: 0; margin-right: 12px;
-      }
-      /* Full-width cell (colspan placeholders like "No pending requests") stays plain, no label row */
-      .table tbody td:not([data-label]) { text-align: center; display: block; }
-      /* Actions cell: buttons stack full-width instead of squeezing beside a label */
-      .table tbody td.cell-actions { display: block; text-align: left; }
-      .table tbody td.cell-actions::before { display: block; margin: 0 0 8px; }
-      .table tbody td.cell-actions .btn { width: 100%; margin-bottom: 6px; justify-content: center; }
-      .table tbody td.cell-actions .btn:last-child { margin-bottom: 0; }
     }
 
     /* ===== Login Page ===== */
@@ -149,7 +123,7 @@
     .card-meta.danger { color: var(--danger); }
 
     /* ===== Tables ===== */
-    .table-container { background: var(--surface); border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+    .table-container { background: var(--surface); border-radius: 12px; border: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; }
     .table {
       width: 100%; border-collapse: collapse; font-size: 13px;
     }
@@ -234,6 +208,39 @@
     .stat { background: var(--surface); padding: 16px; border-radius: 10px; border: 1px solid var(--line); }
     .stat-label { font-size: 12px; color: var(--ink-mute); margin-bottom: 8px; }
     .stat-value { font-size: 24px; font-family: var(--font-num); font-weight: 700; }
+    /* Responsive tables → stacked cards on narrow screens. Placed at the
+       end of the stylesheet on purpose: these rules share selectors
+       (.table-container, .table, .table thead, .table tbody td) with the
+       base/desktop rules above, at equal specificity, so CSS only applies
+       them on top of — not instead of — the base rules unless this block
+       comes later in source order. Keep it last if you add more .table
+       rules above. */
+    @media (max-width: 768px) {
+      .table-container { overflow: visible; border: none; background: transparent; }
+      .table, .table tbody { display: block; width: 100%; }
+      .table thead { display: none; }
+      .table tbody tr {
+        display: block; background: var(--surface); border: 1px solid var(--line);
+        border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+      }
+      .table tbody tr:last-child { margin-bottom: 0; }
+      .table tbody td {
+        display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: right; white-space: normal;
+      }
+      .table tbody tr td:last-child { border-bottom: none; }
+      .table tbody td[data-label]::before {
+        content: attr(data-label); font-weight: 600; color: var(--ink-soft); text-align: left;
+        flex-shrink: 0; margin-right: 12px;
+      }
+      /* Full-width cell (colspan placeholders like "No pending requests") stays plain, no label row */
+      .table tbody td:not([data-label]) { text-align: center; display: block; }
+      /* Actions cell: buttons stack full-width instead of squeezing beside a label */
+      .table tbody td.cell-actions { display: block; text-align: left; }
+      .table tbody td.cell-actions::before { display: block; margin: 0 0 8px; }
+      .table tbody td.cell-actions .btn { width: 100%; margin-bottom: 6px; justify-content: center; }
+      .table tbody td.cell-actions .btn:last-child { margin-bottom: 0; }
+    }
   </style>
 </head>
 <body>
@@ -1451,6 +1458,17 @@ function toast(msg, type = 'info') {
 window.addEventListener('load', () => {
   updateClock();
 });
+</script>
+
+<script>
+// Register the offline app-shell service worker (sw.js) — same one
+// index.html registers, so both pages share a single cache/scope.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .catch((err) => console.log('Service worker registration failed:', err));
+  });
+}
 </script>
 
 </body>
