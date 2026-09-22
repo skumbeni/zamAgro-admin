@@ -88,6 +88,32 @@
       .topbar h1 { font-size: 16px; }
       .content { padding: 16px; }
       .modal-content { padding: 20px; max-width: 92vw; }
+
+      /* Responsive tables → stacked cards, so nothing (e.g. Actions) gets clipped */
+      .table-container { overflow: visible; border: none; background: transparent; }
+      .table, .table tbody { display: block; width: 100%; }
+      .table thead { display: none; }
+      .table tbody tr {
+        display: block; background: var(--surface); border: 1px solid var(--line);
+        border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+      }
+      .table tbody tr:last-child { margin-bottom: 0; }
+      .table tbody td {
+        display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: right; white-space: normal;
+      }
+      .table tbody tr td:last-child { border-bottom: none; }
+      .table tbody td[data-label]::before {
+        content: attr(data-label); font-weight: 600; color: var(--ink-soft); text-align: left;
+        flex-shrink: 0; margin-right: 12px;
+      }
+      /* Full-width cell (colspan placeholders like "No pending requests") stays plain, no label row */
+      .table tbody td:not([data-label]) { text-align: center; display: block; }
+      /* Actions cell: buttons stack full-width instead of squeezing beside a label */
+      .table tbody td.cell-actions { display: block; text-align: left; }
+      .table tbody td.cell-actions::before { display: block; margin: 0 0 8px; }
+      .table tbody td.cell-actions .btn { width: 100%; margin-bottom: 6px; justify-content: center; }
+      .table tbody td.cell-actions .btn:last-child { margin-bottom: 0; }
     }
 
     /* ===== Login Page ===== */
@@ -950,10 +976,10 @@ function loadDashboard() {
   const tbody = document.getElementById('recentActivityTable');
   tbody.innerHTML = activity.length ? activity.map(a => `
     <tr>
-      <td>${a.email || 'Unknown'}</td>
-      <td>${a.action}</td>
-      <td>${tierBadgeHTML(a.tier)}</td>
-      <td>${new Date(a.timestamp).toLocaleString()}</td>
+      <td data-label="User">${a.email || 'Unknown'}</td>
+      <td data-label="Action">${a.action}</td>
+      <td data-label="Tier">${tierBadgeHTML(a.tier)}</td>
+      <td data-label="Time">${new Date(a.timestamp).toLocaleString()}</td>
     </tr>
   `).join('') : '<tr><td colspan="4" style="text-align: center; padding: 24px; color: var(--ink-mute);">No activity yet</td></tr>';
 
@@ -988,15 +1014,15 @@ function loadUsers() {
 
     tbody.innerHTML = list.map(u => `
       <tr>
-        <td><code style="font-size: 11px; color: var(--ink-mute);">${esc(u.id.slice(0, 10))}...</code></td>
-        <td>
+        <td data-label="User ID"><code style="font-size: 11px; color: var(--ink-mute);">${esc(u.id.slice(0, 10))}...</code></td>
+        <td data-label="Email">
           ${esc(u.email) || '<span style="color: var(--ink-mute);">no email on file</span>'}
           <div style="font-size: 11px; color: var(--ink-mute);">${esc(u.business) || 'business name not set'}</div>
         </td>
-        <td>${tierBadgeHTML(u.tier)}</td>
-        <td><span class="badge badge-${u.status === 'active' ? 'success' : 'danger'}">${esc(u.status)}</span></td>
-        <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
-        <td>
+        <td data-label="Subscription">${tierBadgeHTML(u.tier)}</td>
+        <td data-label="Status"><span class="badge badge-${u.status === 'active' ? 'success' : 'danger'}">${esc(u.status)}</span></td>
+        <td data-label="Joined">${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+        <td data-label="Actions" class="cell-actions">
           <button class="btn btn-sm btn-secondary" onclick="editUser('${u.id}')">Edit</button>
           <button class="btn btn-sm btn-danger" onclick="resetUserOverride('${u.id}')">Reset</button>
         </td>
@@ -1138,12 +1164,12 @@ function renderPendingRequests() {
         <tbody>
           ${pending.map(u => `
             <tr>
-              <td>${esc(u.business) || esc(u.email) || esc(u.id.slice(0, 8))}</td>
-              <td>${tierBadgeHTML(u.request.tier)}</td>
-              <td>${esc((u.request.method || '—').toUpperCase())}</td>
-              <td><code style="font-size: 11px;">${esc(u.request.reference || '—')}</code></td>
-              <td>${u.request.submittedAt ? new Date(u.request.submittedAt).toLocaleString() : '—'}</td>
-              <td>
+              <td data-label="Business">${esc(u.business) || esc(u.email) || esc(u.id.slice(0, 8))}</td>
+              <td data-label="Requested Tier">${tierBadgeHTML(u.request.tier)}</td>
+              <td data-label="Method">${esc((u.request.method || '—').toUpperCase())}</td>
+              <td data-label="Reference"><code style="font-size: 11px;">${esc(u.request.reference || '—')}</code></td>
+              <td data-label="Submitted">${u.request.submittedAt ? new Date(u.request.submittedAt).toLocaleString() : '—'}</td>
+              <td data-label="Actions" class="cell-actions">
                 <button class="btn btn-sm btn-primary" onclick="approveRequest('${u.id}')">Approve</button>
                 <button class="btn btn-sm btn-danger" onclick="rejectRequest('${u.id}')">Reject</button>
               </td>
@@ -1181,11 +1207,11 @@ function loadBilling() {
   const tbody = document.getElementById('billingTable');
   tbody.innerHTML = (adminData.billing || []).slice(-20).reverse().map(b => `
     <tr>
-      <td>${b.email}</td>
-      <td>${tierBadgeHTML(b.tier)}</td>
-      <td>ZMW ${b.amount}</td>
-      <td>${new Date(b.date).toLocaleDateString()}</td>
-      <td><span class="badge badge-${b.status === 'paid' ? 'success' : 'warn'}">${b.status}</span></td>
+      <td data-label="User">${b.email}</td>
+      <td data-label="Tier">${tierBadgeHTML(b.tier)}</td>
+      <td data-label="Amount">ZMW ${b.amount}</td>
+      <td data-label="Date">${new Date(b.date).toLocaleDateString()}</td>
+      <td data-label="Status"><span class="badge badge-${b.status === 'paid' ? 'success' : 'warn'}">${b.status}</span></td>
     </tr>
   `).join('') || '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--ink-mute);">No transactions</td></tr>';
 }
@@ -1217,10 +1243,10 @@ async function loadUsage() {
     const avgApiCalls = tierUsers.length ? tierUsers.reduce((sum, u) => sum + (u.apiCallsToday || 0), 0) / tierUsers.length : 0;
     return `
       <tr>
-        <td>${tierBadgeHTML(tier.id)}</td>
-        <td>${tierUsers.length}</td>
-        <td>${avgDataKB.toFixed(1)}</td>
-        <td>${avgApiCalls.toFixed(1)}</td>
+        <td data-label="Tier">${tierBadgeHTML(tier.id)}</td>
+        <td data-label="Users">${tierUsers.length}</td>
+        <td data-label="Avg Data (KB)">${avgDataKB.toFixed(1)}</td>
+        <td data-label="Avg API Calls">${avgApiCalls.toFixed(1)}</td>
       </tr>
     `;
   }).join('') : '<tr><td colspan="4" style="text-align: center; padding: 24px; color: var(--ink-mute);">No tiers defined</td></tr>';
