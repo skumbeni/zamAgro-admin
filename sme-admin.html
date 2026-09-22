@@ -669,6 +669,8 @@ async function refreshRealUsers() {
   Object.entries(usersNode || {}).forEach(([uid, rec]) => {
     const s = rec?.settings || {};
     const sub = rec?.subscription || {};
+    const usage = rec?.usage || {};
+    const today = new Date().toISOString().slice(0, 10);
     next[uid] = {
       id: uid,
       email: s.email || '',
@@ -677,7 +679,10 @@ async function refreshRealUsers() {
       createdAt: s.createdAt || null,
       tier: sub.tier || 'free',
       status: sub.status || 'active',
-      request: sub.request && sub.request.status ? sub.request : null
+      request: sub.request && sub.request.status ? sub.request : null,
+      dataSyncedKB: usage.dataSyncedKB || 0,
+      apiCallsToday: (usage.apiCalls && usage.apiCalls[today]) || 0,
+      lastActiveAt: usage.lastActiveAt || null
     };
   });
   realUsers = next;
@@ -1186,19 +1191,36 @@ function loadBilling() {
 }
 
 // ============= USAGE =============
-function loadUsage() {
-  adminData = getAdminData();
-  const tiers = adminData.tiers || [];
-  const tbody = document.getElementById('usageTable');
+// A business counts as an "active session" if its app has checked in
+// (initial load or 5-minute heartbeat, see index.html) within this window.
+const ACTIVE_SESSION_WINDOW_MS = 15 * 60 * 1000;
 
+async function loadUsage() {
+  adminData = getAdminData();
+  await refreshRealUsers();
+  const users = Object.values(realUsers);
+  const tiers = adminData.tiers || [];
+  const now = Date.now();
+
+  const totalDataSyncedKB = users.reduce((sum, u) => sum + (u.dataSyncedKB || 0), 0);
+  const totalApiCallsToday = users.reduce((sum, u) => sum + (u.apiCallsToday || 0), 0);
+  const activeSessions = users.filter(u => u.lastActiveAt && (now - u.lastActiveAt) < ACTIVE_SESSION_WINDOW_MS).length;
+
+  document.getElementById('dataSynced').textContent = (totalDataSyncedKB / 1024).toFixed(1);
+  document.getElementById('apiCalls').textContent = totalApiCallsToday.toLocaleString();
+  document.getElementById('activeSessions').textContent = activeSessions;
+
+  const tbody = document.getElementById('usageTable');
   tbody.innerHTML = tiers.length ? tiers.map(tier => {
-    const tierUsers = Object.values(realUsers).filter(u => u.tier === tier.id);
+    const tierUsers = users.filter(u => u.tier === tier.id);
+    const avgDataKB = tierUsers.length ? tierUsers.reduce((sum, u) => sum + (u.dataSyncedKB || 0), 0) / tierUsers.length : 0;
+    const avgApiCalls = tierUsers.length ? tierUsers.reduce((sum, u) => sum + (u.apiCallsToday || 0), 0) / tierUsers.length : 0;
     return `
       <tr>
         <td>${tierBadgeHTML(tier.id)}</td>
         <td>${tierUsers.length}</td>
-        <td>${Math.floor(Math.random() * 500)}</td>
-        <td>${Math.floor(Math.random() * 1000)}</td>
+        <td>${avgDataKB.toFixed(1)}</td>
+        <td>${avgApiCalls.toFixed(1)}</td>
       </tr>
     `;
   }).join('') : '<tr><td colspan="4" style="text-align: center; padding: 24px; color: var(--ink-mute);">No tiers defined</td></tr>';
