@@ -265,6 +265,12 @@ tr:hover td{background:#FAFBFC}
     <label>Notes (optional)</label>
     <input type="text" id="mmNotes" placeholder="e.g. Renewed via mobile money">
 
+    <div id="mmTrialBox" style="margin-top:12px;padding:10px;border:1px dashed #C9B99A;border-radius:8px;font-size:12.5px">
+      <div id="mmTrialInfo" style="margin-bottom:6px"></div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="extendTrial(30)">Extend trial +30 days</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="grantFullTermTrial()">Full term (90 days from sign-up)</button>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeManageModal()">Cancel</button>
       <button class="btn btn-accent" onclick="deactivateSubscription()">Deactivate</button>
@@ -336,6 +342,11 @@ const TIERS = {
   Premium:  { monthly: 599, annual: 5490, students: Infinity }
 };
 
+const TRIAL_DAYS = 30;                 // must match the school app
+const POLICY_START = 1790708400000;    // 2026-09-29T19:00Z (must match the school app)
+const GRACE_DAYS = 14;
+const TRIAL_STUDENT_LIMIT = Infinity;  // must match the school app; a number here is also enforced by Firebase rules                 // rollout grace for schools that already existed
+const DAY = 864e5;
 let _schools = []; // flattened: {adminUid, schoolId, schoolName, email, createdAt, lastLogin, sub, studentCount}
 let _activeManageEntry = null;
 
@@ -491,6 +502,8 @@ async function loadAllData(){
       }
     }));
 
+    await _stampSchools(flat);
+    _flagDuplicates(flat);
     _schools = flat;
     renderFinancialSummary();
     renderSchoolsTable();
@@ -506,9 +519,77 @@ async function loadAllData(){
   }
 }
 
+// ==================== DUPLICATE / REPEAT-TRIAL FLAGS ====================
+function _normName(n){
+  return String(n || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\b(the|school|schools|primary|secondary|academy|college|high|junior|senior|basic|community|private|of|and)\b/g, ' ')
+    .split(/\s+/).filter(Boolean).sort().join('');   // word order does not matter
+}
+function _normEmail(e){
+  const m = String(e || '').toLowerCase().match(/^([^@]+)@(.+)$/); if (!m) return '';
+  let local = m[1].split('+')[0], dom = m[2];
+  if (dom === 'gmail.com' || dom === 'googlemail.com') local = local.replace(/\./g, '');
+  return local + '@' + dom;
+}
+function _flagDuplicates(flat){
+  const byName = {}, byEmail = {}, byOwner = {};
+  flat.forEach(s => {
+    s.dupNotes = [];
+    const n = _normName(s.schoolName), e = _normEmail(s.email);
+    if (n.length >= 4) (byName[n] = byName[n] || []).push(s);
+    if (e) (byEmail[e] = byEmail[e] || []).push(s);
+    (byOwner[s.adminUid] = byOwner[s.adminUid] || []).push(s);
+  });
+  const mark = (group, why) => {
+    group.forEach(s => {
+      const others = group.filter(o => o !== s && !(o.adminUid === s.adminUid && o.schoolId === s.schoolId)).map(o => o.schoolName);
+      if (others.length) s.dupNotes.push(why + ': ' + others.join(', '));
+    });
+  };
+  Object.values(byName).filter(g => new Set(g.map(x => x.adminUid)).size > 1).forEach(g => mark(g, 'Same school name on another account'));
+  Object.values(byEmail).filter(g => g.length > 1 && new Set(g.map(x => x.adminUid)).size > 1).forEach(g => mark(g, 'Same email address on another account'));
+  Object.values(byOwner).filter(g => g.length > 1).forEach(g => mark(g, 'Several schools on one account'));
+}
+
+// ==================== TRIAL STAMP + ACCESS BACKFILL ====================
+// Firebase rules block writes to a school's data once subscription.accessUntil
+// (a number, ms) has passed. Only this panel can write /subscription, so:
+//  - paid subs missing accessUntil get it backfilled from their expiry date
+//  - schools with no plan get a trial end stamped (30 days from sign-up, with a
+//    14-day grace at rollout for schools that already existed)
+async function _stampSchools(flat){
+  let stamped = 0, backfilled = 0, failed = 0;
+  await Promise.all(flat.map(async s => {
+    const r = window._fbRef(window._fbDb, 'schools/' + s.adminUid + '/' + s.schoolId + '/subscription');
+    try {
+      if (s.sub && s.sub.tier) {
+        const patch = {};
+        if (typeof s.sub.accessUntil !== 'number') {
+          const t = new Date(s.sub.expiry).getTime();
+          if (!isNaN(t)) patch.accessUntil = t;
+        }
+        const lim = TIERS[s.sub.tier] ? TIERS[s.sub.tier].students : null;
+        if (lim !== null && isFinite(lim) && s.sub.studentLimit !== lim) patch.studentLimit = lim;
+        if (Object.keys(patch).length) { await window._fbUpdate(r, patch); Object.assign(s.sub, patch); backfilled++; }
+      } else if (!(s.sub && (s.sub.trialEnds || s.sub.accessUntil))) {
+        const created = s.createdAt || Date.now();
+        const end = Math.max(created + TRIAL_DAYS * DAY, POLICY_START + GRACE_DAYS * DAY);
+        const rec = { trialEnds: end, accessUntil: end, _ts: Date.now() };
+        if (isFinite(TRIAL_STUDENT_LIMIT)) rec.studentLimit = TRIAL_STUDENT_LIMIT;
+        await window._fbSet(r, rec); s.sub = rec; stamped++;
+      }
+    } catch(e) { failed++; console.warn('Stamp failed for', s.schoolName, e.code || e.message); }
+  }));
+  if (stamped || backfilled) showToast('Trials stamped: ' + stamped + ' \u00B7 access dates backfilled: ' + backfilled);
+  if (failed) showToast(failed + ' school(s) could not be stamped - publish the updated Firebase rules first.', 'error');
+}
+
 // ==================== STATUS / MATH HELPERS ====================
 function schoolStatus(sub){
-  if (!sub || !sub.tier) return 'trial';
+  if (!sub || !sub.tier) {
+    const te = sub && (sub.trialEnds || sub.accessUntil);
+    return (te && Date.now() > te) ? 'expired' : 'trial';   // trial ended = expired
+  }
   const expiry = new Date(sub.expiry);
   if (isNaN(expiry.getTime())) return 'trial';
   const now = new Date();
@@ -591,12 +672,12 @@ function renderSchoolsTable(){
 
   document.getElementById('schoolsTableBody').innerHTML = rows.map(({ s, status }) => {
     const sub = s.sub;
-    const expiryStr = sub && sub.expiry ? new Date(sub.expiry).toLocaleDateString() : '—';
+    const expiryStr = sub && sub.expiry ? new Date(sub.expiry).toLocaleDateString() : (sub && sub.trialEnds ? 'Trial: ' + new Date(sub.trialEnds).toLocaleDateString() : null) || '—';
     return `<tr>
-      <td><strong>${esc(s.schoolName)}</strong></td>
+      <td><strong>${esc(s.schoolName)}</strong>${(s.dupNotes && s.dupNotes.length) ? '<div style="color:#C0392B;font-size:11.5px;margin-top:2px" title="' + esc(s.dupNotes.join(' | ')) + '">&#9888; Possible repeat trial: ' + esc(s.dupNotes[0]) + '</div>' : ''}</td>
       <td>${esc(s.email)}</td>
-      <td>${sub ? esc(sub.tier) : '—'}</td>
-      <td>${sub ? esc(sub.cycle) : '—'}</td>
+      <td>${sub && sub.tier ? esc(sub.tier) : '—'}</td>
+      <td>${sub && sub.cycle ? esc(sub.cycle) : '—'}</td>
       <td>${sub && sub.price ? 'K' + sub.price.toLocaleString() : '—'}</td>
       <td>${expiryStr}</td>
       <td><span class="badge ${badgeClass[status]}">${badgeLabel[status]}</span></td>
@@ -679,7 +760,43 @@ function openManageModal(adminUid, schoolId){
   document.getElementById('mmPayRef').value = (app && app.txn) ? app.txn : '';
   document.getElementById('mmNotes').value = '';
 
+  _mmRenderTrial();
   document.getElementById('manageModal').style.display = 'flex';
+}
+
+function _mmRenderTrial(){
+  const e = _activeManageEntry; if (!e) return;
+  const box = document.getElementById('mmTrialBox');
+  if (e.sub && e.sub.tier) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const te = e.sub && (e.sub.trialEnds || e.sub.accessUntil);
+  document.getElementById('mmTrialInfo').textContent = te
+    ? ('Trial ends ' + new Date(te).toLocaleDateString() + (Date.now() > te ? ' (ended - school is read-only)' : ''))
+    : 'No trial end stamped yet.';
+}
+
+async function _setTrial(end){
+  const e = _activeManageEntry; if (!e) return;
+  if (e.sub && e.sub.tier) { showToast('This school has a paid plan - use Activate / Renew.', 'error'); return; }
+  try {
+    const rec = { trialEnds: end, accessUntil: end, _ts: Date.now() };
+    if (isFinite(TRIAL_STUDENT_LIMIT)) rec.studentLimit = TRIAL_STUDENT_LIMIT;
+    await window._fbSet(window._fbRef(window._fbDb, 'schools/' + e.adminUid + '/' + e.schoolId + '/subscription'), rec);
+    e.sub = rec;
+    showToast('Trial now ends ' + new Date(end).toLocaleDateString());
+    _mmRenderTrial(); renderFinancialSummary(); renderSchoolsTable();
+  } catch(err) { showToast('Failed: ' + (err.message || err), 'error'); }
+}
+function extendTrial(days){
+  const e = _activeManageEntry; if (!e) return;
+  const cur = (e.sub && (e.sub.trialEnds || e.sub.accessUntil)) || Date.now();
+  _setTrial(Math.max(cur, Date.now()) + days * DAY);
+}
+function grantFullTermTrial(){
+  const e = _activeManageEntry; if (!e) return;
+  let end = (e.createdAt || Date.now()) + 90 * DAY;
+  if (end < Date.now()) end = Date.now() + 60 * DAY;   // already past: give two more months from today
+  _setTrial(end);
 }
 
 function closeManageModal(){
@@ -725,8 +842,10 @@ async function saveSubscriptionFromModal(){
       activatedBy,
       payRef, payNotes: notes,
       paymentHistory: history,
+      accessUntil: new Date(expiryDate + 'T23:59:59').getTime(),   // numeric copy the Firebase rules check
       _ts: Date.now()
     };
+    if (isFinite(TIERS[tier].students)) newSub.studentLimit = TIERS[tier].students;   // Premium: no limit
 
     const path = 'schools/' + _activeManageEntry.adminUid + '/' + _activeManageEntry.schoolId + '/subscription';
     await window._fbSet(window._fbRef(window._fbDb, path), newSub);
@@ -753,10 +872,9 @@ async function deactivateSubscription(){
 
   try {
     const existing = _activeManageEntry.sub || {};
-    const updated = Object.assign({}, existing, {
-      expiry: new Date(Date.now() - 86400000).toISOString(),
-      _ts: Date.now()
-    });
+    const past = Date.now() - 86400000;
+    const updated = Object.assign({}, existing, { accessUntil: past, _ts: Date.now() });
+    if (existing.tier) updated.expiry = new Date(past).toISOString(); else updated.trialEnds = past;
     const path = 'schools/' + _activeManageEntry.adminUid + '/' + _activeManageEntry.schoolId + '/subscription';
     await window._fbSet(window._fbRef(window._fbDb, path), updated);
 
