@@ -170,6 +170,7 @@ input,select,textarea{font-family:inherit;}
       <button class="tab-btn active" id="tab-companies" onclick="switchTab('companies')">Companies</button>
       <button class="tab-btn" id="tab-agents" onclick="switchTab('agents')">Agents</button>
       <button class="tab-btn" id="tab-requests" onclick="switchTab('requests')">Partnership requests<span class="nav-badge" id="requests-badge" style="display:none;"></span></button>
+      <button class="tab-btn" id="tab-revenue" onclick="switchTab('revenue')">Revenue</button>
       <button class="tab-btn" id="tab-unlinks" onclick="switchTab('unlinks')">Unlink requests<span class="nav-badge" id="unlinks-badge" style="display:none;"></span></button>
     </div>
 
@@ -190,6 +191,16 @@ input,select,textarea{font-family:inherit;}
     <div class="acct-list" id="acct-list"></div>
     <div class="acct-list" id="requests-list" style="display:none;"></div>
     <div class="acct-list" id="unlinks-list" style="display:none;"></div>
+    <div id="revenue-panel" style="display:none;">
+      <div class="toolbar"><div class="toolbar-left">
+        <select class="filter-select" id="rev-period" onchange="renderRevenue()">
+          <option value="month">This month</option>
+          <option value="last">Last month</option>
+          <option value="all">All time</option>
+        </select>
+      </div></div>
+      <div id="revenue-body"></div>
+    </div>
   </div>
 </div>
 
@@ -250,6 +261,28 @@ input,select,textarea{font-family:inherit;}
     <h3 id="fee-links-title">Fee links</h3>
     <p class="sub" id="fee-links-sub">NEXLITE's fee on this agent's commission, per buying company. Never billed to or shown to the company.</p>
     <div id="fee-links-body"></div>
+  </div>
+</div>
+
+<!-- Partnership terms modal (companies) — view/edit the commission model AgriBuy
+     earns on this company. Writes /partnership_terms/{uid} (admin-write-only). -->
+<div class="modal-backdrop" id="terms-modal">
+  <div class="modal-box" style="max-width:520px;">
+    <button class="modal-close" onclick="closeTermsModal()">&times;</button>
+    <h3 id="terms-title">Partnership terms</h3>
+    <p class="sub" id="terms-sub"></p>
+    <div class="field"><label>Commission model</label>
+      <select id="pt-model" onchange="renderTermsFields()">
+        <option value="origination_commission">Origination Commission</option>
+        <option value="managed_origination">Managed Origination</option>
+        <option value="trading_margin">Trading Margin</option>
+      </select>
+    </div>
+    <div id="pt-fields"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+      <button class="acct-btn" onclick="saveTerms()">Save terms</button>
+      <button class="acct-btn ghost" onclick="resetTerms()">Reset to default</button>
+    </div>
   </div>
 </div>
 
@@ -381,6 +414,7 @@ function enterAdmin(){
     renderStats();
     renderList();
     renderUnlinksBadge();
+    if(currentTab==='revenue') renderRevenue();
     if(currentTab==='requests') renderRequestsList();
     if(currentTab==='unlinks') renderUnlinksList();
   }, (err) => {
@@ -399,6 +433,7 @@ function enterAdmin(){
   }, (err) => console.error('Partnership requests listener failed:', err));
   fb.onValue(fb.partnershipTermsRef, (snap) => {
     partnershipTerms = snap.val() || {};
+    if(currentTab==='revenue') renderRevenue();
     if(currentTab==='requests') renderRequestsList();
   }, (err) => console.error('Partnership terms listener failed:', err));
 }
@@ -409,13 +444,17 @@ function switchTab(tab){
   document.getElementById('tab-agents').classList.toggle('active', tab==='agents');
   document.getElementById('tab-requests').classList.toggle('active', tab==='requests');
   document.getElementById('tab-unlinks').classList.toggle('active', tab==='unlinks');
+  document.getElementById('tab-revenue').classList.toggle('active', tab==='revenue');
   const isRequests = tab==='requests';
   const isUnlinks = tab==='unlinks';
-  document.getElementById('list-toolbar').style.display = (isRequests||isUnlinks) ? 'none' : '';
-  document.getElementById('acct-list').style.display = (isRequests||isUnlinks) ? 'none' : '';
+  const isRevenue = tab==='revenue';
+  document.getElementById('revenue-panel').style.display = isRevenue ? '' : 'none';
+  document.getElementById('list-toolbar').style.display = (isRequests||isUnlinks||isRevenue) ? 'none' : '';
+  document.getElementById('acct-list').style.display = (isRequests||isUnlinks||isRevenue) ? 'none' : '';
   document.getElementById('requests-list').style.display = isRequests ? '' : 'none';
   document.getElementById('unlinks-list').style.display = isUnlinks ? '' : 'none';
-  if(isRequests) renderRequestsList();
+  if(isRevenue) renderRevenue();
+  else if(isRequests) renderRequestsList();
   else if(isUnlinks) renderUnlinksList();
   else renderList();
 }
@@ -515,6 +554,7 @@ async function approvePartnershipRequest(companyUid){
   try{
     await fb.set(ref_(fb, 'partnership_terms/'+companyUid), terms);
     await fb.set(ref_(fb, 'partnership_requests/'+companyUid), null);
+    await fb.set(ref_(fb, 'billing/'+companyUid+'/partnershipApproved'), { model: terms.model, at: terms.approvedAt });
     notifyPartnershipDecision(companyUid, c.id, true, request);
     toast('Partnership terms approved');
   }catch(e){
@@ -712,6 +752,7 @@ function renderList(){
         ${expiryNote(a)}
         <span class="status-badge status-${status}">${status==='none'?'No subscription':status}</span>
         ${currentTab==='agents' ? `<button class="acct-btn ghost" onclick="openFeeLinksModal('${a.id}')">Fee links</button>` : ''}
+        ${currentTab==='companies' ? `<button class="acct-btn ghost" onclick="openTermsModal('${a.id}')">Terms</button>` : ''}
         <button class="acct-btn ghost" onclick="openEditModal('${currentTab}','${a.id}')">Edit</button>
         <button class="acct-btn danger" onclick="confirmDelete('${currentTab}','${a.id}')">Delete</button>
       </div>
@@ -812,7 +853,7 @@ function stripAccts(list){ return (list||[]).map(({ subscription, billingLog, ..
 function stripLinks(list){ return (list||[]).map(l => { const r = Object.assign({}, l); FEE_FIELDS.forEach(f => delete r[f]); return r; }); }
 function clean(o){ return JSON.parse(JSON.stringify(o)); }
 function attachBillingListeners(fb){
-  const rerender = () => { applyOverlay(); if(db){ renderStats(); renderList(); renderUnlinksBadge(); } };
+  const rerender = () => { applyOverlay(); if(db){ renderStats(); renderList(); renderUnlinksBadge(); if(currentTab==='revenue') renderRevenue(); } };
   fb.onValue(ref_(fb,'billing'), snap => { billingMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('billing listener:', e));
   fb.onValue(ref_(fb,'billing_log'), snap => { billingLogMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('billing_log listener:', e));
   fb.onValue(ref_(fb,'fee_links'), snap => { feeMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('fee_links listener:', e));
@@ -867,6 +908,154 @@ async function migrateBilling(){
   }
 }
 
+/* ---------- Partnership terms (view / edit per company) ---------- */
+const DEFAULT_TERMS = { model:'origination_commission', originationRateType:'pct', originationRatePct:4, originationRateFlatPerMT:100, retainerZMW:20000, managedRatePerMT:50, tradingMarginPct:8, financingCostPctPerAnnum:30, avgCycleDays:45 };
+let termsCompanyId = null;
+function openTermsModal(companyId){
+  const c = (db.companies||[]).find(x=>x.id===companyId);
+  if(!c) return;
+  termsCompanyId = companyId;
+  const cur = c.uid ? partnershipTerms[c.uid] : null;
+  document.getElementById('terms-title').textContent = 'Partnership terms — ' + (c.name||'Unnamed');
+  document.getElementById('terms-sub').textContent = c.uid
+    ? (cur ? 'Current: ' + (PARTNERSHIP_LABELS[cur.model]||cur.model) + ' — ' + partnershipSummary(cur) : 'No terms approved yet — the default (Origination Commission, 4% of accepted value) applies.')
+    : 'This company has no login ID yet, so terms cannot be saved until it signs in once.';
+  const t = Object.assign({}, DEFAULT_TERMS, cur || {});
+  document.getElementById('pt-model').value = t.model;
+  window.__termsDraft = t;
+  renderTermsFields();
+  document.getElementById('terms-modal').classList.add('active');
+}
+function closeTermsModal(){ document.getElementById('terms-modal').classList.remove('active'); termsCompanyId = null; }
+function renderTermsFields(){
+  const t = window.__termsDraft || DEFAULT_TERMS;
+  const m = document.getElementById('pt-model').value;
+  const f = (id, label, val, step) => `<div class="field"><label>${label}</label><input id="${id}" type="number" step="${step||1}" min="0" value="${val}"></div>`;
+  let h = '';
+  if(m==='origination_commission'){
+    h = `<div class="field"><label>Rate type</label><select id="pt-otype" onchange="document.getElementById('pt-opct-wrap').style.display=this.value==='pct'?'':'none';document.getElementById('pt-oflat-wrap').style.display=this.value==='flat'?'':'none';">
+      <option value="pct" ${t.originationRateType!=='flat'?'selected':''}>% of accepted value</option>
+      <option value="flat" ${t.originationRateType==='flat'?'selected':''}>Flat ZMW per MT</option></select></div>
+      <div id="pt-opct-wrap" style="${t.originationRateType==='flat'?'display:none':''}">${f('pt-opct','Rate (%) — max 20',t.originationRatePct,0.1)}</div>
+      <div id="pt-oflat-wrap" style="${t.originationRateType==='flat'?'':'display:none'}">${f('pt-oflat','Flat fee (ZMW per MT)',t.originationRateFlatPerMT,1)}</div>`;
+  } else if(m==='managed_origination'){
+    h = f('pt-retainer','Monthly retainer (ZMW)',t.retainerZMW,100) + f('pt-managed','Per-MT fee on top (ZMW)',t.managedRatePerMT,1);
+  } else {
+    h = f('pt-margin','Target spread (%) — max 30',t.tradingMarginPct,0.5) + f('pt-fin','Financing cost (% per year)',t.financingCostPctPerAnnum,0.5) + f('pt-cycle','Average cycle (days)',t.avgCycleDays,1);
+  }
+  document.getElementById('pt-fields').innerHTML = h;
+}
+async function saveTerms(){
+  const c = (db.companies||[]).find(x=>x.id===termsCompanyId);
+  if(!c) return;
+  if(!c.uid){ toast('This company has no login ID yet'); return; }
+  const num = (id, max) => { const el = document.getElementById(id); return el ? Math.min(Math.max(Number(el.value)||0, 0), max==null?1e9:max) : null; };
+  const prev = partnershipTerms[c.uid] || {};
+  const t = Object.assign({}, DEFAULT_TERMS, prev, { model: document.getElementById('pt-model').value });
+  if(t.model==='origination_commission'){
+    t.originationRateType = document.getElementById('pt-otype').value;
+    t.originationRatePct = num('pt-opct', 20);
+    t.originationRateFlatPerMT = num('pt-oflat');
+  } else if(t.model==='managed_origination'){
+    t.retainerZMW = num('pt-retainer'); t.managedRatePerMT = num('pt-managed');
+  } else {
+    t.tradingMarginPct = num('pt-margin', 30); t.financingCostPctPerAnnum = num('pt-fin', 100); t.avgCycleDays = Math.max(1, num('pt-cycle', 365));
+  }
+  t.approvedAt = new Date().toISOString();
+  delete t.requestedAt; delete t.companyId;
+  const fb = window.__adminFirebase;
+  try{
+    await fb.set(ref_(fb, 'partnership_terms/'+c.uid), clean(t));
+    await fb.set(ref_(fb, 'billing/'+c.uid+'/partnershipApproved'), { model: t.model, at: t.approvedAt });
+    toast('Partnership terms saved');
+    closeTermsModal();
+  }catch(e){
+    console.error('Failed to save terms:', e);
+    toast('Save failed — check your connection');
+  }
+}
+async function resetTerms(){
+  const c = (db.companies||[]).find(x=>x.id===termsCompanyId);
+  if(!c || !c.uid) return;
+  if(!confirm('Reset ' + (c.name||'this company') + ' to the default terms (Origination Commission, 4%)?')) return;
+  const fb = window.__adminFirebase;
+  try{
+    await fb.set(ref_(fb, 'partnership_terms/'+c.uid), null);
+    await fb.set(ref_(fb, 'billing/'+c.uid+'/partnershipApproved'), null);
+    toast('Reset to default');
+    closeTermsModal();
+  }catch(e){
+    console.error('Failed to reset terms:', e);
+    toast('Reset failed — check your connection');
+  }
+}
+
+/* ---------- AgriBuy commission revenue (per buying company) ---------- */
+// Same maths as agribuyRevenue() in index.html (approved/paid volume only),
+// run against each company's own approved terms. Differences: the managed-
+// origination retainer is charged per MONTH in the period, not once, and an
+// unapproved company uses the default terms (origination commission, 4%).
+function monthStart(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+function isoDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function revenuePeriod(kind){
+  const now = new Date();
+  if(kind==='month') return { start: isoDate(monthStart(now)), end: isoDate(new Date(now.getFullYear(), now.getMonth()+1, 0)), months: 1, label:'This month' };
+  if(kind==='last'){ const a = new Date(now.getFullYear(), now.getMonth()-1, 1); return { start: isoDate(a), end: isoDate(new Date(now.getFullYear(), now.getMonth(), 0)), months: 1, label:'Last month' }; }
+  return { start:'0000-01-01', end:'9999-12-31', months:null, label:'All time' };
+}
+// A company is "on a paid plan" once an admin has set an active, non-trial plan. Such a company
+// pays through the plan; the DEFAULT commission (no approved terms) is not charged on top.
+// Approved partnership terms are unaffected — those always accrue.
+function onPaidPlan(sub){
+  return !!(sub && sub.status==='active' && sub.plan && sub.plan!=='trial');
+}
+// Plan vs approved partnership terms: whichever was applied LATER replaces the other.
+// sub.updatedAt is stamped by the admin when the plan/status changes; approvedAt is the terms'
+// approval time. A plan with no stamp (older data) never overrides terms that exist.
+function planSupersedesTerms(sub, approvedAt){
+  if(!onPaidPlan(sub)) return false;
+  if(!approvedAt) return true;
+  return !!sub.updatedAt && String(sub.updatedAt) > String(approvedAt);
+}
+function companyRevenue(c, period){
+  const pt = Object.assign({}, DEFAULT_TERMS, (c.uid && partnershipTerms[c.uid]) || {});
+  const all = (Array.isArray(db.purchases)?db.purchases:[]).filter(p => p.companyId===c.id && (p.status==='approved'||p.status==='paid'));
+  const rows = all.filter(p => p.date >= period.start && p.date <= period.end);
+  const UNIT_KG = { 'kg':1, 'bags (50kg)':50, 'tonne':1000 };
+  const mt = rows.reduce((s,p)=> s + (UNIT_KG[p.unit] ? p.quantity*UNIT_KG[p.unit]/1000 : 0), 0);
+  const value = rows.reduce((s,p)=> s + p.quantity*p.price, 0);
+  let months = period.months;
+  if(months==null){
+    const first = all.map(p=>p.date).sort()[0];
+    if(first){ const a = new Date(first+'T00:00:00'), n = new Date(); months = Math.max(1, (n.getFullYear()-a.getFullYear())*12 + (n.getMonth()-a.getMonth()) + 1); } else months = 0;
+  }
+  let revenue = 0, financing = 0;
+  if(pt.model==='origination_commission') revenue = pt.originationRateType==='flat' ? mt*pt.originationRateFlatPerMT : value*pt.originationRatePct/100;
+  else if(pt.model==='managed_origination') revenue = (pt.retainerZMW||0)*months + mt*(pt.managedRatePerMT||0);
+  else { revenue = value*pt.tradingMarginPct/100; financing = value*(pt.financingCostPctPerAnnum/100)*(pt.avgCycleDays/365); }
+  const custom = !!(c.uid && partnershipTerms[c.uid]);
+  const onPlan = planSupersedesTerms(c.subscription, custom ? partnershipTerms[c.uid].approvedAt : null);
+  if(onPlan){ revenue = 0; financing = 0; }
+  return { c, pt, custom, onPlan, mt, value, revenue, financing, net: revenue - financing, lots: rows.length };
+}
+function renderRevenue(){
+  const body = document.getElementById('revenue-body');
+  if(!body || !db) return;
+  const period = revenuePeriod(document.getElementById('rev-period').value);
+  const rows = (db.companies||[]).map(c => companyRevenue(c, period)).sort((a,b)=>b.net-a.net);
+  const tot = rows.reduce((t,r)=>({ mt:t.mt+r.mt, value:t.value+r.value, revenue:t.revenue+r.revenue, financing:t.financing+r.financing, net:t.net+r.net }), {mt:0,value:0,revenue:0,financing:0,net:0});
+  const card = (lbl,val) => `<div class="stat-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`;
+  body.innerHTML = `
+    <div class="stat-row" style="margin-bottom:12px;">${card('Net commission · '+period.label, fmtKAdmin(tot.net))}${card('Volume (accepted)', fmtKAdmin(tot.value))}${card('Tonnage (MT)', tot.mt.toFixed(1))}${tot.financing>0?card('Financing cost', fmtKAdmin(tot.financing)):''}</div>
+    <div class="acct-list">${rows.length ? rows.map(r => `
+      <div class="acct-card"><div class="acct-info">
+        <p class="acct-name">${escapeHTML(r.c.name||'Unnamed')}</p>
+        <div class="acct-meta"><span>${escapeHTML(PARTNERSHIP_LABELS[r.pt.model]||r.pt.model)}${r.custom?'':' (default)'}</span><span>${escapeHTML(partnershipSummary(r.pt))}</span><span>${r.lots} lots · ${r.mt.toFixed(1)} MT · ${fmtKAdmin(r.value)}</span></div>
+      </div><div class="acct-right"><b>${fmtKAdmin(r.net)}</b>${r.financing>0?`<span class="expiry-note">${fmtKAdmin(r.revenue)} − ${fmtKAdmin(r.financing)} financing</span>`:''}</div></div>`).join('') : '<div class="empty-note">No companies yet.</div>'}</div>
+    <p class="sub" style="margin-top:10px;">Counts approved and paid purchases only. Trading Margin uses the target spread, not actual resale prices, so treat it as an estimate. A Managed Origination retainer is counted once per month in the period.</p>`;
+}
+window.renderRevenue = renderRevenue;
+
 /* ---------- Edit subscription modal ---------- */
 let editingType = null, editingId = null;
 function openEditModal(type, id){
@@ -902,6 +1091,9 @@ async function saveSubscription(){
     graceEndsAt: document.getElementById('edit-grace-end').value || null,
     notes: document.getElementById('edit-notes').value.trim(),
   };
+  // Stamp when the plan/status last changed, so it can be ordered against partnership terms.
+  const prevSub = acct.subscription || {};
+  sub.updatedAt = (sub.plan !== prevSub.plan || sub.status !== prevSub.status) ? new Date().toISOString() : (prevSub.updatedAt || null);
   const fb = window.__adminFirebase;
   try{
     await fb.set(ref_(fb, 'billing/'+acct.uid+'/subscription'), clean(sub));
@@ -1113,6 +1305,7 @@ async function confirmDelete(type, id){
 window.attemptAdminLogin = attemptAdminLogin;
 window.adminLogout = adminLogout;
 window.migrateBilling = migrateBilling;
+window.openTermsModal = openTermsModal; window.closeTermsModal = closeTermsModal; window.renderTermsFields = renderTermsFields; window.saveTerms = saveTerms; window.resetTerms = resetTerms;
 window.switchTab = switchTab;
 window.renderList = renderList;
 window.openEditModal = openEditModal;
