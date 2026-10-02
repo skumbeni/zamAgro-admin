@@ -1,6 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+<script>
+/* HTTPS only: send any plain-http page load to https (except local testing). */
+(function(){
+  var h = location.hostname;
+  if(location.protocol === 'http:' && h !== 'localhost' && h !== '127.0.0.1'){
+    location.replace('https:' + location.href.substring(5));
+  }
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>AgriBuy Connect — Admin</title>
@@ -358,11 +368,14 @@ function enterAdmin(){
   document.getElementById('screen-app').classList.add('active');
   const fb = window.__adminFirebase;
   document.getElementById('conn-label').textContent = 'Loading…';
+  attachBillingListeners(fb);
   fb.onValue(fb.dataRef, (snap) => {
     db = snap.val() || {};
     if(!Array.isArray(db.companies)) db.companies = [];
     if(!Array.isArray(db.agents)) db.agents = [];
     if(!Array.isArray(db.agentLinks)) db.agentLinks = [];
+    captureLegacy(db);
+    applyOverlay();
     document.getElementById('conn-dot').classList.add('live');
     document.getElementById('conn-label').textContent = 'Live';
     renderStats();
@@ -582,18 +595,18 @@ async function approveUnlinkRequest(linkId){
   if(!confirm(`Approve unlinking ${a?a.name:'this agent'} from ${c.name}?`)) return;
   const newLinks = (db.agentLinks||[]).filter(l=>l.id!==linkId);
   const stillAgentAssisted = newLinks.some(l=>l.companyId===c.id);
-  if(!Array.isArray(c.billingLog)) c.billingLog = [];
-  if(!stillAgentAssisted){
-    if(!c.subscription) c.subscription = { status:'trial', plan:'trial', trialEndsAt:null, expiresAt:null, graceEndsAt:null, notes:'' };
-    const graceDate = new Date(Date.now() + UNLINK_GRACE_DAYS*24*60*60*1000).toISOString().slice(0,10);
-    c.subscription.graceEndsAt = graceDate;
-    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_approved', detail:`Unlink of ${a?a.name:link.agentId} approved — no agents left, billing applies with grace until ${graceDate}.` });
-  } else {
-    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_approved', detail:`Unlink of ${a?a.name:link.agentId} approved — other agent link(s) remain, still free.` });
-  }
   const fb = window.__adminFirebase;
   try{
-    await fb.update(fb.dataRef, { agentLinks: newLinks, companies: db.companies });
+    await fb.update(fb.dataRef, { agentLinks: stripLinks(newLinks) });
+    if(!c.uid){ toast('Unlink approved — but this company has no login ID yet, so no grace period could be recorded'); return; }
+    if(!stillAgentAssisted){
+      const graceDate = new Date(Date.now() + UNLINK_GRACE_DAYS*24*60*60*1000).toISOString().slice(0,10);
+      const sub = Object.assign({ status:'trial', plan:'trial', trialEndsAt:null, expiresAt:null, notes:'' }, c.subscription || {}, { graceEndsAt: graceDate });
+      await fb.set(ref_(fb, 'billing/'+c.uid+'/subscription'), clean(sub));
+      await logBilling(c.uid, 'unlink_approved', `Unlink of ${a?a.name:link.agentId} approved — no agents left, billing applies with grace until ${graceDate}.`);
+    } else {
+      await logBilling(c.uid, 'unlink_approved', `Unlink of ${a?a.name:link.agentId} approved — other agent link(s) remain, still free.`);
+    }
     toast('Unlink approved');
   }catch(e){
     console.error('Failed to approve unlink:', e);
@@ -606,13 +619,10 @@ async function denyUnlinkRequest(linkId){
   const c = (db.companies||[]).find(x=>x.id===link.companyId);
   if(!confirm('Deny this unlink request? The agent stays linked.')) return;
   delete link.unlinkRequestedAt;
-  if(c){
-    if(!Array.isArray(c.billingLog)) c.billingLog = [];
-    c.billingLog.push({ date:new Date().toISOString(), event:'unlink_denied', detail:'Unlink request denied — agent remains linked.' });
-  }
   const fb = window.__adminFirebase;
   try{
-    await fb.update(fb.dataRef, { agentLinks: db.agentLinks, companies: db.companies });
+    await fb.update(fb.dataRef, { agentLinks: stripLinks(db.agentLinks) });
+    if(c) await logBilling(c.uid, 'unlink_denied', 'Unlink request denied — agent remains linked.');
     toast('Unlink request denied');
   }catch(e){
     console.error('Failed to deny unlink:', e);
@@ -639,7 +649,7 @@ function renderStats(){
   ];
   document.getElementById('stat-row').innerHTML = cards.map(([lbl,val]) =>
     `<div class="stat-card"><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`
-  ).join('');
+  ).join('') + migrationCardHTML();
 }
 
 function daysUntil(dateStr){
@@ -754,6 +764,109 @@ function escapeHTML(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* ---------- Billing + fee data (admin-write-only nodes) ----------
+   /billing/{uid}/subscription, /billing_log/{uid}/*, /fee_links/{linkId}.
+   The blob (agribuy_data_v1) is no longer the source of truth for these;
+   the overlay below puts them back onto db.companies/agents/agentLinks so
+   the rest of this panel works unchanged, and stripAccts/stripLinks keep
+   them out of anything written back to the blob. */
+const FEE_FIELDS = ['nexliteFeeModel','nexliteCutPct','nexliteFlatMonthlyZMW','nexliteFlatPerMT','nexlitePayments','nexliteGraceEndsAt'];
+let billingMap = {}, billingLogMap = {}, feeMap = {};
+let legacy = { acct:{}, fee:{} };   // raw blob values captured before the overlay, used only by the one-time migration
+function feeDefaults(){ return { nexliteFeeModel:'pct_commission', nexliteCutPct:15, nexliteFlatMonthlyZMW:200, nexliteFlatPerMT:10, nexlitePayments:[], nexliteGraceEndsAt:null }; }
+function effectiveSub(node){
+  if(!node) return null;
+  if(node.subscription) return node.subscription;
+  if(node.trialStartedAt){
+    const end = new Date(Number(node.trialStartedAt) + 14*24*60*60*1000).toISOString().slice(0,10);
+    return { status:'trial', plan:'trial', trialEndsAt:end, expiresAt:null, graceEndsAt:null, notes:'' };
+  }
+  return null;
+}
+function billingLive(){ return Object.keys(billingMap).length > 0; }
+function captureLegacy(d){
+  legacy = { acct:{}, fee:{} };
+  [...(d.companies||[]), ...(d.agents||[])].forEach(a => {
+    if(a && a.id && (a.subscription || (Array.isArray(a.billingLog) && a.billingLog.length)))
+      legacy.acct[a.id] = { uid:a.uid||null, name:a.name||a.id, sub:a.subscription||null, log:Array.isArray(a.billingLog)?a.billingLog:[] };
+  });
+  (d.agentLinks||[]).forEach(l => {
+    if(l && l.id) legacy.fee[l.id] = { companyId:l.companyId||null, agentId:l.agentId||null, fields:Object.fromEntries(FEE_FIELDS.filter(f=>typeof l[f]!=='undefined' && l[f]!==null).map(f=>[f,l[f]])) };
+  });
+}
+function applyOverlay(){
+  if(!db || !billingLive()) return;
+  [...db.companies, ...db.agents].forEach(a => {
+    const sub = a.uid ? effectiveSub(billingMap[a.uid]) : null;
+    if(sub) a.subscription = sub; else delete a.subscription;
+    const lg = a.uid ? billingLogMap[a.uid] : null;
+    a.billingLog = lg ? Object.values(lg).sort((x,y)=>String(x.date).localeCompare(String(y.date))) : [];
+  });
+  db.agentLinks.forEach(l => {
+    const node = feeMap[l.id] || {}, d = feeDefaults();
+    FEE_FIELDS.forEach(f => { l[f] = (typeof node[f]!=='undefined' && node[f]!==null) ? node[f] : d[f]; });
+    if(!Array.isArray(l.nexlitePayments)) l.nexlitePayments = [];
+  });
+}
+function stripAccts(list){ return (list||[]).map(({ subscription, billingLog, ...r }) => r); }
+function stripLinks(list){ return (list||[]).map(l => { const r = Object.assign({}, l); FEE_FIELDS.forEach(f => delete r[f]); return r; }); }
+function clean(o){ return JSON.parse(JSON.stringify(o)); }
+function attachBillingListeners(fb){
+  const rerender = () => { applyOverlay(); if(db){ renderStats(); renderList(); renderUnlinksBadge(); } };
+  fb.onValue(ref_(fb,'billing'), snap => { billingMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('billing listener:', e));
+  fb.onValue(ref_(fb,'billing_log'), snap => { billingLogMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('billing_log listener:', e));
+  fb.onValue(ref_(fb,'fee_links'), snap => { feeMap = snap.exists() ? snap.val() : {}; rerender(); }, e => console.error('fee_links listener:', e));
+}
+function feeNode(link){
+  const n = { companyId: link.companyId||null, agentId: link.agentId||null };
+  FEE_FIELDS.forEach(f => { if(typeof link[f]!=='undefined' && link[f]!==null) n[f] = link[f]; });
+  return n;
+}
+async function setFee(link, patch){
+  const fb = window.__adminFirebase;
+  await fb.set(ref_(fb, 'fee_links/'+link.id), clean(Object.assign(feeNode(link), patch)));
+}
+async function logBilling(uid, event, detail){
+  if(!uid) return;
+  const fb = window.__adminFirebase;
+  const key = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  await fb.set(ref_(fb, 'billing_log/'+uid+'/'+key), { date:new Date().toISOString(), event, detail });
+}
+// One-time (idempotent) copy of the old blob values into the new nodes.
+// Only writes what's missing, so re-running never overwrites later edits.
+function pendingMigration(){
+  const ups = {}; const noUid = [];
+  Object.entries(legacy.acct).forEach(([id, a]) => {
+    if(!a.uid){ noUid.push(a.name); return; }
+    if(a.sub && !(billingMap[a.uid] && billingMap[a.uid].subscription)) ups['billing/'+a.uid+'/subscription'] = a.sub;
+    a.log.forEach((e,i) => { if(!(billingLogMap[a.uid] && billingLogMap[a.uid]['mig_'+i])) ups['billing_log/'+a.uid+'/mig_'+i] = e; });
+  });
+  Object.entries(legacy.fee).forEach(([id, l]) => {
+    if(!feeMap[id]) ups['fee_links/'+id] = Object.assign({ companyId:l.companyId, agentId:l.agentId }, l.fields);
+  });
+  return { ups: clean(ups), noUid };
+}
+function migrationCardHTML(){
+  const { ups, noUid } = pendingMigration();
+  const n = Object.keys(ups).length;
+  if(!n && !noUid.length) return '';
+  return `<div class="stat-card"><div class="val">${n}</div><div class="lbl">Billing records to migrate${noUid.length?` (${noUid.length} accounts have no login ID yet)`:''}</div>${n?`<button class="acct-btn" style="margin-top:8px;" onclick="migrateBilling()">Migrate now</button>`:''}</div>`;
+}
+async function migrateBilling(){
+  const { ups, noUid } = pendingMigration();
+  const n = Object.keys(ups).length;
+  if(!n){ toast('Nothing to migrate'); return; }
+  if(!confirm(`Copy ${n} billing/fee records into the protected nodes?` + (noUid.length ? `\n\nSkipped (no login ID yet): ${noUid.join(', ')}` : ''))) return;
+  const fb = window.__adminFirebase;
+  try{
+    await fb.update(fb.ref(fb.rtdb, '/'), ups);
+    toast('Migrated ' + n + ' records');
+  }catch(e){
+    console.error('Migration failed:', e);
+    toast('Migration failed — check rules are published');
+  }
+}
+
 /* ---------- Edit subscription modal ---------- */
 let editingType = null, editingId = null;
 function openEditModal(type, id){
@@ -780,7 +893,8 @@ async function saveSubscription(){
   const list = editingType==='companies' ? db.companies : db.agents;
   const acct = list.find(a=>a.id===editingId);
   if(!acct) return;
-  acct.subscription = {
+  if(!acct.uid){ toast('This account has no login ID yet — it must sign in once before billing can be saved'); return; }
+  const sub = {
     status: document.getElementById('edit-status').value,
     plan: document.getElementById('edit-plan').value,
     trialEndsAt: document.getElementById('edit-trial-end').value || null,
@@ -788,8 +902,10 @@ async function saveSubscription(){
     graceEndsAt: document.getElementById('edit-grace-end').value || null,
     notes: document.getElementById('edit-notes').value.trim(),
   };
+  const fb = window.__adminFirebase;
   try{
-    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { [editingType]: list });
+    await fb.set(ref_(fb, 'billing/'+acct.uid+'/subscription'), clean(sub));
+    if(editingType==='companies') logBilling(acct.uid, 'admin_update', `Status ${sub.status}, plan ${sub.plan}.`).catch(()=>{});
     toast('Subscription updated');
     closeEditModal();
   }catch(e){
@@ -846,10 +962,9 @@ async function recordNexlitePayment(linkId){
   const noteEl = document.getElementById('pay-note-'+linkId);
   const amount = Number(amtEl.value);
   if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
-  if(!Array.isArray(link.nexlitePayments)) link.nexlitePayments = [];
-  link.nexlitePayments.push({ id: 'np_'+Math.random().toString(36).slice(2,9), amount, note: noteEl.value.trim(), date: new Date().toISOString().slice(0,10), recordedAt: new Date().toISOString() });
+  const payments = (Array.isArray(link.nexlitePayments) ? link.nexlitePayments : []).concat([{ id: 'np_'+Math.random().toString(36).slice(2,9), amount, note: noteEl.value.trim(), date: new Date().toISOString().slice(0,10), recordedAt: new Date().toISOString() }]);
   try{
-    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    await setFee(link, { nexlitePayments: payments });
     toast('Payment recorded');
     renderFeeLinksBody();
   }catch(e){
@@ -861,9 +976,8 @@ async function saveGraceDate(linkId){
   const link = (db.agentLinks||[]).find(l=>l.id===linkId);
   if(!link) return;
   const val = document.getElementById('grace-'+linkId).value;
-  link.nexliteGraceEndsAt = val || null;
   try{
-    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    await setFee(link, { nexliteGraceEndsAt: val || null });
     toast(val ? 'Enforcement deadline set — this link blocks if still owed after '+val : 'Enforcement deadline cleared');
     renderFeeLinksBody();
   }catch(e){
@@ -952,13 +1066,13 @@ function toggleFeeModelInputs(linkId){
 async function saveFeeLink(linkId){
   const link = (db.agentLinks||[]).find(l=>l.id===linkId);
   if(!link) return;
-  link.nexliteFeeModel = document.getElementById('fm-model-'+linkId).value;
-  link.nexliteCutPct = Number(document.getElementById('fm-pct-'+linkId).value) || 0;
-  link.nexliteFlatMonthlyZMW = Number(document.getElementById('fm-monthly-'+linkId).value) || 0;
-  link.nexliteFlatPerMT = Number(document.getElementById('fm-permt-'+linkId).value) || 0;
-  if(!link.linkedDate) link.linkedDate = new Date().toISOString().slice(0,10);
   try{
-    await window.__adminFirebase.update(window.__adminFirebase.dataRef, { agentLinks: db.agentLinks });
+    await setFee(link, {
+      nexliteFeeModel: document.getElementById('fm-model-'+linkId).value,
+      nexliteCutPct: Number(document.getElementById('fm-pct-'+linkId).value) || 0,
+      nexliteFlatMonthlyZMW: Number(document.getElementById('fm-monthly-'+linkId).value) || 0,
+      nexliteFlatPerMT: Number(document.getElementById('fm-permt-'+linkId).value) || 0,
+    });
     toast('Fee link updated');
   }catch(e){
     console.error('Failed to save fee link:', e);
@@ -984,8 +1098,8 @@ async function confirmDelete(type, id){
   const links = Array.isArray(db.agentLinks) ? db.agentLinks : [];
   const linkField = type==='companies' ? 'companyId' : 'agentId';
   const newLinks = links.filter(l => l[linkField] !== id);
-  const payload = { [type]: newList };
-  if(newLinks.length !== links.length) payload.agentLinks = newLinks;
+  const payload = { [type]: stripAccts(newList) };
+  if(newLinks.length !== links.length) payload.agentLinks = stripLinks(newLinks);
   try{
     await window.__adminFirebase.update(window.__adminFirebase.dataRef, payload);
     toast(noun.charAt(0).toUpperCase()+noun.slice(1)+' deleted');
@@ -998,6 +1112,7 @@ async function confirmDelete(type, id){
 // Expose functions the inline onclick= handlers need
 window.attemptAdminLogin = attemptAdminLogin;
 window.adminLogout = adminLogout;
+window.migrateBilling = migrateBilling;
 window.switchTab = switchTab;
 window.renderList = renderList;
 window.openEditModal = openEditModal;
