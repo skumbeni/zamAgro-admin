@@ -873,9 +873,18 @@ async function loadBusinesses() {
 
   if (!raw || typeof raw !== 'object') { allBusinesses = []; return; }
 
+  // Licences live in licenses/{uid}/{pub,private} (admin-only writes). One-time migration
+  // from the old settings.licenseData / settings.suspended fields, then legacy fields are ignored.
+  let licAll = {};
+  try { licAll = (await fbGet('licenses')) || {}; } catch(e) { console.error('licenses read error:', e); }
+  if (!licAll._migrated) {
+    try { licAll = await migrateLegacyLicences(raw, licAll); } catch(e) { console.error('licence migration failed:', e); }
+  }
+
   allBusinesses = Object.entries(raw).map(([uid, biz]) => {
     const s = (biz && biz.settings) || {};
-    const lic = s.licenseData || {};
+    const L = licAll[uid] || {};
+    const lic = Object.assign({}, L.private || {}, L.pub || {});
     return {
       uid,
       companyName: s.companyName || '(unnamed)',
@@ -885,13 +894,50 @@ async function loadBusinesses() {
       expiry: lic.expiry || null,
       activatedAt: lic.activatedAt || null,
       note: lic.note || '',
-      suspended: s.suspended || false,
-      archived: s.archived || false,
+      suspended: lic.suspended === true,
+      archived: !!(L.private && L.private.archived),
       paymentLog: lic.paymentLog || []
     };
   });
   allBusinesses.sort((a,b) => (b.activatedAt||0) - (a.activatedAt||0));
   hideDataError();
+}
+
+// Builds the public licence record (what clients may read). Always complete so a client never sees a tier-less node.
+function pubFor(biz, over) {
+  const tier = biz.tier || 'trial';
+  return Object.assign({
+    tier, status: tier === 'trial' ? 'trial' : 'active',
+    expiry: biz.expiry || (Date.now() + 30 * 86400000),
+    activatedAt: biz.activatedAt || Date.now(),
+    suspended: !!biz.suspended
+  }, over || {});
+}
+
+// One-time: copy legacy settings.licenseData / suspended / archived into licenses/{uid}. Marks licenses/_migrated.
+async function migrateLegacyLicences(raw, licAll) {
+  const updates = {};
+  Object.entries(raw || {}).forEach(([uid, b]) => {
+    const s = (b && b.settings) || {};
+    const lic = s.licenseData;
+    const ex = licAll[uid];
+    if (ex && ex.pub && ex.pub.tier && ex.pub.tier !== 'trial') return;   // already a real licence
+    if (!lic && !s.suspended && !s.archived) return;                       // nothing legacy to carry over
+    const tier = (lic && lic.tier) || 'trial';
+    const pub = {
+      tier, status: tier === 'trial' ? 'trial' : 'active',
+      expiry: (lic && lic.expiry) || (Date.now() + 30 * 86400000),
+      activatedAt: (lic && lic.activatedAt) || Date.now(),
+      suspended: s.suspended === true
+    };
+    if (lic && lic.trialStart) pub.trialStart = lic.trialStart;
+    if (lic && lic.trialEnd) pub.trialEnd = lic.trialEnd;
+    updates[uid + '/pub'] = pub;
+    updates[uid + '/private'] = { note: (lic && lic.note) || '', txnId: (lic && lic.txnId) || '', paymentLog: (lic && lic.paymentLog) || [], archived: s.archived === true };
+  });
+  updates['_migrated'] = true;
+  await fbPatch('licenses', updates);
+  return (await fbGet('licenses')) || {};
 }
 
 // Fallback: read /usernames to get all UIDs, then fetch each business settings node
@@ -1222,7 +1268,7 @@ async function confirmSuspend() {
   const biz = allBusinesses.find(b => b.uid === _suspendTarget);
   const suspend = _suspendAction === 'suspend';
   try {
-    await fbPatch(`businesses/${_suspendTarget}/settings`, { suspended: suspend });
+    await fbPatch(`licenses/${_suspendTarget}/pub`, pubFor(biz, { suspended: suspend }));
     biz.suspended = suspend;
     closeModal('modal-suspend');
     renderBusinessTable(allBusinesses);
@@ -1256,8 +1302,8 @@ async function confirmArchive() {
     // Archiving also sets suspended so login is blocked; unarchiving does NOT auto-unsuspend,
     // since the two states are tracked independently and a business could have been suspended
     // for an unrelated reason before being archived.
-    const patch = archive ? { archived: true, suspended: true } : { archived: false };
-    await fbPatch(`businesses/${_archiveTarget}/settings`, patch);
+    if (archive) await fbPatch(`licenses/${_archiveTarget}/pub`, pubFor(biz, { suspended: true }));
+    await fbPatch(`licenses/${_archiveTarget}/private`, { archived: archive });
     biz.archived = archive;
     if (archive) biz.suspended = true;
     closeModal('modal-archive');
@@ -1323,7 +1369,10 @@ async function saveSubscription() {
   };
 
   try {
-    await fbPatch(`businesses/${uid}/settings`, { licenseData: licData });
+    const pubUpd = { tier, status: tier === 'trial' ? 'trial' : 'active', expiry, activatedAt: licData.activatedAt, suspended: !!biz.suspended };
+    if (tier !== 'trial') { pubUpd.trialStart = null; pubUpd.trialEnd = null; }
+    await fbPatch(`licenses/${uid}/pub`, pubUpd);
+    await fbPatch(`licenses/${uid}/private`, { txnId: licData.txnId, note: licData.note, paymentLog: licData.paymentLog });
     // Update local cache
     biz.tier = tier; biz.expiry = expiry; biz.activatedAt = licData.activatedAt; biz.note = note;
     biz.paymentLog = licData.paymentLog;
