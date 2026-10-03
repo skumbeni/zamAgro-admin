@@ -361,6 +361,9 @@
         <div class="nav-item" data-view="requests" onclick="switchView('requests',this)">
           <span class="nav-icon">📨</span> Requests <span id="req-badge" style="display:none;background:var(--red);color:#fff;border-radius:20px;font-size:.65rem;font-weight:700;padding:1px 6px;margin-left:4px;"></span>
         </div>
+        <div class="nav-item" data-view="feedback" onclick="switchView('feedback',this)">
+          <span class="nav-icon">💬</span> Feedback <span id="fb-badge" style="display:none;background:var(--red);color:#fff;border-radius:20px;font-size:.65rem;font-weight:700;padding:1px 6px;margin-left:4px;"></span>
+        </div>
         <div class="nav-item" data-view="settings" onclick="switchView('settings',this)">
           <span class="nav-icon">⚙️</span> Settings
         </div>
@@ -537,6 +540,21 @@
               <tbody id="req-table"><tr><td colspan="7" class="loading">Loading…</td></tr></tbody>
             </table>
             </div>
+          </div>
+        </div>
+
+        <!-- ── FEEDBACK ── -->
+        <div id="view-feedback" class="view">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              Awaiting Review
+              <div class="actions"><button class="action-btn" onclick="loadFeedback()">↻ Refresh</button></div>
+            </div>
+            <div id="fb-pending-list" style="padding:1rem 1.4rem"><div class="loading">Loading…</div></div>
+          </div>
+          <div class="panel-card">
+            <div class="panel-card-header">Published on Landing Page</div>
+            <div id="fb-approved-list" style="padding:1rem 1.4rem"><div class="loading">Loading…</div></div>
           </div>
         </div>
 
@@ -777,7 +795,7 @@ async function sendPasswordReset(btn) {
 }
 
 /* ── NAVIGATION ──────────────────────────────────────────────── */
-const VIEW_TITLES = { overview:'Overview', businesses:'Businesses', subscriptions:'Subscriptions', points:'Multi-Shop Points', financials:'Financials', requests:'Subscription Requests', settings:'Settings' };
+const VIEW_TITLES = { overview:'Overview', businesses:'Businesses', subscriptions:'Subscriptions', points:'Multi-Shop Points', financials:'Financials', requests:'Subscription Requests', feedback:'User Feedback', settings:'Settings' };
 function switchView(id, el) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -791,6 +809,7 @@ function switchView(id, el) {
   if (id === 'financials') renderFinancials();
   if (id === 'settings') loadSettingsForm();
   if (id === 'requests') loadRequests();
+  if (id === 'feedback') loadFeedback();
 }
 
 /* ── FIREBASE HELPERS ────────────────────────────────────────── */
@@ -1035,6 +1054,7 @@ async function initPanel() {
     renderSubTable(allBusinesses);
     renderFinancials();
     await loadRequests();
+    loadFeedback();
     await loadPointsBalances();
   } catch(e) {
     toast('Failed to load data: ' + e.message, 'err');
@@ -1702,6 +1722,79 @@ function openRedeemModal(ownerKey) {
 }
 
 let _toastTimer;
+/* ── USER FEEDBACK (landing-page testimonials) ──────────────── */
+let fbPending = [], fbApproved = [];
+
+function escH(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadFeedback() {
+  try {
+    const [p, ap] = await Promise.all([fbGet('feedback/pending'), fbGet('feedback/approved')]);
+    fbPending  = Object.entries(p  || {}).map(([id, v]) => ({ ...v, id })).sort((x, y) => (y.ts||0) - (x.ts||0));
+    fbApproved = Object.entries(ap || {}).map(([id, v]) => ({ ...v, id })).sort((x, y) => (y.approvedAt||y.ts||0) - (x.approvedAt||x.ts||0));
+    renderFeedback();
+  } catch (e) {
+    console.warn('Feedback load failed:', e);
+    document.getElementById('fb-pending-list').innerHTML = '<div class="empty">Could not load feedback. Check that the <code>feedback</code> rules are published in Firebase.</div>';
+    document.getElementById('fb-approved-list').innerHTML = '';
+  }
+}
+
+function fbCardHtml(t, pending) {
+  const r = Math.max(1, Math.min(5, parseInt(t.rating, 10) || 5));
+  const stars = '★'.repeat(r) + '<span style="opacity:.25">' + '★'.repeat(5 - r) + '</span>';
+  const btns = pending
+    ? `<button class="action-btn" style="border-color:var(--green);color:var(--green)" onclick="approveFeedback('${escH(t.id)}')">✓ Approve</button>
+       <button class="action-btn danger" onclick="rejectFeedback('${escH(t.id)}')">✕ Reject</button>`
+    : `<button class="action-btn danger" onclick="unpublishFeedback('${escH(t.id)}')">Unpublish</button>`;
+  return `<div style="border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;margin-bottom:.75rem;background:var(--surface2)">
+    <div style="display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.4rem">
+      <div><span title="${escH(t.gender||'')}" style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;margin-right:6px;font-size:.8rem;font-weight:700;background:${t.gender==='male'?'#16324a':t.gender==='female'?'#4a1630':'var(--surface)'};color:${t.gender==='male'?'#4a9eff':t.gender==='female'?'#ff6fae':'var(--muted)'}">${t.gender==='male'?'♂':t.gender==='female'?'♀':'·'}</span><strong>${escH(t.name)}</strong>${t.biz ? `<span style="color:var(--muted);font-size:.78rem"> · ${escH(t.biz)}</span>` : ''}</div>
+      <div style="color:#f5a623;letter-spacing:2px">${stars}</div>
+    </div>
+    <div style="font-size:.88rem;line-height:1.5;margin-bottom:.6rem;overflow-wrap:anywhere">${escH(t.msg)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <span style="color:var(--muted);font-size:.74rem">${fmtDate(t.ts)}</span>
+      <span style="display:flex;gap:.4rem">${btns}</span>
+    </div>
+  </div>`;
+}
+
+function renderFeedback() {
+  document.getElementById('fb-pending-list').innerHTML  = fbPending.length  ? fbPending.map(t => fbCardHtml(t, true)).join('')  : '<div class="empty">Nothing waiting for review.</div>';
+  document.getElementById('fb-approved-list').innerHTML = fbApproved.length ? fbApproved.map(t => fbCardHtml(t, false)).join('') : '<div class="empty">Nothing published yet.</div>';
+  const b = document.getElementById('fb-badge');
+  if (b) { b.textContent = fbPending.length; b.style.display = fbPending.length ? 'inline' : 'none'; }
+}
+
+async function approveFeedback(id) {
+  const t = fbPending.find(x => x.id === id);
+  if (!t) return;
+  try {
+    const pub = { name: t.name, msg: t.msg, rating: t.rating, ts: t.ts, approvedAt: Date.now() };
+    if (t.biz) pub.biz = t.biz;
+    if (t.gender) pub.gender = t.gender;
+    await fbSet(`feedback/approved/${id}`, pub);
+    await fbSet(`feedback/pending/${id}`, null);
+    toast('Approved — now live on the landing page.', 'ok');
+    loadFeedback();
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+
+async function rejectFeedback(id) {
+  if (!confirm('Reject and delete this feedback?')) return;
+  try { await fbSet(`feedback/pending/${id}`, null); toast('Feedback rejected.', 'ok'); loadFeedback(); }
+  catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+
+async function unpublishFeedback(id) {
+  if (!confirm('Remove this from the landing page?')) return;
+  try { await fbSet(`feedback/approved/${id}`, null); toast('Unpublished.', 'ok'); loadFeedback(); }
+  catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+
 function toast(msg, type='ok') {
   const el = document.getElementById('toast');
   el.textContent = msg;
