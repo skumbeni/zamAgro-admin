@@ -233,16 +233,16 @@
     <h1>MotoConnect Zambia</h1>
     <p>Admin Panel — Subscription Management</p>
     <div class="input-wrap">
-      <label>Password</label>
+      <label>Admin Password</label>
       <input type="password" id="loginPw" placeholder="Enter admin password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
     </div>
-    <button class="btn btn-primary" onclick="doLogin()">🔐 Sign In</button>
-    <div id="loginErr" style="display:none" class="alert alert-err">Incorrect password. Try again.</div>
+    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">🔐 Sign In</button>
+    <div id="loginInfo" style="display:none;margin-top:.75rem;font-size:.8rem;color:var(--muted)"></div>
+    <div id="loginErr" style="display:none" class="alert alert-err"></div>
     <div id="localFileWarn" style="display:none" class="alert alert-warn" style="margin-top:.75rem;font-size:.8rem">
       ⚠️ <strong>Opened as a local file.</strong> Firebase sync won't work from <code>content://</code> or <code>file://</code> URLs.<br>
       Host this file on <strong>GitHub Pages</strong> or a web server for full functionality.
     </div>
-    <p style="font-size:.73rem;color:var(--muted);margin-top:1rem">Default password: <strong>admin123</strong> — change it in Settings after login.</p>
   </div>
 </div>
 
@@ -316,6 +316,13 @@
 
   <!-- Main content -->
   <div class="main">
+
+    <!-- Admin email must be verified: the Database Rules only treat a VERIFIED admin account as admin -->
+    <div id="adminVerifyBar" class="alert alert-warn" style="display:none;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+      <span style="flex:1;min-width:220px">⚠️ This admin account's email is not verified. The database only accepts writes from a verified admin email, so saving will fail until you verify it.</span>
+      <button type="button" class="btn btn-warn btn-sm" onclick="sendAdminVerification()">Send verification email</button>
+      <button type="button" class="btn btn-sm" onclick="recheckAdminVerified()">I've verified it</button>
+    </div>
 
     <!-- ── DASHBOARD ── -->
     <div class="page active" id="page-dashboard">
@@ -403,6 +410,7 @@
       </div>
       <div class="toolbar">
         <input class="search-input" placeholder="🔍 Search name, phone, ref…" id="appSearch" oninput="renderApplications()"/>
+        <button class="btn btn-ghost btn-sm" onclick="openLinkReqs()">🔗 Login links <span id="linkReqBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
         <select class="filter-select" id="appFilterStatus" onchange="renderApplications()">
           <option value="">All Status</option>
           <option value="pending">Pending</option>
@@ -466,6 +474,7 @@
           <h2>Rider Reward Redemptions</h2>
           <div class="page-head-sub">Visit/spend log recorded by advertisers via the public Verify link — read-only, synced live from Firebase</div>
         </div>
+        <button class="btn btn-ghost btn-sm" onclick="rebuildVisitCopies()" title="Writes the rider/business copies that riders and staff read, for visits logged before this update">🔁 Rebuild rider visit copies</button>
       </div>
       <div class="toolbar">
         <input class="search-input" placeholder="🔍 Search rider name, phone, business…" id="redSearch" oninput="renderRedemptions()"/>
@@ -587,16 +596,17 @@
         <div class="form-row">
           <label>Firebase Account Password</label>
           <div style="position:relative">
-            <input type="password" id="fbPwInput" placeholder="Password for skumbeni@gmail.com" autocomplete="off" style="padding-right:2.6rem" onkeydown="if(event.key==='Enter')connectWithPw()"/>
+            <input type="password" id="fbPwInput" placeholder="Admin account password" autocomplete="current-password" style="padding-right:2.6rem" onkeydown="if(event.key==='Enter')connectWithPw()"/>
             <button type="button" id="fbPwToggleBtn" onclick="toggleFbPwVisibility()" title="Show/hide password" style="position:absolute;right:.4rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;line-height:1;padding:.2rem">👁️</button>
           </div>
           <p style="font-size:.73rem;color:var(--muted);margin-top:.3rem">
-            This is the password for the <strong>Firebase Auth account</strong> (skumbeni@gmail.com) that Database Rules check — separate from your local admin panel password. Saved on this device so you only enter it once.
+            This is the password for the <strong>Firebase Auth account</strong> (<span class="adminEmailText"></span>) that Database Rules check — separate from your local admin panel password. Never saved by this page — Firebase keeps you signed in on this device, and you only re-enter it if that session is lost (e.g. after logout).
           </p>
         </div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="connectWithPw()">🔗 Connect</button>
           <button class="btn btn-ghost btn-sm" onclick="pushToFirebase()">⬆️ Push Local → Firebase</button>
+          <button class="btn btn-ghost btn-sm" onclick="rebuildPublicDirectory()">🌍 Rebuild public directory</button>
           <button class="btn btn-danger btn-sm" onclick="disconnectFirebase()">✗ Disconnect</button>
         </div>
         <div id="fbConfigMsg" style="display:none;margin-top:.75rem" class="alert"></div>
@@ -628,20 +638,9 @@
       </div>
 
       <div class="settings-card">
-        <h3>🔒 Change Password</h3>
-        <div class="form-row">
-          <label>Current Password</label>
-          <input type="password" id="curPw" placeholder="Current password"/>
-        </div>
-        <div class="form-row">
-          <label>New Password</label>
-          <input type="password" id="newPw" placeholder="At least 6 characters"/>
-        </div>
-        <div class="form-row">
-          <label>Confirm New Password</label>
-          <input type="password" id="confPw" placeholder="Repeat new password"/>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="changePassword()">Update Password</button>
+        <h3>🔒 Admin Password</h3>
+        <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Your admin password is your Firebase account password. To change it, email yourself a reset link.</p>
+        <button class="btn btn-primary btn-sm" onclick="sendPasswordReset()">Email reset link</button>
         <div id="pwMsg" style="display:none;margin-top:.75rem" class="alert"></div>
       </div>
 
@@ -701,6 +700,20 @@
       <!-- Full application summary from rider -->
       <div id="approveRiderInfo" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.84rem;line-height:1.8"></div>
       <input type="hidden" id="approveAppId"/>
+
+      <!-- Approval gates (item 13): RSL must be on file and unexpired; Txn ID must not be reused -->
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.5rem">Road Service Licence <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--accent)">(required — check against the uploaded document)</span></div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>RSL No.</label>
+          <input type="text" id="approveRslNo" maxlength="40" oninput="refreshApproveGate()"/>
+        </div>
+        <div class="form-row">
+          <label>RSL Expiry</label>
+          <input type="date" id="approveRslExpiry" oninput="refreshApproveGate()" onchange="refreshApproveGate()"/>
+        </div>
+      </div>
+      <div id="approveGate" style="display:none;margin-bottom:.8rem"></div>
 
       <!-- Subscription terms: plan + duration are pre-filled from rider; price auto-derives -->
       <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.5rem">Subscription Terms</div>
@@ -781,7 +794,7 @@
       <div class="form-grid">
         <div class="form-row">
           <label>Monthly Price (ZMW)</label>
-          <input type="number" id="approveAdvPrice" min="0" placeholder="Auto-set from tier"/>
+          <input type="number" id="approveAdvPrice" min="0" placeholder="Auto-set from tier" oninput="onApproveAdvTermsChange()"/>
         </div>
         <div class="form-row">
           <label>Start Date</label>
@@ -789,12 +802,25 @@
         </div>
         <div class="form-row">
           <label>Duration (months)</label>
-          <select id="approveAdvDuration">
+          <select id="approveAdvDuration" onchange="onApproveAdvTermsChange()">
             <option value="1">1 month</option>
             <option value="3">3 months</option>
             <option value="6">6 months</option>
             <option value="12">1 year</option>
           </select>
+        </div>
+        <div class="form-row">
+          <label>Payment Method</label>
+          <select id="approveAdvPayMethod">
+            <option value="">— Select —</option>
+            <option>Cash</option>
+            <option>Mobile Money</option>
+            <option>Bank Transfer</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Amount Paid (ZMW)</label>
+          <input type="number" id="approveAdvAmountPaid" min="0" placeholder="0 if nothing paid" oninput="this.dataset.touched='1'"/>
         </div>
       </div>
       <!-- Custom zone notice — shown only when advertiser submitted a non-standard zone -->
@@ -835,7 +861,7 @@
         </div>
         <div class="form-row">
           <label>Monthly Price (ZMW)</label>
-          <input type="number" id="renewPrice" placeholder="e.g. 150" min="0"/>
+          <input type="number" id="renewPrice" placeholder="e.g. 150" min="0" oninput="onRenewTermsChange()"/>
         </div>
         <div class="form-row">
           <label>New Start Date</label>
@@ -843,7 +869,7 @@
         </div>
         <div class="form-row">
           <label>Duration (months)</label>
-          <select id="renewDuration">
+          <select id="renewDuration" onchange="onRenewTermsChange()">
             <option value="1">1 month</option>
             <option value="3">3 months</option>
             <option value="6">6 months</option>
@@ -862,7 +888,7 @@
       </div>
       <div class="form-row">
         <label>Amount Paid (ZMW)</label>
-        <input type="number" id="renewAmountPaid" placeholder="e.g. 150" min="0"/>
+        <input type="number" id="renewAmountPaid" placeholder="e.g. 150 (0 if nothing paid)" min="0" oninput="this.dataset.touched='1'"/>
       </div>
     </div>
     <div class="modal-footer">
@@ -872,7 +898,28 @@
   </div>
 </div>
 
+<!-- Payment history (item 15) -->
+<div class="overlay" id="paymentHistoryModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>💳 Payment History</h3>
+      <button class="close-btn" onclick="closeModal('paymentHistoryModal')">✕</button>
+    </div>
+    <div class="modal-body"><div id="paymentHistoryBody"></div></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('paymentHistoryModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add/Edit Subscription -->
+<div class="overlay" id="linkReqModal">
+  <div class="modal">
+    <div class="modal-header"><h3>🔗 Login link requests</h3><button class="close-btn" onclick="closeModal('linkReqModal')">✕</button></div>
+    <div class="modal-body" id="linkReqBody"></div>
+  </div>
+</div>
+
 <div class="overlay" id="subModal">
   <div class="modal">
     <div class="modal-header">
@@ -889,6 +936,15 @@
         <div class="form-row">
           <label>Phone *</label>
           <input type="tel" id="subPhone" placeholder="e.g. 0977 123456"/>
+        </div>
+        <div class="form-row">
+          <label>Zone / Region *</label>
+          <input type="text" id="subZone" list="subZoneList" maxlength="100" placeholder="Start typing, e.g. Mansa" autocomplete="off"/>
+          <datalist id="subZoneList"></datalist>
+        </div>
+        <div class="form-row">
+          <label>Second Zone (optional)</label>
+          <input type="text" id="subZone2" list="subZoneList" maxlength="100" placeholder="Another area the rider covers" autocomplete="off"/>
         </div>
         <div class="form-row">
           <label>Vehicle Type</label>
@@ -957,6 +1013,7 @@
         <label>Trips Completed</label>
         <input type="number" id="subTrips" min="0" placeholder="0" value="0"/>
       </div>
+      <div id="subMsg" style="display:none;margin-top:.5rem"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="closeModal('subModal')">Cancel</button>
@@ -1097,6 +1154,24 @@
   </div>
 </div>
 
+<!-- Staff PINs for an advertiser -->
+<div class="overlay" id="staffPinModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>🔑 Staff PINs · <span id="staffPinTitle"></span></h3>
+      <button class="close-btn" onclick="closeModal('staffPinModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.8rem;color:var(--muted);margin-bottom:.6rem">One PIN per person. Staff enter it once on the Verify page; every visit they log is stamped with their name. Remove a PIN to lock that person out.</p>
+      <div id="staffPinList"></div>
+      <div style="display:flex;gap:.5rem;margin-top:.9rem">
+        <input id="staffNameInput" maxlength="40" placeholder="Staff name, e.g. Mary" style="flex:1"/>
+        <button class="btn btn-primary btn-sm" onclick="addStaff()">➕ Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Renew Advertiser Listing -->
 <div class="overlay" id="renewAdvModal">
   <div class="modal">
@@ -1118,7 +1193,7 @@
         </div>
         <div class="form-row">
           <label>Monthly Price (ZMW)</label>
-          <input type="number" id="renewAdvPrice" min="0" placeholder="e.g. 300"/>
+          <input type="number" id="renewAdvPrice" min="0" placeholder="e.g. 300" oninput="onRenewAdvTermsChange()"/>
         </div>
         <div class="form-row">
           <label>New Start Date</label>
@@ -1126,7 +1201,7 @@
         </div>
         <div class="form-row">
           <label>Duration (months)</label>
-          <select id="renewAdvDuration">
+          <select id="renewAdvDuration" onchange="onRenewAdvTermsChange()">
             <option value="1">1 month</option>
             <option value="3">3 months</option>
             <option value="6">6 months</option>
@@ -1145,7 +1220,7 @@
       </div>
       <div class="form-row">
         <label>Amount Paid (ZMW)</label>
-        <input type="number" id="renewAdvAmountPaid" min="0" placeholder="e.g. 300"/>
+        <input type="number" id="renewAdvAmountPaid" min="0" placeholder="e.g. 300 (0 if nothing paid)" oninput="this.dataset.touched='1'"/>
       </div>
     </div>
     <div class="modal-footer">
@@ -1159,13 +1234,13 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 
 <script>
 // ══════════════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════════════
-const KEYS={pw:'mc_password',subs:'mc_subscriptions',settings:'mc_admin_settings',fbConfig:'mc_fb_config',fbPw:'mc_fb_pw',zones:'mc_zones_v2',advertisers:'mc_advertisers',redemptions:'mc_voucher_redemptions',pendingWrites:'mc_pending_writes',pendingAdvWrites:'mc_pending_adv_writes',pendingZoneWrites:'mc_pending_zone_writes'};
-const DEFAULT_PW='admin123';
+const KEYS={subs:'mc_subscriptions',settings:'mc_admin_settings',fbConfig:'mc_fb_config',fbPw:'mc_fb_pw',zones:'mc_zones_v2',advertisers:'mc_advertisers',redemptions:'mc_voucher_redemptions',pendingWrites:'mc_pending_writes',pendingAdvWrites:'mc_pending_adv_writes',pendingZoneWrites:'mc_pending_zone_writes',payments:'mc_payments',pendingPayWrites:'mc_pending_pay_writes'};
 const FB_PATH='motoconnect_zambia';
 let state={adminName:'Admin',warnDays:7};
 let _fbApp=null,_fbDb=null,_fbAuth=null,_fbConnected=false;
@@ -1173,12 +1248,104 @@ let _fbApp=null,_fbDb=null,_fbAuth=null,_fbConnected=false;
 // ══════════════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════════════
-function save(key,data){try{localStorage.setItem(key,JSON.stringify(data));}catch(e){}}
+// ── Heavy-field store ─────────────────────────────────────────────────────
+// Photos / documents / logos are base64 strings of up to ~2 MB each. Putting
+// them in localStorage (about 5 MB total) overflowed after a few applications,
+// and the old save() swallowed the error. They now live in memory (Firebase is
+// the source of truth and the live listener refills them on every connect);
+// localStorage only keeps the light metadata.
+const HEAVY_FIELDS=['photo1','photo2','rslDoc','policeDoc','logoDataUrl'];
+const _imgMem={s:{},a:{}};                       // s = subscriptions, a = advertisers
+const _IMG_NS={};_IMG_NS[KEYS.subs]='s';_IMG_NS[KEYS.advertisers]='a';
+function _stashStrip(ns,o){                      // move heavy fields to memory, return a light copy
+  if(!o||typeof o!=='object'||!o.id)return o;
+  let c=null;
+  for(const f of HEAVY_FIELDS){
+    if(!(f in o))continue;
+    const v=o[f],m=_imgMem[ns][o.id]||(_imgMem[ns][o.id]={});
+    if(typeof v==='string'){if(v)m[f]=v;else delete m[f];}
+    c=c||{...o};delete c[f];
+  }
+  return c||o;
+}
+function _joinOne(ns,o){                         // re-attach heavy fields from memory
+  if(!o||typeof o!=='object')return o;
+  const m=_imgMem[ns][o.id];
+  return m?Object.assign({},o,m):o;
+}
+function _splitList(ns,list){
+  if(!Array.isArray(list))return list;
+  const out=list.map(o=>_stashStrip(ns,o));
+  const keep=new Set(list.map(o=>o&&o.id));
+  Object.keys(_imgMem[ns]).forEach(id=>{if(!keep.has(id))delete _imgMem[ns][id];});
+  return out;
+}
+let _storageWarnAt=0;
+function _storageFailed(key,e){
+  console.error('localStorage write failed for',key,e);
+  const now=Date.now();if(now-_storageWarnAt<30000)return;_storageWarnAt=now;
+  try{
+    let b=document.getElementById('storageWarnBanner');
+    if(!b){
+      b=document.createElement('div');b.id='storageWarnBanner';
+      b.style.cssText='position:fixed;left:.6rem;right:.6rem;bottom:.6rem;z-index:99999;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;border-radius:10px;padding:.7rem .9rem;font-size:.82rem;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer';
+      b.onclick=()=>b.remove();
+      (document.body||document.documentElement).appendChild(b);
+    }
+    b.textContent='⚠️ This device could not save its local copy ('+(e&&e.name==='QuotaExceededError'?'storage full':'storage error')+'). Changes made while offline may be lost on reload. Tap to dismiss.';
+  }catch(x){}
+}
+// ── Change stamping (item 10) ─────────────────────────────────────────────
+// The listener merge decides "local edit or Firebase copy?" by comparing timestamps, but
+// only approve/reject/renew set one, so a plain edit always lost to an older Firebase copy.
+// Now every record that differs from the stored copy gets updatedAt = now when saved by the
+// admin UI. Saves that come FROM Firebase pass {remote:true} and are never stamped.
+function _canon(o){
+  const c={...o};HEAVY_FIELDS.forEach(f=>delete c[f]);delete c.updatedAt;
+  return JSON.stringify(Object.keys(c).sort().map(k=>[k,c[k]]));
+}
+function _stampChanged(key,list){
+  const prev={};
+  try{const old=load(key,[]);if(Array.isArray(old))old.forEach(o=>{if(o&&o.id)prev[o.id]=_canon(o);});}catch(e){}
+  const now=new Date().toISOString();
+  list.forEach(o=>{if(o&&typeof o==='object'&&o.id&&prev[o.id]!==_canon(o))o.updatedAt=now;});
+}
+function _recTs(o){   // newest "last changed" time of a record
+  if(!o)return 0;
+  return Math.max(0,...['approvedAt','rejectedAt','renewedAt','updatedAt'].map(k=>o[k]?(new Date(o[k]).getTime()||0):0));
+}
+// ── Deletions (item 11) ───────────────────────────────────────────────────
+// Deleting used to remove the Firebase node, so another device still holding a local copy saw a
+// "local-only record", kept it, and even re-published it to the public directory. A delete now
+// writes a tombstone; the listener merge treats tombstones as final. A ledger of ids already
+// seen in Firebase also catches deletions made without a tombstone (seen before, missing now).
+const SEEN_KEY='mc_seen_remote_ids';
+const _deadIds={s:new Set(),a:new Set()};   // tombstoned / remotely deleted ids (latest snapshot)
+const _tombCount={s:0,a:0};
+function _tomb(id,when){const t=when||new Date().toISOString();return {id:id,__deleted:true,deletedAt:t,updatedAt:t};}
+function _remoteDeletions(ns,fbMap,local){
+  const v0=load(SEEN_KEY,{}),v=(v0&&typeof v0==='object'&&!Array.isArray(v0))?v0:{};
+  const seen=new Set(Array.isArray(v[ns])?v[ns]:[]);
+  const dead=new Set(),live=[];
+  Object.keys(fbMap).forEach(id=>{if(fbMap[id]&&fbMap[id].__deleted)dead.add(id);else live.push(id);});
+  _tombCount[ns]=dead.size;
+  local.forEach(o=>{if(o&&o.id&&!fbMap[o.id]&&seen.has(o.id))dead.add(o.id);});
+  _deadIds[ns]=dead;
+  v[ns]=live;save(SEEN_KEY,v);
+  return dead;
+}
+function save(key,data,opts){
+  try{
+    const ns=_IMG_NS[key];
+    if(ns&&Array.isArray(data)&&!(opts&&opts.remote))_stampChanged(key,data);
+    localStorage.setItem(key,JSON.stringify(ns?_splitList(ns,data):data));
+    return true;
+  }catch(e){_storageFailed(key,e);return false;}
+}
 function load(key,def){try{const v=localStorage.getItem(key);return v!==null?JSON.parse(v):def;}catch(e){return def;}}
-function getPassword(){return load(KEYS.pw,DEFAULT_PW);}
-function getSubs(){return load(KEYS.subs,[]);}
+function getSubs(){const l=load(KEYS.subs,[]);return Array.isArray(l)?l.map(o=>_joinOne('s',o)):[];}
 function getSettings(){return load(KEYS.settings,{adminName:'Admin',warnDays:7});}
-function getAdvertisers(){return load(KEYS.advertisers,[]);}
+function getAdvertisers(){const l=load(KEYS.advertisers,[]);return Array.isArray(l)?l.map(o=>_joinOne('a',o)):[];}
 function getRedemptions(){return load(KEYS.redemptions,[]);}
 // Offline write queues — rehydrated from localStorage (not just an
 // in-memory array) so that an approval made while offline survives a
@@ -1187,19 +1354,147 @@ function getRedemptions(){return load(KEYS.redemptions,[]);}
 let _pendingWrites=load(KEYS.pendingWrites,[]);
 let _pendingAdvWrites=load(KEYS.pendingAdvWrites,[]);
 let _pendingZoneWrites=load(KEYS.pendingZoneWrites,[]);
-function _persistPendingWrites(){save(KEYS.pendingWrites,_pendingWrites);_updatePendingBadge();}
-function _persistPendingAdvWrites(){save(KEYS.pendingAdvWrites,_pendingAdvWrites);_updatePendingBadge();}
+let _payQueue=load(KEYS.pendingPayWrites,[]);if(!Array.isArray(_payQueue))_payQueue=[];   // payment-history entries not yet in Firebase
+function _persistPendingWrites(){save(KEYS.pendingWrites,_pendingWrites.map(w=>(w&&w.item)?{...w,item:_stashStrip('s',w.item)}:w));_updatePendingBadge();}
+function _persistPendingAdvWrites(){save(KEYS.pendingAdvWrites,_pendingAdvWrites.map(w=>(w&&w.type!=='delete')?_stashStrip('a',w):w));_updatePendingBadge();}
 function _persistPendingZoneWrites(){save(KEYS.pendingZoneWrites,_pendingZoneWrites);_updatePendingBadge();}
 function _updatePendingBadge(){
   const badge=document.getElementById('pendingWritesBadge');
   if(!badge)return;
-  const total=_pendingWrites.length+_pendingAdvWrites.length+_pendingZoneWrites.length;
+  const total=_pendingWrites.length+_pendingAdvWrites.length+_pendingZoneWrites.length+_payQueue.length;
   if(total>0){
     badge.style.display='inline-block';
     badge.textContent='⏳ '+total+' pending — tap to retry';
   }else{
     badge.style.display='none';
   }
+}
+// One-time compaction: older versions kept photos/documents inside these keys.
+// The originals are in Firebase; the live listener refills the in-memory copies.
+(function(){try{save(KEYS.subs,load(KEYS.subs,[]));save(KEYS.advertisers,load(KEYS.advertisers,[]));_persistPendingWrites();_persistPendingAdvWrites();}catch(e){}})();
+
+// ══════════════════════════════════════════════════════
+//  PAYMENT HISTORY (item 15)
+//  Subscriptions/advertisers only keep the LATEST payment (paymentMethod, amountPaid,
+//  paymentDate), so every renewal used to overwrite the one before. Each payment is now
+//  also written as its own entry to an append-only, admin-only /payments log:
+//    • entries are created once and never edited or deleted (the rules enforce it)
+//    • they outlive the rider/advertiser record, so deleting a rider keeps the books intact
+//    • local copy + offline queue, same idea as the other writes
+//  Riders/advertisers that already have a last payment get one "legacy" entry
+//  (deterministic id, so two devices cannot create duplicates).
+// ══════════════════════════════════════════════════════
+function getPayments(){const l=load(KEYS.payments,[]);return Array.isArray(l)?l.filter(p=>p&&p.id):[];}
+function _persistPayQueue(){save(KEYS.pendingPayWrites,_payQueue);_updatePendingBadge();}
+function recordPayment(e){
+  const clean={};
+  const put=(k,v)=>{if(v!==undefined&&v!==null&&v!=='')clean[k]=v;};
+  put('id',e.id||('p'+uid()));
+  put('refType',e.refType);put('refId',e.refId);
+  put('name',String(e.name||'').slice(0,100));
+  put('kind',e.kind);
+  put('plan',e.plan?String(e.plan).slice(0,30):'');
+  if(isFinite(e.price)&&e.price>=0)put('price',Number(e.price));
+  clean.amount=(isFinite(e.amount)&&e.amount>=0)?Number(e.amount):0;
+  clean.method=String(e.method||'').slice(0,30);
+  put('paidOn',e.paidOn||todayStr());
+  put('periodStart',e.periodStart);put('periodEnd',e.periodEnd);
+  put('txnId',e.txnId?String(e.txnId).slice(0,50):'');
+  clean.recordedAt=new Date().toISOString();
+  clean.recordedBy=String(e.recordedBy||(typeof state!=='undefined'&&state&&state.adminName)||'Admin').slice(0,100);
+  if(!safeId(clean.id)||!safeId(clean.refId)){console.warn('Payment not recorded: unsafe id');return null;}
+  const list=getPayments();
+  if(!list.some(p=>p.id===clean.id)){list.push(clean);save(KEYS.payments,list);}
+  _payQueue.push(clean);_persistPayQueue();
+  flushPayWrites();
+  return clean;
+}
+let _payFlushBusy=false,_payDeniedWarned=false,_paySeen=false,_payListenerDb=null,_payBackfilled=false;
+async function flushPayWrites(){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(_payFlushBusy||!_payQueue.length||!_fbDb||!_fbConnected||!u||u.isAnonymous||u.email!==ADMIN_FIREBASE_EMAIL)return;
+  _payFlushBusy=true;
+  const batch=[..._payQueue],done=new Set();let denied=false;
+  try{
+    for(const e of batch){
+      try{
+        // create-only: if the entry already exists (earlier attempt whose reply was lost) the
+        // transaction aborts, which is also "done" - never an error, never a duplicate.
+        await _fbDb.ref(FB_PATH+'/payments/'+e.id).transaction(cur=>cur===null?e:undefined,undefined,false);
+        done.add(e.id);
+      }catch(err){
+        if(err&&(err.code==='PERMISSION_DENIED'||String(err.message||'').includes('PERMISSION_DENIED')))denied=true;
+        console.warn('Payment write failed for',e.id,'-',err&&err.message);
+      }
+    }
+  }finally{
+    _payQueue=_payQueue.filter(e=>!done.has(e.id));
+    _persistPayQueue();
+    _payFlushBusy=false;
+  }
+  // entries recorded while this flush was running were not in the batch: pick them up now
+  if(!denied&&_payQueue.some(e=>!batch.some(b=>b.id===e.id)))setTimeout(flushPayWrites,0);
+  if(denied&&!_payDeniedWarned){
+    _payDeniedWarned=true;
+    showFbMsg('⚠️ Payment history is saved on this device but cannot sync yet.'+(_deniedHint()||' Publish the updated Firebase rules (payments node) and it will upload automatically.'),'alert-warn');
+  }
+}
+function attachPaymentsListener(){
+  if(!_fbDb||_payListenerDb===_fbDb)return;
+  _payListenerDb=_fbDb;
+  _fbDb.ref(FB_PATH+'/payments').on('value',snap=>{
+    const data=snap.val(),map={};
+    getPayments().forEach(p=>{map[p.id]=p;});                    // keep local-only entries (still queued)
+    if(data&&typeof data==='object')Object.values(data).forEach(p=>{if(p&&safeId(p.id))map[p.id]=p;});   // append-only: Firebase copy wins
+    save(KEYS.payments,Object.values(map));
+    _paySeen=true;
+    maybeBackfillPayments();
+    flushPayWrites();
+    const m=document.getElementById('paymentHistoryModal');
+    if(m&&m.classList.contains('open'))renderPaymentHistory();
+  },err=>{console.warn('Payments listener:',err&&err.message);_payListenerDb=null;});
+}
+function maybeBackfillPayments(){
+  if(_payBackfilled||!_paySeen||!_subsSeen||!_advSeen)return;
+  _payBackfilled=true;
+  const have=new Set(getPayments().map(p=>p.refType+':'+p.refId));
+  const make=(refType,r)=>{
+    if(!r||!safeId(r.id)||r.__deleted||have.has(refType+':'+r.id))return;
+    if(r.status==='pending'||r.status==='rejected')return;
+    const paidOn=r.paymentDate||String(r.renewedAt||r.approvedAt||'').slice(0,10);
+    if(!paidOn||(r.amountPaid==null&&!r.paymentMethod))return;
+    recordPayment({id:'legacy_'+r.id,refType,refId:r.id,name:r.name,kind:'legacy',
+      plan:refType==='rider'?r.plan:r.tier,price:r.price,amount:Number(r.amountPaid)||0,method:r.paymentMethod||'',
+      paidOn,periodStart:r.start,periodEnd:r.expiry,txnId:r.txnId,recordedBy:'history import'});
+  };
+  getSubs().forEach(r=>make('rider',r));
+  getAdvertisers().forEach(r=>make('advertiser',r));
+}
+let _payView={type:'',id:''};
+function openPaymentHistory(type,id){
+  if(!safeId(id)||(type!=='rider'&&type!=='advertiser'))return;
+  _payView={type,id};
+  renderPaymentHistory();
+  openModal('paymentHistoryModal');
+}
+function renderPaymentHistory(){
+  const {type,id}=_payView;
+  const rec=(type==='rider'?getSubs():getAdvertisers()).find(x=>x.id===id);
+  const rows=getPayments().filter(p=>p.refType===type&&p.refId===id)
+    .sort((a,b)=>String(b.paidOn||'').localeCompare(String(a.paidOn||''))||String(b.recordedAt||'').localeCompare(String(a.recordedAt||'')));
+  const total=rows.reduce((t,p)=>t+(Number(p.amount)||0),0);
+  const unsynced=_payQueue.filter(p=>p.refType===type&&p.refId===id).length;
+  const KIND={approval:'Activation',renewal:'Renewal',legacy:'Earlier record'};
+  const head=`<div style="font-weight:700;margin-bottom:.15rem">${esc(rec?rec.name:(rows[0]&&rows[0].name)||'—')}</div>
+    <div style="color:var(--muted);font-size:.8rem;margin-bottom:.7rem">${rows.length} payment${rows.length===1?'':'s'} · Total K${total.toLocaleString()}${unsynced?` · <span style="color:var(--warn)">${unsynced} not synced yet</span>`:''}</div>`;
+  const list=rows.length?rows.map(p=>`<div style="border:1px solid var(--border);border-radius:10px;padding:.6rem .8rem;margin-bottom:.5rem;font-size:.83rem;line-height:1.6">
+      <div style="display:flex;justify-content:space-between;gap:.5rem"><strong>K${(Number(p.amount)||0).toLocaleString()}</strong><span style="color:var(--muted)">${fmtDate(p.paidOn)}</span></div>
+      <div style="color:var(--muted)">${esc(KIND[p.kind]||p.kind||'Payment')} · ${esc(p.method||'method not recorded')}${p.plan?' · '+esc(p.plan):''}</div>
+      ${(p.periodStart||p.periodEnd)?`<div>Covers ${fmtDate(p.periodStart)} → ${fmtDate(p.periodEnd)}</div>`:''}
+      ${p.txnId?`<div>Txn ID <code>${esc(p.txnId)}</code></div>`:''}
+      ${p.kind==='legacy'?'<div style="color:var(--muted);font-size:.74rem">The latest payment on record when history began. Earlier payments were overwritten and cannot be recovered.</div>':''}
+    </div>`).join(''):'<div class="empty"><p>No payments recorded yet.</p></div>';
+  document.getElementById('paymentHistoryBody').innerHTML=head+list;
 }
 const ADV_CATEGORY_META={
   fuel:{label:'Filling Station',icon:'⛽'},
@@ -1695,10 +1990,36 @@ function saveZoneWaGroup(zoneId,url){
   save(KEYS.zones,zones);
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
-function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// ── Security: anything a rider/advertiser controls is untrusted in HTML ──
+// Only real inline raster images may reach an <img src>.
+function safeImgSrc(s){
+  if(typeof s!=='string')return '';
+  return /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(s)?s:'';
+}
+// Record ids are only ever [A-Za-z0-9_-]; anything else must never reach an inline handler.
+function safeId(id){return typeof id==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(id);}
+function sid(id){return safeId(id)?id:'';}
+function cleanIds(list){
+  return (list||[]).filter(r=>{
+    if(!r||typeof r!=='object')return false;
+    if(!safeId(r.id)){console.warn('Dropped a record with an unsafe id');return false;}
+    return true;
+  });
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function toDateStr(d){return d.toISOString().slice(0,10);}
-function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-ZM',{day:'numeric',month:'short',year:'numeric'});}catch{return s;}}
+// Add whole months to a YYYY-MM-DD date and clamp to the last day of the target month
+// (the old Date.setMonth approach overflowed: 31 Jan + 1 month became 3 Mar). Pure UTC
+// arithmetic, so the result does not depend on the device time zone.
+function addMonths(dateStr,n){
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr||'')||/^(\d{4})-(\d{2})-(\d{2})/.exec(todayStr());
+  const y=+m[1],mo=+m[2]-1,d=+m[3],total=mo+(parseInt(n,10)||0);
+  const ty=y+Math.floor(total/12),tm=((total%12)+12)%12;
+  const last=new Date(Date.UTC(ty,tm+1,0)).getUTCDate();
+  return new Date(Date.UTC(ty,tm,Math.min(d,last))).toISOString().slice(0,10);
+}
+function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-ZM',{day:'numeric',month:'short',year:'numeric'});}catch{return esc(s);}}
 function daysUntil(s){if(!s)return null;const diff=Math.ceil((new Date(s)-new Date())/(1000*60*60*24));return diff;}
 
 // ══════════════════════════════════════════════════════
@@ -1717,6 +2038,55 @@ function applyAutoStatus(s){
   else s.status='active';
   return s;
 }
+
+// ── Persist automatic status changes (item 12) ────────────────────────────
+// applyAutoStatus only edits the in-memory/local copy. These helpers push the result to
+// Firebase so every device, and the rules/exports reading /subscriptions, see the same status.
+//  • Only a record's `status` child is touched, so photos/documents are never re-uploaded and
+//    a concurrent edit to any other field cannot be overwritten.
+//  • A transaction on that child writes ONLY if Firebase still holds a managed status
+//    (active / expired / rsl_expired). A record that was meanwhile rejected, deleted or
+//    tombstoned, or that does not exist in Firebase yet, is left alone (no stub nodes).
+//  • Nothing is queued: expiry is recomputed from the dates on every snapshot and every sweep,
+//    so a failed or offline attempt is simply retried next time.
+const _autoInFlight=new Set();
+async function persistAutoStatus(changes){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(!_fbDb||!_fbConnected||!u||u.isAnonymous||u.email!==ADMIN_FIREBASE_EMAIL)return 0;
+  const todo=(changes||[]).filter(c=>c&&safeId(c.id)&&!_autoInFlight.has(c.id+':'+c.status));
+  if(!todo.length)return 0;
+  todo.forEach(c=>_autoInFlight.add(c.id+':'+c.status));
+  let done=0;
+  await Promise.all(todo.map(async c=>{
+    try{
+      const r=await _fbDb.ref(FB_PATH+'/subscriptions/'+c.id+'/status').transaction(cur=>{
+        if(cur!=='active'&&cur!=='expired'&&cur!=='rsl_expired')return;   // abort: gone or an explicit state
+        if(cur===c.status)return;                                        // already correct
+        return c.status;
+      },undefined,false);
+      if(r&&r.committed)done++;
+    }catch(err){
+      console.warn('Auto-status write failed for',c.id,'-',err&&err.message);
+    }finally{
+      _autoInFlight.delete(c.id+':'+c.status);
+    }
+  }));
+  if(done)showFbMsg('✅ '+done+' rider'+(done>1?'s':'')+' auto-updated (subscription or RSL expiry) and synced.','alert-ok');
+  return done;
+}
+// Re-check on a timer too: the listener only fires when data changes, so a panel left open
+// past midnight would otherwise keep showing, and never syncing, yesterday's statuses.
+function autoExpirySweep(){
+  if(!_subsSeen)return;
+  const subs=getSubs(),changes=[];
+  subs.forEach(s=>{const before=s.status;applyAutoStatus(s);if(s.status!==before)changes.push({id:s.id,status:s.status});});
+  if(!changes.length)return;
+  save(KEYS.subs,subs,{remote:true});
+  persistAutoStatus(changes);
+  refreshAll();
+}
+setInterval(autoExpirySweep,30*60*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoExpirySweep();});
 
 // ══════════════════════════════════════════════════════
 //  FIREBASE — intensified sync
@@ -1737,22 +2107,24 @@ const HARDCODED_FB_CONFIG={
 // Fixed admin identity — there's only ever one admin account for this panel,
 // so the email never needs to be typed. Only the password is ever asked for.
 // Change this if you ever create a different Firebase Auth user for admin.
-const ADMIN_FIREBASE_EMAIL='skumbeni@gmail.com';
+// App Check (reCAPTCHA) for this panel. STAYS OFF while the key is empty. Paste the SAME reCAPTCHA SITE key
+// that index.html uses (public, safe in the page), and add this page's address to that key's allowed domains.
+// ADMIN_APPCHECK_PROVIDER must match index.html: 'enterprise' (Google Cloud Web key, current default) or 'v3' (classic key).
+// This must be set BEFORE you click "Enforce" for Authentication in the Firebase console: the admin sign-in below
+// goes through the Firebase SDK, which only sends an App Check token once this is activated.
+const ADMIN_APPCHECK_SITE_KEY='';
+const ADMIN_APPCHECK_PROVIDER='enterprise';
+const ADMIN_FIREBASE_EMAIL='skumbeni@gmail.com';   // the admin account's email (unchanged); its UID must be listed under motoconnect_zambia/admins
+document.querySelectorAll('.adminEmailText').forEach(e=>{e.textContent=ADMIN_FIREBASE_EMAIL;});
+{const _pwIn=document.getElementById('fbPwInput');if(_pwIn)_pwIn.placeholder='Password for '+ADMIN_FIREBASE_EMAIL;}
 function getSavedFbConfig(){try{const v=localStorage.getItem(KEYS.fbConfig);return v?JSON.parse(v):HARDCODED_FB_CONFIG;}catch{return HARDCODED_FB_CONFIG;}}
-// The Firebase Auth password for ADMIN_FIREBASE_EMAIL is its own thing —
-// it is NOT the local panel login password (KEYS.pw). They started out
-// equal by coincidence on some devices but there's no guarantee they stay
-// in sync (e.g. if the Firebase account password is rotated independently).
-// We remember whichever password actually authenticated successfully, so
-// the admin only has to type it once per device via the dedicated field
-// in Settings → Firebase Sync, instead of fighting silent auth failures.
-// NOTE: this is plain localStorage, same as KEYS.pw elsewhere in this file —
-// not encrypted. Anyone with access to this device/browser profile could
-// read it. Treat this device as trusted, same as you already do for the
-// local admin password.
-function getSavedFbPw(){try{return localStorage.getItem(KEYS.fbPw)||null;}catch(e){return null;}}
-function saveFbPw(pw){try{if(pw)localStorage.setItem(KEYS.fbPw,pw);}catch(e){}}
-function clearSavedFbPw(){try{localStorage.removeItem(KEYS.fbPw);}catch(e){}}
+// Security: the Firebase Auth password is NEVER stored. Firebase Auth keeps its
+// own revocable session on this device, so the password is only typed when that
+// session is missing (first use, after logout, or after a password change).
+// Purge any copy saved by earlier versions of this page.
+try{localStorage.removeItem(KEYS.fbPw);}catch(e){}
+// The local panel password and its "logged in" flag no longer exist; purge old copies.
+try{['mc_password','mc_logged_in','mca_lockout'].forEach(k=>localStorage.removeItem(k));}catch(e){}
 
 function setFbStatus(connected,msg){
   _fbConnected=connected;
@@ -1789,7 +2161,7 @@ async function _adminSignIn(password){
   if(!password){
     // No session password available — caller should handle this gracefully.
     // We never prompt with window.prompt so the UX isn't interrupted.
-    throw new Error('No password available for Firebase auth. Log out and back in.');
+    throw new Error('Not signed in.');
   }
   try{
     const cred=await _fbAuth.signInWithEmailAndPassword(ADMIN_FIREBASE_EMAIL, password);
@@ -1797,32 +2169,83 @@ async function _adminSignIn(password){
   }catch(authErr){
     // Provide a clear message for wrong-password vs other errors
     if(authErr.code==='auth/wrong-password'||authErr.code==='auth/invalid-credential'){
-      throw new Error('Firebase auth failed: incorrect password for '+ADMIN_FIREBASE_EMAIL+'. Set the correct Firebase account password in Settings → Firebase Sync.');
+      throw new Error('Incorrect password.');
+    }
+    if(authErr.code==='auth/too-many-requests'){
+      throw new Error('Too many failed attempts. Try again in a few minutes.');
     }
     throw new Error('Firebase sign-in failed: '+authErr.message);
   }
 }
 
+// ── Admin email verification ──────────────────────────────────────────────
+// Every admin check in the Database Rules also requires auth.token.email_verified == true, so that an
+// account that merely claims the admin email (never proven) can never act as admin.
+function renderAdminVerifyBar(){
+  const el=document.getElementById('adminVerifyBar');
+  if(!el)return;
+  const u=_fbAuth&&_fbAuth.currentUser;
+  el.style.display=(u&&!u.isAnonymous&&u.email===ADMIN_FIREBASE_EMAIL&&!u.emailVerified)?'flex':'none';
+}
+function _deniedHint(){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  return(u&&!u.isAnonymous&&!u.emailVerified)?' Your admin email is not verified yet: use "Send verification email" at the top of the page.':'';
+}
+async function sendAdminVerification(){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(!u||u.isAnonymous){showFbMsg('Sign in as the admin first.','alert-err');return;}
+  try{
+    await u.sendEmailVerification();
+    showFbMsg('✅ Verification email sent to '+u.email+'. Open the link in it, then press "I\'ve verified it".','alert-ok');
+  }catch(e){
+    showFbMsg(e&&e.code==='auth/too-many-requests'?'⚠️ Too many requests. Wait a few minutes and try again.':'⚠️ Could not send the email: '+((e&&e.message)||e),'alert-warn');
+  }
+}
+async function recheckAdminVerified(){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(!u||u.isAnonymous)return;
+  try{
+    await u.reload();
+    await u.getIdToken(true);   // the verified flag only reaches the database in a NEW token
+    renderAdminVerifyBar();
+    if(_fbAuth.currentUser.emailVerified)showFbMsg('✅ Email verified. Saving to Firebase is allowed.','alert-ok');
+    else showFbMsg('⚠️ Not verified yet. Open the link in the email first.','alert-warn');
+  }catch(e){showFbMsg('⚠️ Could not re-check: '+((e&&e.message)||e),'alert-warn');}
+}
+
+let _lastFbError='';
 async function connectFirebase(configStr,password){
   try{
     let cfg=configStr||document.getElementById('fbConfigInput')?.value?.trim();
     if(!cfg){const s=getSavedFbConfig();if(s)cfg=JSON.stringify(s);}
-    if(!cfg){showFbMsg('No config provided.','alert-err');return;}
+    if(!cfg){showFbMsg('No config provided.','alert-err');_lastFbError='No Firebase config.';return false;}
     cfg=cfg.replace(/^[\s\S]*?({)/,'$1').replace(/;?\s*$/,'');
     const parsed=JSON.parse(cfg);
-    if(!parsed.databaseURL){showFbMsg('databaseURL is required.','alert-err');return;}
+    if(!parsed.databaseURL){showFbMsg('databaseURL is required.','alert-err');_lastFbError='Firebase config is missing databaseURL.';return false;}
     if(_fbApp){try{_fbApp.delete();}catch(e){}_listenerAttached=false;}
     // Fixed app name (not timestamp-based) so Firebase Auth's persisted
     // session can be found again on the next page load instead of forcing
     // a fresh sign-in every time.
     _fbApp=firebase.initializeApp(parsed,'mca-admin');
+    if(ADMIN_APPCHECK_SITE_KEY){
+      try{
+        if(typeof firebase.appCheck!=='function')throw new Error('App Check library did not load');
+        const _acProv=ADMIN_APPCHECK_PROVIDER==='v3'?ADMIN_APPCHECK_SITE_KEY:new firebase.appCheck.ReCaptchaEnterpriseProvider(ADMIN_APPCHECK_SITE_KEY);
+        firebase.appCheck(_fbApp).activate(_acProv,true);   // true = refresh the token automatically
+      }catch(e){console.warn('App Check not active:',e);}   // never block admin sign-in because of it
+    }
     _fbAuth=firebase.auth(_fbApp);
     _fbDb=firebase.database(_fbApp);
-    // Resolve the Firebase Auth password: whatever was explicitly passed
-    // in (e.g. from the dedicated Settings field), falling back to the one
-    // saved from a previous successful connection. This is intentionally
-    // NOT the local panel login password — see getSavedFbPw() above.
-    const pwToUse=password||getSavedFbPw();
+    // The panel is only visible while Firebase says the admin account is signed in.
+    const _thisAuth=_fbAuth;
+    _thisAuth.onAuthStateChanged(u=>{
+      if(_fbAuth!==_thisAuth)return;
+      if(!u||u.isAnonymous||u.email!==ADMIN_FIREBASE_EMAIL)_lockApp();
+      renderAdminVerifyBar();
+    });
+    // The Firebase Auth password is only ever the one typed into the Firebase
+    // Sync field. With no password, an existing Firebase session is reused.
+    const pwToUse=password||null;
     // Sign in with a REAL admin identity (not anonymous) so Database Rules
     // can tell this panel apart from a random visitor's anonymous token.
     // IMPORTANT: await auth before marking connected. The .info/connected
@@ -1830,17 +2253,20 @@ async function connectFirebase(configStr,password){
     // propagates — so writes immediately after load were rejected by Rules.
     const user=await _adminSignIn(pwToUse);
     if(!user){throw new Error('Firebase sign-in returned no user.');}
-    if(pwToUse)saveFbPw(pwToUse); // remember the password that actually worked
     await new Promise(res=>setTimeout(res,500));
     save(KEYS.fbConfig,parsed);
     setFbStatus(true,'Connected → '+parsed.projectId);
     showFbMsg('✅ Firebase connected! Real-time sync active.','alert-ok');
     attachListeners();
     const pwField=document.getElementById('fbPwInput');
-    if(pwField&&pwToUse)pwField.value=pwToUse;
+    if(pwField)pwField.value=''; // never keep the password in the page
+    _lastFbError='';
+    return true;
   }catch(err){
+    _lastFbError=err.message;
     setFbStatus(false,'Connection failed');
     showFbMsg('❌ Connection failed: '+err.message,'alert-err');
+    return false;
   }
 }
 
@@ -1870,12 +2296,84 @@ function disconnectFirebase(){
   _fbApp=null;_fbDb=null;_fbAuth=null;_fbConnected=false;_listenerAttached=false;
   localStorage.removeItem(KEYS.fbConfig);
   setFbStatus(false,'Disconnected');
-  showFbMsg('Disconnected. Using local storage only.','alert-warn');
+  _lockApp(); // no Firebase session → no admin panel
+}
+
+// ══════════════════════════════════════════════════════
+//  PUBLIC MIRRORS — riders_public / advertisers_public
+//  The rider app reads ONLY these nodes. They hold a fixed whitelist of
+//  display fields for active, unexpired records, so NRC numbers, police
+//  clearance / RSL documents, transaction IDs and staff notes never leave
+//  the admin-only subscriptions / advertisers nodes. Rebuilt automatically
+//  from the admin's data after every sync (diff only), so approvals,
+//  renewals, edits, deletions and expiries all propagate.
+// ══════════════════════════════════════════════════════
+const PUB_RIDER_FIELDS=['id','name','type','plan','zone','zone2','hours','availability','expiry','status','trips','phone','notes','ref','photo1','photo2'];
+const PUB_ADV_FIELDS=['id','ref','name','category','zone','phone','offer','logoDataUrl','tier','status','expiry','voucherEnabled','voucherOffer','voucherModel','voucherVisitTarget','voucherSpendTarget','voucherMinGapDays'];
+let _subsSeen=false,_advSeen=false,_mirrorBusy=false,_mirrorAgain=false,_mirrorTimer=null;
+function _pick(o,fields){const r={};fields.forEach(f=>{if(o[f]!==undefined&&o[f]!==null)r[f]=o[f];});return r;}
+function _stable(v){
+  if(v===undefined)return 'undefined';
+  if(Array.isArray(v))return '['+v.map(_stable).join(',')+']';
+  if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+_stable(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+function _notExpired(d){const t=new Date();t.setHours(0,0,0,0);return !d||new Date(d)>=t;}
+function _cleanPubImgs(r){['photo1','photo2','logoDataUrl'].forEach(f=>{if(r[f]!==undefined&&!safeImgSrc(r[f]))delete r[f];});return r;}
+function publicRider(s){return(s&&s.id&&s.status==='active'&&_notExpired(s.expiry))?_cleanPubImgs(_pick(s,PUB_RIDER_FIELDS)):null;}
+function publicAdv(a){return(a&&a.id&&a.status==='active'&&_notExpired(a.expiry))?_cleanPubImgs(_pick(a,PUB_ADV_FIELDS)):null;}
+async function _reconcileNode(node,want,localCount){
+  const snap=await _fbDb.ref(FB_PATH+'/'+node).once('value');
+  const have=snap.val()||{};
+  const haveIds=Object.keys(have);
+  // Safety: an empty local cache (fresh device, not loaded yet) must never wipe the public directory.
+  if(localCount===0&&haveIds.length){console.warn('Mirror sync: local data empty, leaving',node,'untouched');return 0;}
+  let n=0;
+  for(const id of Object.keys(want)){
+    if(_stable(have[id])!==_stable(want[id])){await _fbDb.ref(FB_PATH+'/'+node+'/'+id).set(want[id]);n++;}
+  }
+  for(const id of haveIds){
+    if(!(id in want)){await _fbDb.ref(FB_PATH+'/'+node+'/'+id).remove();n++;}
+  }
+  return n;
+}
+function scheduleMirrorSync(){clearTimeout(_mirrorTimer);_mirrorTimer=setTimeout(()=>syncPublicMirrors(),1500);}
+async function syncPublicMirrors(force){
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(!_fbDb||!u||u.isAnonymous||u.email!==ADMIN_FIREBASE_EMAIL)return false;
+  if(!force&&(!_subsSeen||!_advSeen))return false;
+  if(_mirrorBusy){_mirrorAgain=true;return false;}
+  _mirrorBusy=true;
+  let ok=false;
+  try{
+    const subs=getSubs(),ads=getAdvertisers();
+    const wr={},wa={};
+    subs.forEach(s=>{const p=publicRider(s);if(p)wr[p.id]=p;});
+    ads.forEach(x=>{const p=publicAdv(x);if(p)wa[p.id]=p;});
+    const n1=await _reconcileNode('riders_public',wr,subs.length+_tombCount.s);
+    const n2=await _reconcileNode('advertisers_public',wa,ads.length+_tombCount.a);
+    if(n1+n2>0)console.log('Public mirrors updated:',n1,'riders,',n2,'advertisers');
+    ok=true;
+  }catch(e){
+    console.warn('Public mirror sync failed:',e.message);
+  }finally{
+    _mirrorBusy=false;
+    if(_mirrorAgain){_mirrorAgain=false;scheduleMirrorSync();}
+  }
+  return ok;
+}
+async function rebuildPublicDirectory(){
+  if(!_fbDb||!_fbConnected){showFbMsg('Connect Firebase first.','alert-err');return;}
+  setSyncDot('syncing');
+  const ok=await syncPublicMirrors(true);
+  setSyncDot('live');
+  showFbMsg(ok?'✅ Public directory is up to date.':'❌ Public directory sync failed — check Firebase Rules (riders_public / advertisers_public) and the console.',ok?'alert-ok':'alert-err');
 }
 
 function attachListeners(){
   if(!_fbDb||_listenerAttached)return;
   _listenerAttached=true;
+  attachPaymentsListener();
 
   // Real-time subscription listener
   _fbDb.ref(FB_PATH+'/subscriptions').on('value',snap=>{
@@ -1892,37 +2390,41 @@ function attachListeners(){
         fbItems.forEach(s=>{if(s&&s.id)fbMap[s.id]=s;});
         // For each record: if local was modified more recently, keep local
         const now=Date.now();
+        const dead=_remoteDeletions('s',fbMap,local);   // tombstones / deleted elsewhere: final
         const merged={};
         // Start with Firebase data
         Object.assign(merged,fbMap);
         // Local overrides Firebase for recently-touched records
         local.forEach(s=>{
-          if(!s||!s.id)return;
+          if(!s||!s.id||dead.has(s.id))return;
           const fbItem=fbMap[s.id];
           if(!fbItem){
             // Local-only — not in Firebase yet, keep it
             merged[s.id]=s;
           } else {
-            // If local has a newer approvedAt/rejectedAt/renewedAt, local wins
-            const localTs=Math.max(
-              s.approvedAt?new Date(s.approvedAt).getTime():0,
-              s.rejectedAt?new Date(s.rejectedAt).getTime():0,
-              s.renewedAt?new Date(s.renewedAt).getTime():0
-            );
-            const fbTs=Math.max(
-              fbItem.approvedAt?new Date(fbItem.approvedAt).getTime():0,
-              fbItem.rejectedAt?new Date(fbItem.rejectedAt).getTime():0,
-              fbItem.renewedAt?new Date(fbItem.renewedAt).getTime():0
-            );
-            if(localTs>fbTs) merged[s.id]=s;
+            // Local wins only if it was changed more recently than the Firebase copy
+            // (approve / reject / renew / any edit now stamps updatedAt).
+            if(_recTs(s)>_recTs(fbItem)) merged[s.id]=s;
           }
         });
-        const result=Object.values(merged).filter(Boolean);
-        // Auto-expire — subscription expiry AND RSL (Road Service Licence) expiry
-        result.forEach(s=>applyAutoStatus(s));
-        save(KEYS.subs,result);
+        dead.forEach(id=>{delete merged[id];});
+        const result=cleanIds(Object.values(merged));
+        // Auto-expire — subscription expiry AND RSL (Road Service Licence) expiry.
+        // Item 12: the new status used to exist only in this device's copy, so Firebase kept
+        // saying "active" for lapsed riders. Collect every auto transition and write it back.
+        const autoChanges=[];
+        result.forEach(s=>{
+          const before=s.status;
+          applyAutoStatus(s);
+          const fbRec=fbMap[s.id];
+          if(s.status!==before&&fbRec&&!fbRec.__deleted&&fbRec.status!==s.status)autoChanges.push({id:s.id,status:s.status});
+        });
+        save(KEYS.subs,result,{remote:true});
+        persistAutoStatus(autoChanges);
+        purgeRejectedData(fbMap).catch(e=>console.warn('Purge failed:',e&&e.message));
       }
     }
+    _subsSeen=true;scheduleMirrorSync();maybeBackfillPayments();
     refreshAll();
   },err=>{
     console.error('FB listener error:',err);
@@ -1977,7 +2479,7 @@ function attachListeners(){
     // Honour tombstones: anything FB marks __deleted must be removed.
     Object.keys(merged).forEach(id=>{if(merged[id]&&merged[id].__deleted)delete merged[id];});
 
-    save(KEYS.zones,Object.values(merged).filter(Boolean));
+    save(KEYS.zones,cleanIds(Object.values(merged)));
     renderZoneManager&&renderZoneManager();
 
     // Auto-heal: push local-only zones (e.g. unsynced seed data) up to FB.
@@ -1998,10 +2500,11 @@ function attachListeners(){
         // Merge Firebase + local: local wins if it was modified more recently
         const fbMap={};
         fbItems.forEach(a=>{if(a&&a.id)fbMap[a.id]=a;});
+        const dead=_remoteDeletions('a',fbMap,local);   // tombstones / deleted elsewhere: final
         const merged={};
         Object.assign(merged,fbMap);
         local.forEach(a=>{
-          if(!a||!a.id)return;
+          if(!a||!a.id||dead.has(a.id))return;
           const fbItem=fbMap[a.id];
           if(!fbItem){
             merged[a.id]=a; // local-only record not yet in Firebase
@@ -2021,16 +2524,18 @@ function attachListeners(){
             if(localTs>fbTs) merged[a.id]=a;
           }
         });
-        const result=Object.values(merged).filter(Boolean);
+        dead.forEach(id=>{delete merged[id];});
+        const result=cleanIds(Object.values(merged));
         const today=new Date();today.setHours(0,0,0,0);
         result.forEach(a=>{if(a.status==='active'&&a.expiry&&new Date(a.expiry)<today)a.status='expired';});
-        save(KEYS.advertisers,result);
+        save(KEYS.advertisers,result,{remote:true});
       }
       // Firebase returned data (even if empty object) — render whatever we have
     }
     // Always re-render: covers (a) Firebase empty/null, (b) local-only data,
     // (c) post-merge result. Without this, local advertisers never appear
     // if Firebase hasn't received them yet.
+    _advSeen=true;scheduleMirrorSync();maybeBackfillPayments();
     refreshAll();
   },err=>{
     console.error('FB advertiser listener error:',err);
@@ -2057,6 +2562,8 @@ function attachListeners(){
     console.error('FB redemptions listener error:',err);
     renderRedemptions&&renderRedemptions();
   });
+
+  _attachLinkReqs();
 
   // Connection state — flush offline queue on reconnect.
   // Guard: only mark connected if the admin auth session is actually live.
@@ -2085,7 +2592,7 @@ async function fbWriteItem(item){
   }
   try{
     setSyncDot('syncing');
-    await _fbDb.ref(FB_PATH+'/subscriptions/'+item.id).set(item);
+    await _fbDb.ref(FB_PATH+'/subscriptions/'+item.id).update(item);
     setSyncDot('live');
     return true;
   }catch(err){
@@ -2096,10 +2603,13 @@ async function fbWriteItem(item){
     if(err.code==='PERMISSION_DENIED'||err.message?.includes('PERMISSION_DENIED')){
       const authUser=_fbAuth?.currentUser?.email||'(not signed in)';
       console.error('Permission denied. Auth state: '+authUser+'. Check Firebase Rules and that admin UID matches.');
-      throw new Error('Permission denied by Firebase. Auth: '+authUser+'. Try disconnecting and reconnecting.');
+      const pe=new Error('Permission denied by Firebase. Auth: '+authUser+'.'+_deniedHint()+' Try disconnecting and reconnecting.');
+      pe.queued=false;
+      throw pe;
     }
     _pendingWrites.push({type:'item',item});
     _persistPendingWrites();
+    err.queued=true;
     throw err;
   }
 }
@@ -2118,7 +2628,7 @@ async function fbAdvWriteItem(item){
   }
   try{
     setSyncDot('syncing');
-    await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).set(item);
+    await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).update(item);
     setSyncDot('live');
     return true;
   }catch(err){
@@ -2126,6 +2636,7 @@ async function fbAdvWriteItem(item){
     console.error('fbAdvWriteItem failed:',err);
     _pendingAdvWrites.push(item);
     _persistPendingAdvWrites();
+    err.queued=true;
     throw err;
   }
 }
@@ -2197,7 +2708,10 @@ async function flushPendingWrites(){
     showFbMsg('⚠️ Still offline — will retry automatically once reconnected.','alert-warn');
     return;
   }
+  flushPayWrites();
+  let didAdvZone=false;
   if(_pendingAdvWrites.length){
+    didAdvZone=true;
     const advQueue=[..._pendingAdvWrites];
     _pendingAdvWrites=[];
     _persistPendingAdvWrites();
@@ -2205,9 +2719,10 @@ async function flushPendingWrites(){
     for(const item of advQueue){
       try{
         if(item&&item.type==='delete'){
-          await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).remove();
+          await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).set(_tomb(item.id,item.deletedAt));
         }else{
-          await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).set(item);
+          if(await _queuedIsStale('advertisers',item)){_flushStale++;continue;}
+          await _fbDb.ref(FB_PATH+'/advertisers/'+item.id).update(item);
         }
       }
       catch(err){ stillFailed.push(item); console.error('Advertiser flush failed:',err); }
@@ -2215,6 +2730,7 @@ async function flushPendingWrites(){
     if(stillFailed.length){_pendingAdvWrites=[...stillFailed,..._pendingAdvWrites];_persistPendingAdvWrites();}
   }
   if(_pendingZoneWrites.length){
+    didAdvZone=true;
     const zoneQueue=[..._pendingZoneWrites];
     _pendingZoneWrites=[];
     _persistPendingZoneWrites();
@@ -2235,7 +2751,7 @@ async function flushPendingWrites(){
     }
     if(stillFailedZones.length){_pendingZoneWrites=[...stillFailedZones,..._pendingZoneWrites];_persistPendingZoneWrites();}
   }
-  if(!_pendingWrites.length)return;
+  if(!_pendingWrites.length){if(didAdvZone)_flushSummary();return;}
   const queue=[..._pendingWrites];
   _pendingWrites=[];
   _persistPendingWrites();
@@ -2248,14 +2764,15 @@ async function flushPendingWrites(){
   for(const w of queue){
     try{
       if(w.type==='item'){
-        await _fbDb.ref(FB_PATH+'/subscriptions/'+w.item.id).set(w.item);
+        if(await _queuedIsStale('subscriptions',w.item)){_flushStale++;continue;}
+        await _fbDb.ref(FB_PATH+'/subscriptions/'+w.item.id).update(w.item);
       }else if(w.type==='delete'){
-        await _fbDb.ref(FB_PATH+'/subscriptions/'+w.id).remove();
+        await _fbDb.ref(FB_PATH+'/subscriptions/'+w.id).set(_tomb(w.id,w.deletedAt));
       }else if(w.type==='full'){
         // Legacy queue entry from before this fix — replay as individual
         // per-child writes rather than a forbidden parent overwrite.
         for(const it of (w.items||[])){
-          if(it.id) await _fbDb.ref(FB_PATH+'/subscriptions/'+it.id).set(it);
+          if(it.id) await _fbDb.ref(FB_PATH+'/subscriptions/'+it.id).update(it);
         }
       }
     }catch(err){
@@ -2267,10 +2784,8 @@ async function flushPendingWrites(){
   if(stillFailed.length){
     _pendingWrites=[...stillFailed,..._pendingWrites];
     _persistPendingWrites();
-    showFbMsg('⚠️ Some offline writes are still pending — will retry.','alert-warn');
-  }else{
-    showFbMsg('✅ Offline writes synced to Firebase.','alert-ok');
   }
+  _flushSummary();
 }
 
 function setSyncDot(state){
@@ -2288,63 +2803,96 @@ async function pushToFirebase(){
     // the parent path, so one .set() on the full list would be denied even
     // though every individual child write succeeds.
     for(const s of subs){
-      if(s.id) await _fbDb.ref(FB_PATH+'/subscriptions/'+s.id).set(s);
+      if(s.id&&!_deadIds.s.has(s.id)) await _fbDb.ref(FB_PATH+'/subscriptions/'+s.id).update(s);
     }
     setSyncDot('live');
-    showFbMsg('✅ All local data pushed to Firebase!','alert-ok');
+    showFbMsg('✅ All local riders pushed to Firebase.','alert-ok');
   }catch(e){
     setSyncDot('live');
     showFbMsg('❌ Failed: '+e.message,'alert-err');
   }
 }
 
+// ---- sync feedback ----
 function showFbMsg(txt,cls){
+  const pg=document.getElementById('page-firebase');
   const el=document.getElementById('fbConfigMsg');
-  if(!el)return;
-  el.textContent=txt;el.className='alert '+cls;el.style.display='block';
-  setTimeout(()=>el.style.display='none',5000);
-}
-
-// ══════════════════════════════════════════════════════
-//  AUTH  (with brute-force lockout)
-// ══════════════════════════════════════════════════════
-const _MAX_ATTEMPTS=5;
-const _LOCKOUT_MS=15*60*1000; // 15 minutes
-function _getLockout(){try{const v=localStorage.getItem('mca_lockout');return v?JSON.parse(v):{attempts:0,until:0};}catch{return{attempts:0,until:0};}}
-function _setLockout(d){try{localStorage.setItem('mca_lockout',JSON.stringify(d));}catch{}}
-
-function doLogin(){
-  const lockout=_getLockout();
-  const now=Date.now();
-  const err=document.getElementById('loginErr');
-  if(lockout.until>now){
-    const mins=Math.ceil((lockout.until-now)/60000);
-    err.textContent='Too many attempts. Try again in '+mins+' minute'+(mins!==1?'s':'')+'.';
-    err.style.display='block';
+  if(el&&pg&&pg.classList.contains('active')){      // Firebase Sync page is open: inline box
+    el.textContent=txt;el.className='alert '+cls;el.style.display='block';
+    clearTimeout(el._t);el._t=setTimeout(()=>{el.style.display='none';},5000);
     return;
   }
-  const pw=document.getElementById('loginPw').value;
-  if(pw===getPassword()){
-    _setLockout({attempts:0,until:0});
-    try{localStorage.setItem('mc_logged_in','1');}catch(e){}
-    _showApp();
-    // Don't pass the local panel password to Firebase Auth — they are
-    // separate credentials now. connectFirebase falls back to whatever
-    // Firebase password was previously saved via the Settings field.
-    connectFirebase(JSON.stringify(getSavedFbConfig()));
-  }else{
-    const attempts=lockout.attempts+1;
-    const until=attempts>=_MAX_ATTEMPTS?now+_LOCKOUT_MS:0;
-    _setLockout({attempts,until});
-    const remaining=_MAX_ATTEMPTS-attempts;
-    if(until>0){
-      err.textContent='Too many failed attempts. Locked for 15 minutes.';
-    } else {
-      err.textContent='Incorrect password. '+(remaining>0?remaining+' attempt'+(remaining!==1?'s':'')+' remaining.':'');
-    }
-    err.style.display='block';
-    setTimeout(()=>err.style.display='none',4000);
+  // Every other page: the inline box is hidden, so use a floating toast
+  let t=document.getElementById('fbToast');
+  if(!t){
+    t=document.createElement('div');t.id='fbToast';
+    t.style.cssText='position:fixed;top:.6rem;left:.6rem;right:.6rem;max-width:560px;margin:0 auto;z-index:99998;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer';
+    t.onclick=()=>{t.style.display='none';};
+    document.body.appendChild(t);
   }
+  t.textContent=txt;t.className='alert '+cls;t.style.display='block';
+  clearTimeout(t._t);t._t=setTimeout(()=>{t.style.display='none';},cls==='alert-ok'?4000:9000);
+}
+// fbWriteItem / fbAdvWriteItem contract: resolves true = Firebase accepted the write,
+// resolves false = offline (queued for later), throws = failed (err.queued says whether
+// it was queued for retry). Only the first case may say "synced".
+function _syncResult(p,doneMsg,localMsg){
+  return Promise.resolve(p).then(ok=>{
+    if(ok===true){showFbMsg('✅ '+doneMsg,'alert-ok');return true;}
+    showFbMsg('⚠️ '+localMsg+' You are offline: saved on this device only and queued to sync when you reconnect.','alert-warn');
+    return false;
+  }).catch(err=>{
+    const q=err&&err.queued===true?' It will be retried.':(err&&err.queued===false?' It was not queued, so fix the problem and save again.':'');
+    showFbMsg('⚠️ '+localMsg+' NOT synced to Firebase: '+String((err&&err.message)||err).replace(/\.+$/,'')+'.'+q,'alert-warn');
+    return false;
+  });
+}
+function _flushSummary(){
+  const left=_pendingWrites.length+_pendingAdvWrites.length+_pendingZoneWrites.length+_payQueue.length;
+  const stale=_flushStale;_flushStale=0;
+  const note=stale?' '+stale+' offline edit'+(stale>1?'s were':' was')+' skipped because Firebase already has a newer version or the record was deleted.':'';
+  if(left)showFbMsg('⚠️ '+left+' offline change'+(left>1?'s are':' is')+' still pending. Will retry.'+note,'alert-warn');
+  else if(stale)showFbMsg('⚠️ Offline writes synced.'+note,'alert-warn');
+  else showFbMsg('✅ Offline writes synced to Firebase.','alert-ok');
+}
+// A queued offline edit can be older than what another device wrote meanwhile.
+// Skip it (and say so) instead of overwriting the newer record.
+let _flushStale=0;
+async function _queuedIsStale(node,item){
+  if(!item||!item.id)return false;
+  try{
+    const base=FB_PATH+'/'+node+'/'+item.id;
+    if((await _fbDb.ref(base+'/__deleted').once('value')).val()===true)return true;   // deleted elsewhere: never revive it
+    if(!item.updatedAt)return false;                       // legacy entry without a stamp: just write it
+    const r=(await _fbDb.ref(base+'/updatedAt').once('value')).val();
+    return !!r&&new Date(r).getTime()>new Date(item.updatedAt).getTime();
+  }catch(e){return false;}
+}
+// ---- end sync feedback ----
+
+// ══════════════════════════════════════════════════════
+//  AUTH — Firebase sign-in is the ONLY login
+//  The panel opens only after Firebase Auth confirms the admin account.
+//  Firebase rate-limits wrong passwords itself (auth/too-many-requests).
+// ══════════════════════════════════════════════════════
+let _loginBusy=false;
+async function doLogin(){
+  if(_loginBusy)return;
+  const err=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  const showErr=m=>{err.textContent=m;err.style.display='block';};
+  err.style.display='none';
+  const pw=document.getElementById('loginPw').value;
+  if(!pw){showErr('Enter the admin password.');return;}
+  if(!(location.protocol==='https:'||location.protocol==='http:')){
+    showErr('Open this page from your website (not a local file) to sign in.');return;
+  }
+  _loginBusy=true;if(btn)btn.disabled=true;
+  try{
+    const ok=await connectFirebase(JSON.stringify(getSavedFbConfig()),pw);
+    if(ok){document.getElementById('loginPw').value='';_showApp();}
+    else showErr(_lastFbError||'Sign-in failed.');
+  }finally{_loginBusy=false;if(btn)btn.disabled=false;}
 }
 
 function _showApp(){
@@ -2352,14 +2900,21 @@ function _showApp(){
   document.getElementById('app').style.display='block';
   loadSettings();
   refreshAll();
+  renderAdminVerifyBar();
+}
+
+// Hide the panel and return to the login page. Never touches the password field
+// (a sign-in may be in progress).
+function _lockApp(){
+  const a=document.getElementById('app'),l=document.getElementById('loginPage');
+  if(a)a.style.display='none';
+  if(l)l.style.display='flex';
 }
 
 function doLogout(){
   if(!confirm('Log out?'))return;
-  try{localStorage.removeItem('mc_logged_in');}catch(e){}
   if(_fbAuth)try{_fbAuth.signOut();}catch(e){}
-  document.getElementById('app').style.display='none';
-  document.getElementById('loginPage').style.display='flex';
+  _lockApp();
   document.getElementById('loginPw').value='';
 }
 
@@ -2383,11 +2938,6 @@ function showPage(id,navEl){
   else if(id==='advertisers')renderAdvertisers();
   else if(id==='redemptions')renderRedemptions();
   else if(id==='settings')loadSettingsPage();
-  else if(id==='firebase'){
-    const pwField=document.getElementById('fbPwInput');
-    const saved=getSavedFbPw();
-    if(pwField&&saved)pwField.value=saved;
-  }
 }
 
 function toggleSidebar(){
@@ -2484,7 +3034,7 @@ function renderDashboard(){
         <div style="font-size:.75rem;color:var(--muted)">${esc(s.phone||'—')} · Expires ${fmtDate(s.expiry)}</div>
       </div>
       <span class="badge badge-expiring">${d===0?'Today':d+'d'}</span>
-      <button class="btn btn-warn btn-sm" onclick="openRenewModal('${s.id}')">Renew</button>
+      <button class="btn btn-warn btn-sm" onclick="openRenewModal('${sid(s.id)}')">Renew</button>
     </div>`;
   }).join('')+'</div>';
 }
@@ -2529,27 +3079,27 @@ function renderApplications(){
           ${a.hours?`<br>🕐 Hours: ${esc(a.hours)}`:''}
           ${a.txnId?`<br>💳 Txn ID: <code style="background:#d1fae5;color:#065f46;padding:.1rem .35rem;border-radius:4px;font-size:.78rem">${esc(a.txnId)}</code>`:''}
           ${a.notes?`<br><em style="color:var(--muted)">${esc(a.notes)}</em>`:''}
-          ${(a.photo1||a.photo2)?`<div style="display:flex;gap:.4rem;margin-top:.5rem">${a.photo1?`<img src="${a.photo1}" style="width:70px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Vehicle photo">`:''}${a.photo2?`<img src="${a.photo2}" style="width:70px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Vehicle photo">`:''}` +'</div>':''}        </div>
+          ${(a.photo1||a.photo2)?`<div style="display:flex;gap:.4rem;margin-top:.5rem">${safeImgSrc(a.photo1)?`<img src="${safeImgSrc(a.photo1)}" style="width:70px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Vehicle photo">`:''}${safeImgSrc(a.photo2)?`<img src="${safeImgSrc(a.photo2)}" style="width:70px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Vehicle photo">`:''}` +'</div>':''}        </div>
         <span class="app-ref">${esc(a.ref||a.id)}</span>
       </div>
       <div class="app-actions">
         ${a.status==='pending'?`
-          <button class="btn btn-success btn-sm" onclick="openApproveModal('${a.id}')">✅ Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="rejectApp('${a.id}')">✗ Reject</button>
+          <button class="btn btn-success btn-sm" onclick="openApproveModal('${sid(a.id)}')">✅ Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="rejectApp('${sid(a.id)}')">✗ Reject</button>
         `:''}
         ${a.status==='active'?`
-          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${a.id}')">🆔 ID</button>
-          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${a.id}')">📄 Docs</button>
-          <button class="btn btn-warn btn-sm" onclick="openRenewModal('${a.id}')">🔄 Renew</button>
+          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${sid(a.id)}')">🆔 ID</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${sid(a.id)}')">📄 Docs</button>
+          <button class="btn btn-warn btn-sm" onclick="openRenewModal('${sid(a.id)}')">🔄 Renew</button>
           <span class="badge badge-active">Approved</span>
         `:''}
         ${a.status==='rsl_expired'?`
-          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${a.id}')">🆔 ID</button>
-          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${a.id}')">📄 Docs</button>
-          <button class="btn btn-warn btn-sm" onclick="openEditSubModal('${a.id}')">🔄 Renew RSL</button>
+          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${sid(a.id)}')">🆔 ID</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${sid(a.id)}')">📄 Docs</button>
+          <button class="btn btn-warn btn-sm" onclick="openEditSubModal('${sid(a.id)}')">🔄 Renew RSL</button>
           <span class="badge badge-rsl_expired">RSL Expired — Suspended</span>
         `:''}
-        ${a.status==='rejected'?`<span class="badge badge-rejected">Rejected</span>`:''}
+        ${a.status==='rejected'?`<button class="btn btn-ghost btn-sm" onclick="reopenApp('${sid(a.id)}')">↩ Reopen</button><span class="badge badge-rejected">Rejected</span>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2562,6 +3112,122 @@ function onApprovePlanChange(){
   const price=PLAN_PRICES[plan]||0;
   document.getElementById('approvePrice').value=price;
   document.getElementById('approveAmountPaid').value=price;
+}
+
+// ── Approval gates (item 13) ──────────────────────────────────────────────
+// Errors block activation; warnings are shown but do not.
+//  • RSL number and expiry must be present, and the expiry must not be in the past
+//    (same test applyAutoStatus uses, so a rider can never be "approved" straight into suspension).
+//  • A Txn ID already attached to an approved rider (active / expired / RSL-expired) cannot be reused.
+//    Rejected applications are ignored (a rider may re-apply with the same payment); another
+//    PENDING application with the same Txn ID only triggers a warning, otherwise neither
+//    of two duplicate applications could ever be approved.
+function _normTxn(t){return String(t||'').replace(/[\s\-]+/g,'').toUpperCase();}
+function rslProblems(rslNo,rslExpiry,hint){
+  const e=[];
+  if(!String(rslNo||'').trim())e.push('Road Service Licence number is required.');
+  if(!rslExpiry)e.push('RSL expiry date is required.');
+  else{
+    const d=new Date(rslExpiry),today=new Date();today.setHours(0,0,0,0);
+    if(isNaN(d.getTime()))e.push('RSL expiry is not a valid date.');
+    else if(d<today)e.push('RSL expired on '+fmtDate(rslExpiry)+'. Activating now would suspend the rider immediately. '+(hint||''));
+  }
+  return e;
+}
+function txnConflicts(rec,list){
+  const errors=[],warnings=[],t=_normTxn(rec&&rec.txnId);
+  if(!t)return{errors,warnings};
+  (list||[]).forEach(o=>{
+    if(!o||o.id===rec.id||_normTxn(o.txnId)!==t||o.status==='rejected')return;
+    if(o.status==='pending')warnings.push('Another pending application ('+(o.name||'unnamed')+') uses the same Txn ID '+rec.txnId+'. Approve only one.');
+    else errors.push('Txn ID '+rec.txnId+' was already used by '+(o.name||'another rider')+' ('+o.status+'). Reject this application as a duplicate payment reference.');
+  });
+  return{errors,warnings};
+}
+function approvalGate(appId,rslNo,rslExpiry,list){
+  const subs=list||getSubs();
+  const a=subs.find(x=>x&&x.id===appId);
+  if(!a)return{errors:['Application not found. Refresh and try again.'],warnings:[]};
+  const tc=txnConflicts(a,subs);
+  return{errors:[...rslProblems(rslNo,rslExpiry,'Enter the renewed RSL, or reject the application.'),...tc.errors],warnings:tc.warnings};
+}
+// Manual Add/Edit Rider form: same rules, applied whenever the save asks for, or would end up
+// with, an ACTIVE rider. Pending / expired / RSL-expired records stay freely editable.
+// A pending application activated through the form gets the same Txn ID check as Approve.
+function manualRiderGate(o){
+  const asked=o.status==='active';
+  const result=applyAutoStatus({status:o.status,expiry:o.expiry,rslExpiry:o.rslExpiry}).status;
+  const errors=[];
+  if(asked||result==='active'){
+    errors.push(...rslProblems(o.rslNo,o.rslExpiry,'Enter the renewed RSL, or set Status to Pending or RSL Expired.'));
+    if(o.prev&&o.prev.status==='pending')errors.push(...txnConflicts(o.prev,o.list).errors);
+  }
+  return errors;
+}
+function refreshApproveGate(){
+  const el=document.getElementById('approveGate'),btn=document.getElementById('approveBtn');
+  if(!el)return{errors:[],warnings:[]};
+  const g=approvalGate(document.getElementById('approveAppId').value,
+    document.getElementById('approveRslNo').value,document.getElementById('approveRslExpiry').value);
+  const li=(arr,c)=>arr.map(m=>`<div class="alert ${c}" style="margin-top:.35rem">${c==='alert-err'?'⛔':'⚠️'} ${esc(m)}</div>`).join('');
+  el.innerHTML=li(g.errors,'alert-err')+li(g.warnings,'alert-warn');
+  el.style.display=(g.errors.length||g.warnings.length)?'block':'none';
+  if(btn)btn.disabled=g.errors.length>0;
+  return g;
+}
+
+// ── Login link requests (rider accounts) ───────────────────────────────
+// A rider who signed up for a login asks to be linked to an application / rider record by reference.
+// Approving sets ownerUid on that record and adds it to the rider's index, in one atomic update.
+let _linkReqs={};
+function _attachLinkReqs(){
+  _fbDb.ref(FB_PATH+'/link_requests').on('value',snap=>{
+    _linkReqs=snap.val()||{};renderLinkReqBadge();
+    const m=document.getElementById('linkReqModal');if(m&&m.classList.contains('open'))renderLinkReqs();
+  },err=>console.warn('link_requests listener:',err&&err.message));
+}
+function renderLinkReqBadge(){
+  const n=Object.keys(_linkReqs).length,b=document.getElementById('linkReqBadge');
+  if(b){b.textContent=n;b.style.display=n?'inline-block':'none';}
+}
+function _last9(p){return String(p||'').replace(/\D/g,'').slice(-9);}
+function _findByRef(ref){
+  const q=String(ref||'').trim().toUpperCase();
+  return getSubs().find(s=>s&&s.id&&[s.ref,'MCM-'+String(s.id).slice(-6).toUpperCase()].some(x=>x&&String(x).toUpperCase()===q));
+}
+function openLinkReqs(){renderLinkReqs();openModal('linkReqModal');}
+function renderLinkReqs(){
+  const el=document.getElementById('linkReqBody');if(!el)return;
+  const ids=Object.keys(_linkReqs).filter(safeId);
+  if(!ids.length){el.innerHTML='<p style="color:var(--muted)">No pending link requests.</p>';return;}
+  el.innerHTML=ids.map(uid=>{
+    const q=_linkReqs[uid]||{},rec=_findByRef(q.ref);
+    const phoneOk=rec&&_last9(q.phone)&&[rec.phone,rec.phone2].some(p=>_last9(p)===_last9(q.phone));
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:.8rem;margin-bottom:.6rem;font-size:.85rem;line-height:1.6">'
+      +'<div>Requested ref: <strong>'+esc(q.ref||'')+'</strong> · phone '+esc(q.phone||'')+'</div>'
+      +(rec?'<div>Record: <strong>'+esc(rec.name||'')+'</strong> ('+esc(rec.status||'')+') · '+esc(rec.phone||'')+'</div>'
+            +'<div style="color:'+(phoneOk?'#065f46':'#b91c1c')+'">'+(phoneOk?'✓ Phone matches the record':'⚠️ Phone does NOT match. Call the rider before approving.')+'</div>'
+            +(rec.ownerUid&&rec.ownerUid!==uid?'<div style="color:#b91c1c">⚠️ This record is already linked to another login.</div>':'')
+          :'<div style="color:#b91c1c">No record found with that reference.</div>')
+      +'<div style="display:flex;gap:.5rem;margin-top:.5rem">'
+      +'<button class="btn btn-success btn-sm" '+(rec?'':'disabled ')+'onclick="approveLink(\''+uid+'\')">Approve</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="dismissLink(\''+uid+'\')">Dismiss</button></div></div>';
+  }).join('');
+}
+async function approveLink(uid){
+  const q=_linkReqs[uid],rec=q&&_findByRef(q.ref);
+  if(!rec||!safeId(uid)||!safeId(rec.id)||!_fbDb)return;
+  const up={};
+  up['subscriptions/'+rec.id+'/ownerUid']=uid;
+  up['subscriptions/'+rec.id+'/updatedAt']=new Date().toISOString();
+  up['owner_index/'+uid+'/'+rec.id]=true;
+  up['link_requests/'+uid]=null;
+  try{await _fbDb.ref(FB_PATH).update(up);showFbMsg('✅ Login linked to '+(rec.name||'rider')+'.','alert-ok');}
+  catch(e){showFbMsg('⚠️ Could not link: '+e.message,'alert-warn');}
+}
+async function dismissLink(uid){
+  if(!safeId(uid)||!_fbDb)return;
+  try{await _fbDb.ref(FB_PATH+'/link_requests/'+uid).remove();}catch(e){showFbMsg('⚠️ Could not dismiss: '+e.message,'alert-warn');}
 }
 
 function openApproveModal(appId){
@@ -2621,11 +3287,11 @@ function openApproveModal(appId){
     infoEl.innerHTML=rows.map(([l,v])=>`<div style="display:flex;gap:.5rem"><span style="color:var(--muted);min-width:70px;flex-shrink:0">${l}</span><span>${v}</span></div>`).join('');
     // Vehicle photos
     if(a.photo1||a.photo2){
-      infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📸 Vehicle Photos</span><div style="display:flex;gap:.5rem">${a.photo1?`<img src="${a.photo1}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 1">`:''}${a.photo2?`<img src="${a.photo2}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 2">`:''}` +'</div></div>';
+      infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📸 Vehicle Photos</span><div style="display:flex;gap:.5rem">${safeImgSrc(a.photo1)?`<img src="${safeImgSrc(a.photo1)}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 1">`:''}${safeImgSrc(a.photo2)?`<img src="${safeImgSrc(a.photo2)}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Photo 2">`:''}` +'</div></div>';
     }
     // Compliance documents — RSL & Police Clearance Certificate
     if(a.rslDoc||a.policeDoc){
-      infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📄 Compliance Documents</span><div style="display:flex;gap:.5rem">${a.rslDoc?`<img src="${a.rslDoc}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Road Service Licence" title="Road Service Licence">`:'<span style="font-size:.72rem;color:var(--danger)">RSL not uploaded</span>'}${a.policeDoc?`<img src="${a.policeDoc}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Police Clearance Certificate" title="Police Clearance Certificate">`:'<span style="font-size:.72rem;color:var(--danger)">Police clearance not uploaded</span>'}` +'</div></div>';
+      infoEl.innerHTML+=`<div style="margin-top:.6rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.3rem">📄 Compliance Documents</span><div style="display:flex;gap:.5rem">${safeImgSrc(a.rslDoc)?`<img src="${safeImgSrc(a.rslDoc)}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Road Service Licence" title="Road Service Licence">`:'<span style="font-size:.72rem;color:var(--danger)">RSL not uploaded</span>'}${safeImgSrc(a.policeDoc)?`<img src="${safeImgSrc(a.policeDoc)}" style="width:90px;height:68px;object-fit:cover;border-radius:7px;border:1px solid var(--border)" alt="Police Clearance Certificate" title="Police Clearance Certificate">`:'<span style="font-size:.72rem;color:var(--danger)">Police clearance not uploaded</span>'}` +'</div></div>';
     }
   }
 
@@ -2650,8 +3316,11 @@ function openApproveModal(appId){
 
   const msg=document.getElementById('approveMsg');
   if(msg)msg.style.display='none';
+  document.getElementById('approveRslNo').value=a.rslNo||'';
+  document.getElementById('approveRslExpiry').value=a.rslExpiry||'';
   const btn=document.getElementById('approveBtn');
   if(btn){btn.disabled=false;btn.textContent='✅ Activate Rider';}
+  refreshApproveGate();
   openModal('approveModal');
 }
 
@@ -2674,16 +3343,20 @@ function confirmApprove(){
   const subs=getSubs();
   const i=subs.findIndex(s=>s.id===appId);
   if(i<0)return;
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+parseInt(duration));
+  // Item 13: re-check at the moment of approval (data may have synced since the modal opened)
+  const rslNo=(document.getElementById('approveRslNo').value||'').trim().slice(0,40);
+  const rslExpiry=document.getElementById('approveRslExpiry').value||'';
+  const gate=approvalGate(appId,rslNo,rslExpiry,subs);
+  if(gate.errors.length){refreshApproveGate();showMsg('Cannot activate: '+gate.errors.join(' '),'alert-err');return;}
+  const expDate=new Date(addMonths(start,parseInt(duration))+'T00:00:00Z');
   const now=new Date().toISOString();
   subs[i]=applyAutoStatus({...subs[i],
-    status:'active',price,plan,duration,start,
+    status:'active',price,plan,duration,start,rslNo,rslExpiry,
     expiry:toDateStr(expDate),
     availability:'available',
     notes:notes||subs[i].notes,
     paymentMethod:payMethod||subs[i].paymentMethod||'',
-    amountPaid:amountPaid||subs[i].amountPaid||0,
+    amountPaid,
     paymentDate:todayStr(),
     approvedAt:now,
     activatedBy:state.adminName||'Admin'
@@ -2705,15 +3378,91 @@ function confirmApprove(){
     renderZoneWaGroupList();
   }
   save(KEYS.subs,subs);
+  recordPayment({refType:'rider',refId:subs[i].id,name:subs[i].name,kind:'approval',plan,price,amount:amountPaid,method:payMethod,
+    periodStart:start,periodEnd:subs[i].expiry,txnId:subs[i].txnId});
   refreshAll();
   closeModal('approveModal');
-  fbWriteItem(subs[i])
-    .then(()=>showFbMsg('\u2705 Rider activated and synced!','alert-ok'))
-    .catch(err=>showFbMsg('\u26a0\ufe0f Activated locally. Firebase: '+err.message,'alert-warn'));
+  _syncResult(fbWriteItem(subs[i]),'Rider activated and synced!','Rider activated.');
 }
 
+// Rejected applications keep their NRC, photos and documents for PURGE_AFTER_DAYS (in case of an
+// appeal), then only name, phone, Txn ID and status remain (so a reused Txn ID is still recognised).
+const PURGE_AFTER_DAYS=30;
+const PURGE_FIELDS=['nrc','phone2','photo1','photo2','rslDoc','policeDoc'];
+let _purging=false;
+function _needsPurge(s){
+  if(!(s&&s.id&&!s.__deleted&&s.status==='rejected'&&PURGE_FIELDS.some(f=>s[f])))return false;
+  const t=new Date(s.rejectedAt||s.updatedAt||s.created||0).getTime();   // no usable date: purge
+  return !t||(Date.now()-t)>=PURGE_AFTER_DAYS*86400000;
+}
+function _purgeLocal(s){   // light local copy without the sensitive fields (heavy ones use '' so the memory store clears)
+  const c={...s,purgedAt:new Date().toISOString()};
+  PURGE_FIELDS.forEach(f=>{if(HEAVY_FIELDS.includes(f))c[f]='';else delete c[f];});
+  return c;
+}
+function _purgeRemote(s){  // Firebase update(): null removes the child
+  const r={...s};PURGE_FIELDS.forEach(f=>{r[f]=null;});return r;
+}
+// Driven by the Firebase snapshot, not by a one-off local flag: if a purge write ever fails (offline,
+// session expired), the next snapshot still shows the data in Firebase and the purge is retried.
+async function purgeRejectedData(fbMap){
+  if(_purging||!fbMap)return 0;
+  const u=_fbAuth&&_fbAuth.currentUser;
+  if(!u||u.isAnonymous||u.email!==ADMIN_FIREBASE_EMAIL)return 0;
+  const subs=getSubs();
+  let localChanged=false;
+  subs.forEach((s,i)=>{if(_needsPurge(s)){subs[i]=_purgeLocal(s);localChanged=true;}});
+  const remoteIds=Object.keys(fbMap).filter(id=>_needsPurge(fbMap[id]));
+  if(!localChanged&&!remoteIds.length)return 0;
+  _purging=true;
+  try{
+    if(localChanged)save(KEYS.subs,subs);
+    let ok=0;
+    if(remoteIds.length&&_fbDb&&_fbConnected){
+      const now=new Date().toISOString();
+      for(const id of remoteIds){
+        const loc=subs.find(x=>x&&x.id===id);
+        // Patch only the sensitive fields. A full-record write could overwrite newer edits with an older local copy.
+        const patch={purgedAt:(loc&&loc.purgedAt)||now,updatedAt:(loc&&loc.updatedAt)||now};
+        PURGE_FIELDS.forEach(f=>{patch[f]=null;});
+        try{await _fbDb.ref(FB_PATH+'/subscriptions/'+id).update(patch);ok++;}
+        catch(e){console.warn('Purge write failed for',id,e&&e.message);}
+      }
+    }
+    if(remoteIds.length){
+      showFbMsg(ok===remoteIds.length
+        ?'🧹 Removed NRC, photos and documents from '+ok+' application'+(ok>1?'s':'')+' rejected over '+PURGE_AFTER_DAYS+' days ago and synced.'
+        :'⚠️ Could not remove sensitive data from '+(remoteIds.length-ok)+' old rejected application'+(remoteIds.length-ok>1?'s':'')+' in Firebase. It will retry on the next sync.',
+        ok===remoteIds.length?'alert-ok':'alert-warn');
+    }
+    refreshAll();
+    return remoteIds.length||1;
+  }finally{_purging=false;}
+}
+// A rejected application can be reopened (e.g. after an appeal). If the 30 days have passed the
+// sensitive data is already gone, and the confirm says so.
+function reopenApp(appId){
+  const a=getSubs().find(s=>s&&s.id===appId);
+  if(!a||a.status!=='rejected')return;
+  const gone=!(a.nrc||a.photo1||a.photo2||a.rslDoc||a.policeDoc)&&!!a.purgedAt;
+  document.getElementById('confirmMsg').textContent='Move '+(a.name||'this application')+' back to pending applications?'+(gone?' Their NRC, photos and documents were already deleted, so ask the rider to resend them.':'');
+  document.getElementById('confirmOkBtn').textContent='Reopen';
+  document.getElementById('confirmOkBtn').onclick=()=>{
+    const subs=getSubs();
+    const i=subs.findIndex(s=>s.id===appId);
+    if(i<0)return;
+    const next={...subs[i],status:'pending'};delete next.rejectedAt;delete next.purgedAt;
+    subs[i]=next;
+    save(KEYS.subs,subs);
+    closeModal('confirmModal');
+    refreshAll();
+    _syncResult(fbWriteItem({...subs[i],rejectedAt:null,purgedAt:null}),'Application reopened and synced.','Application reopened.');
+  };
+  openModal('confirmModal');
+}
 function rejectApp(appId){
-  document.getElementById('confirmMsg').textContent='Reject this application? The rider will need to re-apply.';
+  const _a=getSubs().find(s=>s&&s.id===appId);
+  document.getElementById('confirmMsg').textContent='Reject '+((_a&&_a.name)||'this application')+'? Their NRC, vehicle photos and documents are kept for '+PURGE_AFTER_DAYS+' days, then permanently deleted. The rider will need to re-apply.';
   document.getElementById('confirmOkBtn').textContent='Reject';
   document.getElementById('confirmOkBtn').onclick=()=>{
     const subs=getSubs();
@@ -2722,9 +3471,7 @@ function rejectApp(appId){
     save(KEYS.subs,subs);
     closeModal('confirmModal');
     refreshAll();
-    if(i>-1) fbWriteItem(subs[i])
-      .then(()=>showFbMsg('\u2705 Rejected and synced.','alert-ok'))
-      .catch(()=>showFbMsg('\u26a0\ufe0f Rejected locally. Will retry.','alert-warn'));
+    if(i>-1) _syncResult(fbWriteItem(subs[i]),'Rejected and synced.','Application rejected.');
   };
   openModal('confirmModal');
 }
@@ -2772,30 +3519,55 @@ function renderAdvertisers(){
           ${a.voucherEnabled?`<br>🎁 Rider reward: ${esc(a.voucherOffer||'—')} (${a.voucherModel==='spend'?'after K'+a.voucherSpendTarget+' spend':'every '+a.voucherVisitTarget+' visits'})`:''}
           ${a.txnId?`<br>💳 Txn ID: <code style="background:#d1fae5;color:#065f46;padding:.1rem .35rem;border-radius:4px;font-size:.78rem">${esc(a.txnId)}</code>`:''}
           ${a.notes?`<br><em style="color:var(--muted)">${esc(a.notes)}</em>`:''}
-          ${a.logoDataUrl?`<div style="margin-top:.5rem"><img src="${a.logoDataUrl}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Business logo"></div>`:''}
+          ${safeImgSrc(a.logoDataUrl)?`<div style="margin-top:.5rem"><img src="${safeImgSrc(a.logoDataUrl)}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" alt="Business logo"></div>`:''}
         </div>
         <span class="app-ref">${esc(a.ref||a.id)}</span>
       </div>
       <div class="app-actions">
         ${a.status==='pending'?`
-          <button class="btn btn-success btn-sm" onclick="openApproveAdvModal('${a.id}')">✅ Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="rejectAdv('${a.id}')">✗ Reject</button>
-          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${a.id}')">✏️ Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${a.id}')">🗑️</button>
+          <button class="btn btn-success btn-sm" onclick="openApproveAdvModal('${sid(a.id)}')">✅ Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="rejectAdv('${sid(a.id)}')">✗ Reject</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${sid(a.id)}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${sid(a.id)}')">🗑️</button>
         `:''}
         ${a.status==='active'?`
-          <button class="btn btn-warn btn-sm" onclick="openRenewAdvModal('${a.id}')">🔄 Renew</button>
-          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${a.id}')">✏️ Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${a.id}')">🗑️</button>
+          <button class="btn btn-warn btn-sm" onclick="openRenewAdvModal('${sid(a.id)}')">🔄 Renew</button>
+          <button class="btn btn-ghost btn-sm" onclick="openPaymentHistory('advertiser','${sid(a.id)}')">💳 Payments</button>
+          ${a.voucherEnabled?`<button class="btn btn-ghost btn-sm" onclick="showStaffPin('${sid(a.id)}')">🔑 Staff PINs</button>`:''}
+          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${sid(a.id)}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${sid(a.id)}')">🗑️</button>
         `:''}
         ${a.status==='rejected'?`
-          <button class="btn btn-success btn-sm" onclick="openApproveAdvModal('${a.id}')">✅ Re-approve</button>
-          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${a.id}')">✏️ Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${a.id}')">🗑️</button>
+          <button class="btn btn-success btn-sm" onclick="openApproveAdvModal('${sid(a.id)}')">✅ Re-approve</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${sid(a.id)}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAdv('${sid(a.id)}')">🗑️</button>
         `:''}
       </div>
     </div>`;
   }).join('');
+}
+
+// Riders and staff no longer read the full redemptions list: each visit also lives in a small copy at
+// visits/<subscription>/<business>/<id>. This writes those copies for visits logged before that existed (safe to repeat).
+async function rebuildVisitCopies(){
+  const n9=p=>{let d=String(p||'').replace(/\D/g,'');if(d.startsWith('260'))d=d.slice(3);else if(d.startsWith('0'))d=d.slice(1);return d;};
+  const byPhone={};
+  getSubs().forEach(s=>{const k=n9(s.phone);if(!k||!s.id)return;const c=byPhone[k];if(!c||(s.status==='active'&&c.status!=='active'))byPhone[k]=s;});
+  const up={};let skipped=0;
+  getRedemptions().forEach(r=>{
+    const s=byPhone[n9(r.riderPhone)];
+    if(!r.id||!r.advertiserId||!s){skipped++;return;}
+    const row={id:r.id,loggedAt:String(r.loggedAt||''),model:r.model==='spend'?'spend':'visit',amount:Math.max(0,Number(r.amount)||0),rewardFired:!!r.rewardFired,
+      visitNumberAtLog:Math.max(0,Number(r.visitNumberAtLog)||0),cumulativeSpendAtLog:Math.max(0,Number(r.cumulativeSpendAtLog)||0)};
+    if(/^[A-Z2-9]{2}$/.test(r.staffId||''))row.staffId=r.staffId;
+    up['visits/'+s.id+'/'+r.advertiserId+'/'+r.id]=row;
+  });
+  const keys=Object.keys(up);
+  if(!keys.length){alert('Nothing to rebuild'+(skipped?' ('+skipped+' visits had no matching rider).':'.'));return;}
+  try{
+    for(let i=0;i<keys.length;i+=200){const part={};keys.slice(i,i+200).forEach(k=>{part[k]=up[k];});await _fbDb.ref(FB_PATH).update(part);}
+    alert(keys.length+' visit copies written'+(skipped?'; '+skipped+' skipped (no matching rider).':'.'));
+  }catch(e){alert('Could not write: '+e.message+'\nCheck that the new rules are published.');}
 }
 
 function renderRedemptions(){
@@ -2836,7 +3608,7 @@ function renderRedemptions(){
         <div class="app-name">${esc(r.riderName||'Unknown rider')}${r.rewardFired?`<span class="badge badge-active" style="margin-left:.5rem;vertical-align:middle">Reward Fired</span>`:''}</div>
         <div class="app-meta">
           📞 ${esc(r.riderPhone||'—')} &nbsp;·&nbsp; 🏪 ${esc(r.advertiserName||'—')} &nbsp;·&nbsp; ${dateStr}<br>
-          ${modelStr}${r.amount?` &nbsp;·&nbsp; K${Number(r.amount).toLocaleString()} this visit`:''}
+          ${modelStr}${r.amount?` &nbsp;·&nbsp; K${Number(r.amount).toLocaleString()} this visit`:''}${r.staffId?` &nbsp;·&nbsp; 👤 ${esc((_staffNames[r.advertiserId+'/'+r.staffId])||('Staff '+r.staffId))}`:''}
           ${r.offerAtRedemption?`<br>🏷️ Offer at time: ${esc(r.offerAtRedemption)}`:''}
           ${r.note?`<br><em style="color:var(--muted)">${esc(r.note)}</em>`:''}
         </div>
@@ -2865,6 +3637,10 @@ function openApproveAdvModal(advId){
   document.getElementById('approveAdvPrice').value=a.price||ADV_TIER_PRICE[a.tier]||0;
   document.getElementById('approveAdvDuration').value='1';
   document.getElementById('approveAdvStart').value=todayStr();
+  document.getElementById('approveAdvPayMethod').value='';
+  const _aa=document.getElementById('approveAdvAmountPaid');
+  _aa.dataset.touched='';
+  _aa.value=a.price||ADV_TIER_PRICE[a.tier]||'';
   const infoEl=document.getElementById('approveAdvInfo');
   if(infoEl){
     const meta=ADV_CATEGORY_META[a.category]||ADV_CATEGORY_META.other;
@@ -2877,6 +3653,13 @@ function openApproveAdvModal(advId){
   openModal('approveAdvModal');
 }
 
+function onApproveAdvTermsChange(){
+  const amt=document.getElementById('approveAdvAmountPaid');
+  if(!amt||amt.dataset.touched==='1')return;       // typed by hand: leave it alone
+  const price=parseFloat(document.getElementById('approveAdvPrice').value)||0;
+  const dur=parseInt(document.getElementById('approveAdvDuration').value)||1;
+  amt.value=price?price*dur:'';
+}
 function confirmApproveAdv(){
   const advId=document.getElementById('approveAdvId').value;
   const price=parseFloat(document.getElementById('approveAdvPrice').value)||0;
@@ -2884,12 +3667,17 @@ function confirmApproveAdv(){
   const start=document.getElementById('approveAdvStart').value||todayStr();
   const showMsg=(t,cls)=>{const el=document.getElementById('approveAdvMsg');if(el){el.textContent=t;el.className='alert '+cls;el.style.display='block';}};
   if(!price){showMsg('Monthly price is required.','alert-err');return;}
+  // 0 is a real amount; blank means "not entered"
+  const payMethod=document.getElementById('approveAdvPayMethod').value;
+  const rawAmt=document.getElementById('approveAdvAmountPaid').value.trim();
+  const amountPaid=rawAmt===''?NaN:parseFloat(rawAmt);
+  if(!isFinite(amountPaid)||amountPaid<0){showMsg('Enter the amount paid. Use 0 if nothing was paid.','alert-err');return;}
+  if(amountPaid>0&&!payMethod){showMsg('Select the payment method.','alert-err');return;}
   const ads=getAdvertisers();
   const i=ads.findIndex(a=>a.id===advId);
   if(i<0)return;
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+parseInt(duration));
-  ads[i]={...ads[i],status:'active',price,duration,start,expiry:toDateStr(expDate),approvedAt:new Date().toISOString(),activatedBy:state.adminName||'Admin'};
+  const expDate=new Date(addMonths(start,parseInt(duration))+'T00:00:00Z');
+  ads[i]={...ads[i],status:'active',price,duration,start,expiry:toDateStr(expDate),paymentMethod:payMethod,amountPaid,paymentDate:todayStr(),approvedAt:new Date().toISOString(),activatedBy:state.adminName||'Admin'};
   // Promote any zone the advertiser typed in (rather than picked) to the
   // official zones list, same as for rider applications.
   const acceptCustom=document.getElementById('acceptAdvCustomZone')?.checked;
@@ -2903,11 +3691,56 @@ function confirmApproveAdv(){
     }
   }
   save(KEYS.advertisers,ads);
+  recordPayment({refType:'advertiser',refId:ads[i].id,name:ads[i].name,kind:'approval',plan:ads[i].tier,price,amount:amountPaid,method:payMethod,
+    periodStart:start,periodEnd:ads[i].expiry,txnId:ads[i].txnId});
   refreshAll();
   closeModal('approveAdvModal');
-  fbAdvWriteItem(ads[i])
-    .then(()=>showFbMsg('\u2705 Advertiser activated and synced!','alert-ok'))
-    .catch(err=>showFbMsg('\u26a0\ufe0f Activated locally. Firebase: '+err.message,'alert-warn'));
+  _syncResult(fbAdvWriteItem(ads[i]),'Advertiser activated and synced!','Advertiser activated.');
+}
+
+// ── Staff PINs for the partner Verify page ──
+// Each counter staff member gets their own PIN (staff_pins/<advId>/<code>, admins only). The database accepts a visit
+// only from a phone unlocked with a live PIN, stamps it with that person's code, and removing a PIN locks that person's
+// phone out at once without touching the others.
+const _staffNames={};
+let _staffAdv='';
+function _rnd(n){const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789',b=new Uint8Array(n);crypto.getRandomValues(b);return Array.from(b,x=>A[x%32]).join('');}
+function showStaffPin(advId){
+  const ad=getAdvertisers().find(x=>x.id===advId);if(!ad)return;
+  _staffAdv=advId;
+  document.getElementById('staffPinTitle').textContent=ad.name;
+  document.getElementById('staffNameInput').value='';
+  renderStaffList();openModal('staffPinModal');
+}
+async function renderStaffList(){
+  const box=document.getElementById('staffPinList');box.textContent='Loading…';
+  try{
+    const v=(await _fbDb.ref(FB_PATH+'/staff_pins/'+_staffAdv).once('value')).val();
+    const rows=v&&typeof v==='object'?Object.entries(v).filter(([,s])=>s&&s.pin):[];   // a plain string is a leftover single PIN: ignored
+    rows.forEach(([id,s])=>{_staffNames[_staffAdv+'/'+id]=s.name;});
+    box.innerHTML=rows.length?rows.map(([id,s])=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+        <div><strong>${esc(s.name)}</strong><br><code style="font-size:1.05rem;letter-spacing:.1em">${id}-${s.pin.slice(0,4)}-${s.pin.slice(4)}</code></div>
+        <button class="btn btn-danger btn-sm" onclick="removeStaff('${id}')">Remove</button></div>`).join('')
+      :'<p style="font-size:.84rem;color:var(--muted)">No staff yet. Add each counter staff member so everyone has their own PIN.</p>';
+  }catch(e){box.textContent='Could not reach the database. Check your connection and that the new rules are published.';}
+}
+async function addStaff(){
+  const inp=document.getElementById('staffNameInput'),name=inp.value.trim().slice(0,40);
+  if(!name){inp.focus();return;}
+  try{
+    const ref=_fbDb.ref(FB_PATH+'/staff_pins/'+_staffAdv);
+    const cur=(await ref.once('value')).val();
+    const used=new Set(cur&&typeof cur==='object'?Object.keys(cur):[]);
+    let id;do{id=_rnd(2);}while(used.has(id));
+    await ref.child(id).set({pin:_rnd(8),name});
+    inp.value='';
+  }catch(e){alert('Could not save. Check your connection and that the new rules are published.');}
+  renderStaffList();
+}
+async function removeStaff(id){
+  if(!confirm('Remove this PIN? That person\'s phone is locked out straight away.'))return;
+  try{await _fbDb.ref(FB_PATH+'/staff_pins/'+_staffAdv+'/'+id).remove();}catch(e){alert('Could not remove. Check your connection.');}
+  renderStaffList();
 }
 
 function rejectAdv(advId){
@@ -2920,9 +3753,7 @@ function rejectAdv(advId){
     save(KEYS.advertisers,ads);
     closeModal('confirmModal');
     refreshAll();
-    if(i>-1) fbAdvWriteItem(ads[i])
-      .then(()=>showFbMsg('\u2705 Rejected and synced.','alert-ok'))
-      .catch(()=>showFbMsg('\u26a0\ufe0f Rejected locally. Will retry.','alert-warn'));
+    if(i>-1) _syncResult(fbAdvWriteItem(ads[i]),'Rejected and synced.','Listing rejected.');
   };
   openModal('confirmModal');
 }
@@ -2937,6 +3768,14 @@ function onAdvTierChange(){
 function onRenewAdvTierChange(){
   const tier=document.getElementById('renewAdvTier').value;
   document.getElementById('renewAdvPrice').value=ADV_TIER_PRICE[tier]||0;
+  onRenewAdvTermsChange();
+}
+function onRenewAdvTermsChange(){
+  const amt=document.getElementById('renewAdvAmountPaid');
+  if(!amt||amt.dataset.touched==='1')return;       // typed by hand: leave it alone
+  const price=parseFloat(document.getElementById('renewAdvPrice').value)||0;
+  const dur=parseInt(document.getElementById('renewAdvDuration').value)||1;
+  amt.value=price?price*dur:'';
 }
 
 function _populateAdvModal(a){
@@ -2981,8 +3820,7 @@ function saveAdv(){
   const status=document.getElementById('advStatus').value;
   const offer=document.getElementById('advOffer').value.trim();
   const notes=document.getElementById('advNotes').value.trim();
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+parseInt(duration));
+  const expDate=new Date(addMonths(start,parseInt(duration))+'T00:00:00Z');
   const expiry=toDateStr(expDate);
   const ads=getAdvertisers();
   let item;
@@ -2998,9 +3836,7 @@ function saveAdv(){
   save(KEYS.advertisers,ads);
   closeModal('advModal');
   refreshAll();
-  fbAdvWriteItem(item)
-    .then(()=>showFbMsg('✅ Advertiser saved and synced!','alert-ok'))
-    .catch(err=>showFbMsg('⚠️ Saved locally. Firebase: '+err.message,'alert-warn'));
+  _syncResult(fbAdvWriteItem(item),'Advertiser saved and synced!','Advertiser saved.');
 }
 
 function deleteAdv(advId){
@@ -3009,6 +3845,7 @@ function deleteAdv(advId){
   document.getElementById('confirmOkBtn').onclick=async()=>{
     const ads=getAdvertisers().filter(a=>a.id!==advId);
     save(KEYS.advertisers,ads);
+    const deletedAt=new Date().toISOString();
     // Drop any queued add/edit writes for this advertiser — a delete
     // supersedes them, same dedupe pattern used for zone writes.
     _pendingAdvWrites=_pendingAdvWrites.filter(w=>(w&&w.type==='delete'?w.id:w?.id)!==advId);
@@ -3016,18 +3853,18 @@ function deleteAdv(advId){
     if(_fbDb&&_fbConnected){
       try{
         setSyncDot('syncing');
-        await _fbDb.ref(FB_PATH+'/advertisers/'+advId).remove();
+        await _fbDb.ref(FB_PATH+'/advertisers/'+advId).set(_tomb(advId,deletedAt));   // tombstone, not remove()
         setSyncDot('live');
         _persistPendingAdvWrites();
         showFbMsg('✅ Advertiser deleted and synced.','alert-ok');
       }catch(e){
         setSyncDot('live');
-        _pendingAdvWrites.push({type:'delete',id:advId});
+        _pendingAdvWrites.push({type:'delete',id:advId,deletedAt});
         _persistPendingAdvWrites();
         showFbMsg('⚠️ Deleted locally. Firebase: '+e.message,'alert-warn');
       }
     }else{
-      _pendingAdvWrites.push({type:'delete',id:advId});
+      _pendingAdvWrites.push({type:'delete',id:advId,deletedAt});
       _persistPendingAdvWrites();
       showFbMsg('⚠️ Deleted locally. Will sync when reconnected.','alert-warn');
     }
@@ -3043,14 +3880,21 @@ function openRenewAdvModal(advId){
   document.getElementById('renewAdvId').value=advId;
   document.getElementById('renewAdvTier').value=a.tier||'basic';
   document.getElementById('renewAdvPrice').value=a.price||ADV_TIER_PRICE[a.tier||'basic']||300;
-  document.getElementById('renewAdvStart').value=todayStr();
+  // Same rule as rider renewals: an early renewal continues from the current expiry (no paid
+  // days lost); a lapsed listing restarts today. The date stays editable.
+  const t=todayStr();
+  const continues=!!(a.expiry&&a.expiry>t&&a.status==='active');
+  document.getElementById('renewAdvStart').value=continues?a.expiry:t;
   document.getElementById('renewAdvDuration').value='1';
   document.getElementById('renewAdvPayMethod').value='';
-  document.getElementById('renewAdvAmountPaid').value='';
+  const amt=document.getElementById('renewAdvAmountPaid');
+  amt.dataset.touched='';
+  amt.value=document.getElementById('renewAdvPrice').value||'';
   const meta=ADV_CATEGORY_META[a.category]||ADV_CATEGORY_META.other;
   document.getElementById('renewAdvInfo').innerHTML=`
     <strong>${esc(a.name)}</strong> · ${meta.icon} ${esc(meta.label)}<br>
     <span style="color:var(--muted);font-size:.78rem">📞 ${esc(a.phone||'—')} &nbsp;·&nbsp; Current expiry: ${fmtDate(a.expiry)} &nbsp;·&nbsp; Tier: ${esc((a.tier||'basic').toUpperCase())}</span>
+    ${continues?'<br><span style="color:var(--accent);font-size:.78rem">New period continues from the current expiry, so no paid days are lost. Change the start date if needed.</span>':''}
   `;
   openModal('renewAdvModal');
 }
@@ -3062,26 +3906,27 @@ function confirmRenewAdv(){
   const start=document.getElementById('renewAdvStart').value||todayStr();
   const duration=parseInt(document.getElementById('renewAdvDuration').value)||1;
   const payMethod=document.getElementById('renewAdvPayMethod').value;
-  const amountPaid=parseFloat(document.getElementById('renewAdvAmountPaid').value)||0;
+  // 0 is a real amount (waived / free renewal): record 0, never the previous payment. Blank = not entered.
+  const rawAmt=document.getElementById('renewAdvAmountPaid').value.trim();
+  const amountPaid=rawAmt===''?NaN:parseFloat(rawAmt);
   if(!price){alert('Please enter a monthly price.');return;}
+  if(!isFinite(amountPaid)||amountPaid<0){alert('Enter the amount paid. Use 0 if nothing was paid.');return;}
+  if(amountPaid>0&&!payMethod){alert('Select the payment method.');return;}
   const ads=getAdvertisers();
   const i=ads.findIndex(a=>a.id===advId);
   if(i<0)return;
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+duration);
+  if(ads[i].status==='pending'||ads[i].status==='rejected'){alert('This listing has not been approved. Approve it first.');return;}
+  const expDate=new Date(addMonths(start,duration)+'T00:00:00Z');
   ads[i]={...ads[i],status:'active',tier,price,start,duration:String(duration),expiry:toDateStr(expDate),
-    paymentMethod:payMethod||ads[i].paymentMethod,amountPaid:amountPaid||ads[i].amountPaid,
+    paymentMethod:payMethod,amountPaid,
     paymentDate:todayStr(),renewedAt:new Date().toISOString()};
   save(KEYS.advertisers,ads);
+  recordPayment({refType:'advertiser',refId:ads[i].id,name:ads[i].name,kind:'renewal',plan:tier,price,amount:amountPaid,method:payMethod,
+    paidOn:todayStr(),periodStart:start,periodEnd:toDateStr(expDate)});
   closeModal('renewAdvModal');
   refreshAll();
-  fbAdvWriteItem(ads[i])
-    .then(()=>showFbMsg('✅ Listing renewed until '+fmtDate(toDateStr(expDate)),'alert-ok'))
-    .catch(err=>{
-      _pendingAdvWrites.push(ads[i]);
-      _persistPendingAdvWrites();
-      showFbMsg('⚠️ Renewed locally. Firebase sync pending.','alert-warn');
-    });
+  // fbAdvWriteItem already queues the write when offline or on error (no second push here)
+  _syncResult(fbAdvWriteItem(ads[i]),'Listing renewed until '+fmtDate(toDateStr(expDate))+' and synced.','Listing renewed until '+fmtDate(toDateStr(expDate))+'.');
 }
 
 // ══════════════════════════════════════════════════════
@@ -3096,7 +3941,7 @@ function renderZoneManager(){
     <div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:8px;background:var(--surface2);border:1px solid var(--border);margin-bottom:.4rem">
       <span style="font-size:.85rem;flex:1;font-weight:600;color:var(--text)">${esc(z.name)}</span>
       ${z.desc?'<span style="font-size:.75rem;color:var(--muted);flex:1">'+esc(z.desc)+'</span>':''}
-      <button class="btn btn-danger btn-sm" style="padding:.25rem .55rem;font-size:.72rem" onclick="adminDeleteZone('${z.id}')">✕</button>
+      <button class="btn btn-danger btn-sm" style="padding:.25rem .55rem;font-size:.72rem" onclick="adminDeleteZone('${sid(z.id)}')">✕</button>
     </div>`).join('');
 }
 
@@ -3168,11 +4013,12 @@ function renderSubscriptions(){
       <td>${statusBadge}</td>
       <td>
         <div class="row-actions">
-          <button class="btn btn-ghost btn-sm" onclick="openEditSubModal('${s.id}')">✏️</button>
-          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${s.id}')" title="RTSA Compliance Docs">📄</button>
-          <button class="btn btn-warn btn-sm" onclick="openRenewModal('${s.id}')">🔄</button>
-          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${s.id}')">🆔</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteSub('${s.id}')">🗑️</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditSubModal('${sid(s.id)}')">✏️</button>
+          <button class="btn btn-ghost btn-sm" onclick="showComplianceDocs('${sid(s.id)}')" title="RTSA Compliance Docs">📄</button>
+          <button class="btn btn-warn btn-sm" onclick="openRenewModal('${sid(s.id)}')">🔄</button>
+          <button class="btn btn-ghost btn-sm" onclick="openPaymentHistory('rider','${sid(s.id)}')" title="Payment history">💳</button>
+          <button class="btn btn-ghost btn-sm" onclick="showIdCard('${sid(s.id)}')">🆔</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSub('${sid(s.id)}')">🗑️</button>
         </div>
       </td>
     </tr>`;
@@ -3195,31 +4041,46 @@ function showComplianceDocs(id){
   let html=rows.map(([l,v])=>`<div style="display:flex;gap:.5rem;margin-bottom:.4rem"><span style="color:var(--muted);min-width:90px;flex-shrink:0">${l}</span><span>${v}</span></div>`).join('');
   html+=`<div style="margin-top:.7rem"><span style="color:var(--muted);font-size:.78rem;display:block;margin-bottom:.4rem">Uploaded Documents</span>
     <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-      ${s.rslDoc?`<div><img src="${s.rslDoc}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Road Service Licence</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Road Service Licence not uploaded</span>'}
-      ${s.policeDoc?`<div><img src="${s.policeDoc}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Police Clearance Certificate</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Police Clearance Certificate not uploaded</span>'}
+      ${safeImgSrc(s.rslDoc)?`<div><img src="${safeImgSrc(s.rslDoc)}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Road Service Licence</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Road Service Licence not uploaded</span>'}
+      ${safeImgSrc(s.policeDoc)?`<div><img src="${safeImgSrc(s.policeDoc)}" style="width:150px;height:112px;object-fit:cover;border-radius:8px;border:1px solid var(--border)"><div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:.2rem">Police Clearance Certificate</div></div>`:'<span style="font-size:.78rem;color:var(--danger)">Police Clearance Certificate not uploaded</span>'}
     </div>
   </div>`;
   document.getElementById('complianceBody').innerHTML=html;
   openModal('complianceModal');
 }
 
+function _canonZone(v){   // "mansa" -> "Mansa": the public zone filter is case-sensitive
+  v=(v||'').trim().slice(0,100);if(!v)return v;
+  const m=getZones().find(z=>z&&z.name&&z.name.toLowerCase()===v.toLowerCase());
+  return m?m.name:v;
+}
+function fillSubZoneList(){
+  const dl=document.getElementById('subZoneList');
+  if(!dl)return;
+  dl.innerHTML=getZones().filter(z=>z&&z.name).map(z=>'<option value="'+esc(z.name)+'"></option>').join('');
+}
 function openAddSubModal(){
+  fillSubZoneList();
   document.getElementById('subEditId').value='';
   document.getElementById('subModalTitle').textContent='Add Rider';
-  ['subName','subPhone','subPrice','subNotes','subHours','subRSLNo','subRSLExpiry'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';})
+  ['subName','subPhone','subZone','subZone2','subPrice','subNotes','subHours','subRSLNo','subRSLExpiry'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';})
   const tripsEl=document.getElementById('subTrips');if(tripsEl)tripsEl.value=0;;
   document.getElementById('subStart').value=todayStr();
   document.getElementById('subStatus').value='active';
+  const _m1=document.getElementById('subMsg');if(_m1)_m1.style.display='none';
   openModal('subModal');
 }
 
 function openEditSubModal(id){
   const s=getSubs().find(x=>x.id===id);
   if(!s)return;
+  fillSubZoneList();
   document.getElementById('subEditId').value=id;
   document.getElementById('subModalTitle').textContent='Edit Rider';
   document.getElementById('subName').value=s.name||'';
   document.getElementById('subPhone').value=s.phone||'';
+  document.getElementById('subZone').value=s.zone||'';
+  document.getElementById('subZone2').value=s.zone2||'';
   document.getElementById('subType').value=s.type||'Motorcycle Taxi';
   document.getElementById('subPlan').value=s.plan||'Basic';
   document.getElementById('subPrice').value=s.price||'';
@@ -3231,6 +4092,7 @@ function openEditSubModal(id){
   document.getElementById('subTrips').value=s.trips||0;
   document.getElementById('subRSLNo').value=s.rslNo||'';
   document.getElementById('subRSLExpiry').value=s.rslExpiry||'';
+  const _m2=document.getElementById('subMsg');if(_m2)_m2.style.display='none';
   openModal('subModal');
 }
 
@@ -3238,6 +4100,8 @@ function saveSub(){
   const editId=document.getElementById('subEditId').value;
   const name=document.getElementById('subName').value.trim();
   const phone=document.getElementById('subPhone').value.trim();
+  const zone=_canonZone(document.getElementById('subZone').value);
+  const zone2=_canonZone(document.getElementById('subZone2').value);
   const type=document.getElementById('subType').value;
   const plan=document.getElementById('subPlan').value;
   const price=parseFloat(document.getElementById('subPrice').value)||0;
@@ -3249,16 +4113,21 @@ function saveSub(){
   const trips=parseInt(document.getElementById('subTrips')?.value)||0;
   const rslNo=document.getElementById('subRSLNo')?.value.trim()||'';
   const rslExpiry=document.getElementById('subRSLExpiry')?.value||'';
-  if(!name){alert('Name is required.');return;}
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+parseInt(duration));
-  const expiry=toDateStr(expDate);
+  const msgEl=document.getElementById('subMsg');
+  const fail=t=>{if(msgEl){msgEl.textContent=t;msgEl.className='alert alert-err';msgEl.style.display='block';msgEl.scrollIntoView&&msgEl.scrollIntoView({block:'nearest'});}else alert(t);};
+  if(msgEl)msgEl.style.display='none';
+  if(!name){fail('Name is required.');return;}
+  if(!zone){fail('Zone / Region is required, so the rider shows up in the right zone on the public directory.');return;}
+  const expiry=addMonths(start,duration);
   const subs=getSubs();
+  // Item 13: the manual form must not be a way around the approval rules
+  const gateErrors=manualRiderGate({status,rslNo,rslExpiry,expiry,prev:editId?subs.find(s=>s.id===editId):null,list:subs});
+  if(gateErrors.length){fail('Cannot save: '+gateErrors.join(' '));return;}
   if(editId){
     const i=subs.findIndex(s=>s.id===editId);
-    if(i>-1)subs[i]=applyAutoStatus({...subs[i],name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry});
+    if(i>-1)subs[i]=applyAutoStatus({...subs[i],name,phone,zone,zone2,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry});
   }else{
-    subs.push(applyAutoStatus({id:uid(),name,phone,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry,created:new Date().toISOString(),availability:'available'}));
+    subs.push(applyAutoStatus({id:uid(),name,phone,zone,zone2,type,plan,price,start,duration,expiry,status,notes,hours,trips,rslNo,rslExpiry,created:new Date().toISOString(),availability:'available'}));
   }
   save(KEYS.subs,subs);
   // Write only the changed item (or do full save for new additions)
@@ -3266,18 +4135,22 @@ function saveSub(){
   closeModal('subModal');
   refreshAll();
   if(changedItem){
-    fbWriteItem(changedItem)
-      .then(()=>showFbMsg('✅ Rider saved and synced.','alert-ok'))
-      .catch(err=>showFbMsg('⚠️ Saved locally. Firebase: '+err.message,'alert-warn'));
+    _syncResult(fbWriteItem(changedItem),'Rider saved and synced.','Rider saved.');
   }
 }
 
 function deleteSub(id){
-  document.getElementById('confirmMsg').textContent='Delete this rider? This cannot be undone.';
+  const _who=getSubs().find(s=>s&&s.id===id);
+  const _label=_who?((_who.name||'Unnamed rider')+(_who.phone?' ('+_who.phone+')':'')):'this rider';
+  document.getElementById('confirmMsg').textContent='Delete '+_label+'? This cannot be undone.';
   document.getElementById('confirmOkBtn').textContent='Delete';
   document.getElementById('confirmOkBtn').onclick=async()=>{
     const remaining=getSubs().filter(s=>s.id!==id);
     save(KEYS.subs,remaining);
+    const deletedAt=new Date().toISOString();
+    // A delete supersedes any queued edit for this rider
+    _pendingWrites=_pendingWrites.filter(w=>!(w&&((w.item&&w.item.id===id)||(w.type==='delete'&&w.id===id))));
+    _persistPendingWrites();
     closeModal('confirmModal');
     refreshAll();
     // Remove the single child node directly — same write-permission scope
@@ -3289,17 +4162,17 @@ function deleteSub(id){
     if(_fbDb&&_fbConnected){
       try{
         setSyncDot('syncing');
-        await _fbDb.ref(FB_PATH+'/subscriptions/'+id).remove();
+        await _fbDb.ref(FB_PATH+'/subscriptions/'+id).set(_tomb(id,deletedAt));   // tombstone, not remove()
         setSyncDot('live');
         showFbMsg('✅ Rider deleted and synced.','alert-ok');
       }catch(e){
         setSyncDot('live');
-        _pendingWrites.push({type:'delete',id});
+        _pendingWrites.push({type:'delete',id,deletedAt});
         _persistPendingWrites();
         showFbMsg('⚠️ Deleted locally. Firebase: '+e.message,'alert-warn');
       }
     }else{
-      _pendingWrites.push({type:'delete',id});
+      _pendingWrites.push({type:'delete',id,deletedAt});
       _persistPendingWrites();
       showFbMsg('⚠️ Deleted locally. Will sync when reconnected.','alert-warn');
     }
@@ -3336,7 +4209,7 @@ function renderRenewals(){
         <div class="renewal-sub">${esc(s.phone||'—')} · <span class="pill-plan">${esc(s.plan||'—')}</span> · K${(s.price||0).toLocaleString()}/mo · Expiry: ${fmtDate(s.expiry)}</div>
       </div>
       ${tag}
-      <button class="btn btn-warn btn-sm" onclick="openRenewModal('${s.id}')">🔄 Renew</button>
+      <button class="btn btn-warn btn-sm" onclick="openRenewModal('${sid(s.id)}')">🔄 Renew</button>
     </div>`;
   }).join('');
 }
@@ -3347,17 +4220,31 @@ function openRenewModal(id){
   document.getElementById('renewSubId').value=id;
   document.getElementById('renewPlan').value=s.plan||'Basic';
   document.getElementById('renewPrice').value=s.price||'';
-  document.getElementById('renewStart').value=todayStr();
+  // Item 14: renewing early continues from the current expiry so already-paid days are not lost;
+  // a lapsed subscription restarts from today. The date stays editable.
+  const t=todayStr();
+  const continues=!!(s.expiry&&s.expiry>t&&(s.status==='active'||s.status==='rsl_expired'));
+  document.getElementById('renewStart').value=continues?s.expiry:t;
   document.getElementById('renewDuration').value='1';
   document.getElementById('renewPayMethod').value='';
-  document.getElementById('renewAmountPaid').value='';
+  const amt=document.getElementById('renewAmountPaid');
+  amt.dataset.touched='';
+  amt.value=s.price?s.price:'';
   document.getElementById('renewRiderInfo').innerHTML=`
     <strong>${esc(s.name)}</strong> · ${vehicleIcon(s.type)} ${esc(s.type||'')}<br>
     <span style="color:var(--muted);font-size:.8rem">Current expiry: ${fmtDate(s.expiry)} · Plan: ${esc(s.plan||'—')}</span>
+    ${continues?'<br><span style="color:var(--accent);font-size:.78rem">New period continues from the current expiry, so no paid days are lost. Change the start date if needed.</span>':''}
   `;
   openModal('renewModal');
 }
 
+function onRenewTermsChange(){
+  const amt=document.getElementById('renewAmountPaid');
+  if(!amt||amt.dataset.touched==='1')return;       // admin typed an amount: leave it alone
+  const price=parseFloat(document.getElementById('renewPrice').value)||0;
+  const dur=parseInt(document.getElementById('renewDuration').value)||1;
+  amt.value=price?price*dur:'';
+}
 function confirmRenew(){
   const id=document.getElementById('renewSubId').value;
   const plan=document.getElementById('renewPlan').value;
@@ -3365,25 +4252,31 @@ function confirmRenew(){
   const start=document.getElementById('renewStart').value||todayStr();
   const duration=parseInt(document.getElementById('renewDuration').value)||1;
   const payMethod=document.getElementById('renewPayMethod').value;
-  const amountPaid=parseFloat(document.getElementById('renewAmountPaid').value)||0;
+  // Item 14: 0 is a real amount (waived / free renewal) and must be recorded as 0, not
+  // silently replaced by the previous payment. Blank means "not entered", so ask.
+  const rawAmt=document.getElementById('renewAmountPaid').value.trim();
+  const amountPaid=rawAmt===''?NaN:parseFloat(rawAmt);
   if(!price){alert('Please enter a monthly price.');return;}
+  if(!isFinite(amountPaid)||amountPaid<0){alert('Enter the amount paid. Use 0 if nothing was paid.');return;}
+  if(amountPaid>0&&!payMethod){alert('Select the payment method.');return;}
   const subs=getSubs();
   const i=subs.findIndex(s=>s.id===id);
   if(i<0)return;
-  const expDate=new Date(start);
-  expDate.setMonth(expDate.getMonth()+duration);
-  subs[i]={...subs[i],status:'active',plan,price,start,duration:String(duration),expiry:toDateStr(expDate),
-    paymentMethod:payMethod||subs[i].paymentMethod,amountPaid:amountPaid||subs[i].amountPaid,
-    paymentDate:todayStr(),renewedAt:new Date().toISOString()};
+  if(subs[i].status==='pending'||subs[i].status==='rejected'){alert('This is an application, not a subscriber. Approve it from Applications first.');return;}
+  const expiry=addMonths(start,duration);
+  // applyAutoStatus: a renewal must not lift an RSL suspension or reactivate an already-lapsed period
+  subs[i]=applyAutoStatus({...subs[i],status:'active',plan,price,start,duration:String(duration),expiry,
+    paymentMethod:payMethod,amountPaid,
+    paymentDate:todayStr(),renewedAt:new Date().toISOString()});
+  recordPayment({refType:'rider',refId:subs[i].id,name:subs[i].name,kind:'renewal',plan,price,amount:amountPaid,method:payMethod,
+    paidOn:todayStr(),periodStart:start,periodEnd:expiry});
+  const st=subs[i].status;
+  const base='Subscription renewed until '+fmtDate(expiry)+(st==='rsl_expired'?', but the rider stays suspended (RSL expired '+fmtDate(subs[i].rslExpiry)+')':st==='expired'?', but that date has already passed':'');
   save(KEYS.subs,subs);
-  fbWriteItem(subs[i]).catch(e=>{
-    _pendingWrites.push({type:'item',item:subs[i]});
-    _persistPendingWrites();
-    showFbMsg('⚠️ Renewed locally. Firebase sync will retry when online.','alert-warn');
-  });
   closeModal('renewModal');
   refreshAll();
-  showFbMsg('✅ Subscription renewed until '+fmtDate(toDateStr(expDate)),'alert-ok');
+  // fbWriteItem already queues the write when offline or on error (no second push here)
+  _syncResult(fbWriteItem(subs[i]),base+' and synced.',base+'.');
 }
 
 // ══════════════════════════════════════════════════════
@@ -3434,7 +4327,7 @@ function renderZoneWaGroupList(){
       <label style="font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:.3rem">${esc(z.name)}</label>
       <div style="display:flex;gap:.5rem">
         <input type="url" id="waGroup_${z.id}" placeholder="https://chat.whatsapp.com/..." value="${esc(z.waGroup||'')}" style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:.55rem .8rem;color:var(--text);font-size:.85rem;outline:none"/>
-        <button class="btn btn-success btn-sm" onclick="saveZoneWaGroupInput('${z.id}')">Save</button>
+        <button class="btn btn-success btn-sm" onclick="saveZoneWaGroupInput('${sid(z.id)}')">Save</button>
       </div>
     </div>`).join('');
 }
@@ -3477,23 +4370,18 @@ function saveWarnDays(){
   alert('Warning window saved.');
 }
 
-function changePassword(){
-  const cur=document.getElementById('curPw').value;
-  const nw=document.getElementById('newPw').value;
-  const conf=document.getElementById('confPw').value;
+async function sendPasswordReset(){
   const msg=document.getElementById('pwMsg');
-  const show=(t,cls)=>{msg.textContent=t;msg.className='alert '+cls;msg.style.display='block';setTimeout(()=>msg.style.display='none',4000);};
-  if(cur!==getPassword()){show('Current password is incorrect.','alert-err');return;}
-  if(nw.length<6){show('New password must be at least 6 characters.','alert-err');return;}
-  if(nw!==conf){show('Passwords do not match.','alert-err');return;}
-  save(KEYS.pw,nw);
-  show('Password updated successfully.','alert-ok');
-  ['curPw','newPw','confPw'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const show=(x,cls)=>{msg.textContent=x;msg.className='alert '+cls;msg.style.display='block';setTimeout(()=>msg.style.display='none',6000);};
+  if(!_fbAuth){show('Not connected to Firebase.','alert-err');return;}
+  try{await _fbAuth.sendPasswordResetEmail(ADMIN_FIREBASE_EMAIL);show('Reset link sent to '+ADMIN_FIREBASE_EMAIL+'.','alert-ok');}
+  catch(e){show('Could not send the reset email: '+e.message,'alert-err');}
 }
 
 function clearAllData(){
   if(!confirm('Clear all local subscription data? Firebase data is not affected.'))return;
   localStorage.removeItem(KEYS.subs);
+  _imgMem.s={};
   refreshAll();
   alert('Local data cleared.');
 }
@@ -3514,16 +4402,10 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelec
   }
 })();
 
-// ── AUTO-CONNECT FIREBASE ON PAGE LOAD ──────────────────────────────────────
-// Strategy:
-//   1. Always run on https/http (not file://).
-//   2. Try to reuse the Firebase Auth persisted session first (no password
-//      needed if the browser already has a valid token from a previous login).
-//   3. If Auth session is gone, fall back to the password stored in
-//      sessionStorage (set when the user typed their password this tab session).
-//   4. Never call window.prompt — if neither source has a password, we connect
-//      to the DB in read-only-listener mode only (public data still loads) and
-//      show a small banner prompting the user to log in to enable writes.
+// ── RESTORE FIREBASE SESSION ON PAGE LOAD ───────────────────────────────────
+// The panel opens only when Firebase Auth confirms a real admin session
+// (persisted from an earlier sign-in). Otherwise the login page stays up.
+// Nothing about "being logged in" is stored by this page.
 (function(){
   const isHosted=location.protocol==='https:'||location.protocol==='http:';
   window.addEventListener('DOMContentLoaded',()=>{_updatePendingBadge();});
@@ -3531,41 +4413,15 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelec
 
   window.addEventListener('DOMContentLoaded',()=>{
     setTimeout(async()=>{
-      // Restore UI session on refresh — if the admin was logged in before,
-      // skip the login page immediately (password already validated earlier).
-      const loggedIn=!!localStorage.getItem('mc_logged_in');
-      if(loggedIn) _showApp();
-
       const cfg=getSavedFbConfig();
       if(!cfg)return;
-
-      // Populate the Firebase config textarea for visibility
       const inp=document.getElementById('fbConfigInput');
       if(inp)inp.value=JSON.stringify(cfg,null,2);
-
-      // Populate the dedicated Firebase password field too, so the admin
-      // sees at a glance that a password is (or isn't) already saved.
-      const pwInp=document.getElementById('fbPwInput');
-      const savedFbPw=getSavedFbPw();
-      if(pwInp&&savedFbPw)pwInp.value=savedFbPw;
-
-      // connectFirebase will reuse the persisted Firebase Auth session if
-      // still valid, or fall back to savedFbPw, so this can work silently
-      // with no password passed in at all.
-      try{
-        await connectFirebase(JSON.stringify(cfg));
-        if(!_fbConnected&&!savedFbPw&&loggedIn){
-          // No password saved anywhere and no persisted session worked —
-          // send the admin straight to the field that fixes it, instead of
-          // leaving them staring at a silent "not connected" status.
-          showPage('firebase');
-          showFbMsg('Enter the Firebase account password below to enable sync.','alert-warn');
-        }
-      }catch(e){
-        console.warn('Auto-connect: auth unavailable.',e.message);
-        setFbStatus(false,'Session expired — please log out and back in');
-        if(loggedIn)showPage('firebase');
-      }
+      const info=document.getElementById('loginInfo');
+      if(info){info.textContent='Checking saved session…';info.style.display='block';}
+      const ok=await connectFirebase(JSON.stringify(cfg));
+      if(info)info.style.display='none';
+      if(ok)_showApp();
     },300);
   });
 })();
