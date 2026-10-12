@@ -958,8 +958,8 @@
           <input type="text" id="subZone" list="subZoneList" maxlength="100" placeholder="Start typing, e.g. Mansa" autocomplete="off"/>
           <datalist id="subZoneList"></datalist>
         </div>
-        <div class="form-row">
-          <label>Second Zone (optional)</label>
+        <div class="form-row" id="subZone2Row">
+          <label>Second Zone (optional, Standard/Premium only)</label>
           <input type="text" id="subZone2" list="subZoneList" maxlength="100" placeholder="Another area the rider covers" autocomplete="off"/>
         </div>
         <div class="form-row">
@@ -975,7 +975,7 @@
         </div>
         <div class="form-row">
           <label>Plan</label>
-          <select id="subPlan">
+          <select id="subPlan" onchange="syncSubZone2()">
             <option>Basic</option>
             <option>Standard</option>
             <option>Premium</option>
@@ -2352,7 +2352,13 @@ function _stable(v){
 }
 function _notExpired(d){const t=new Date();t.setHours(0,0,0,0);return !d||new Date(d)>=t;}
 function _cleanPubImgs(r){['photo1','photo2','logoDataUrl'].forEach(f=>{if(r[f]!==undefined&&!safeImgSrc(r[f]))delete r[f];});return r;}
-function publicRider(s){return(s&&s.id&&s.status==='active'&&_notExpired(s.expiry))?_cleanPubImgs(_pick(s,PUB_RIDER_FIELDS)):null;}
+function publicRider(s){
+  if(!(s&&s.id&&s.status==='active'&&_notExpired(s.expiry)))return null;
+  const r=_cleanPubImgs(_pick(s,PUB_RIDER_FIELDS));
+  const p=String(r.plan||'').toLowerCase();
+  if(p!=='standard'&&p!=='premium')delete r.zone2;   // Basic: primary zone only
+  return r;
+}
 function publicAdv(a){return(a&&a.id&&a.status==='active'&&_notExpired(a.expiry))?_cleanPubImgs(_pick(a,PUB_ADV_FIELDS)):null;}
 async function _reconcileNode(node,want,localCount){
   const snap=await _fbDb.ref(FB_PATH+'/'+node).once('value');
@@ -3533,6 +3539,8 @@ function confirmApprove(){
   const now=new Date().toISOString();
   subs[i]=applyAutoStatus({...subs[i],
     status:'active',price,plan,duration,start,rslNo,rslExpiry,
+    zone2:plan==='Basic'?'':(subs[i].zone2||''),
+    zone2Custom:plan==='Basic'?'':(subs[i].zone2Custom||''),
     expiry:toDateStr(expDate),
     availability:'available',
     notes:notes||subs[i].notes,
@@ -4242,6 +4250,12 @@ function fillSubZoneList(){
   if(!dl)return;
   dl.innerHTML=getZones().filter(z=>z&&z.name).map(z=>'<option value="'+esc(z.name)+'"></option>').join('');
 }
+// Second zone is a Standard/Premium field; Basic riders are shown in their primary zone only.
+function syncSubZone2(){
+  const basic=document.getElementById('subPlan').value==='Basic';
+  const row=document.getElementById('subZone2Row');if(row)row.style.display=basic?'none':'';
+  if(basic)document.getElementById('subZone2').value='';
+}
 function openAddSubModal(){
   fillSubZoneList();
   document.getElementById('subEditId').value='';
@@ -4251,6 +4265,7 @@ function openAddSubModal(){
   document.getElementById('subStart').value=todayStr();
   document.getElementById('subStatus').value='active';
   const _m1=document.getElementById('subMsg');if(_m1)_m1.style.display='none';
+  syncSubZone2();
   openModal('subModal');
 }
 
@@ -4276,6 +4291,7 @@ function openEditSubModal(id){
   document.getElementById('subRSLNo').value=s.rslNo||'';
   document.getElementById('subRSLExpiry').value=s.rslExpiry||'';
   const _m2=document.getElementById('subMsg');if(_m2)_m2.style.display='none';
+  syncSubZone2();
   openModal('subModal');
 }
 
@@ -4284,7 +4300,7 @@ function saveSub(){
   const name=document.getElementById('subName').value.trim();
   const phone=document.getElementById('subPhone').value.trim();
   const zone=_canonZone(document.getElementById('subZone').value);
-  const zone2=_canonZone(document.getElementById('subZone2').value);
+  const zone2=document.getElementById('subPlan').value==='Basic'?'':_canonZone(document.getElementById('subZone2').value);
   const type=document.getElementById('subType').value;
   const plan=document.getElementById('subPlan').value;
   const price=parseFloat(document.getElementById('subPrice').value)||0;
