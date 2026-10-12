@@ -410,6 +410,7 @@
       </div>
       <div class="toolbar">
         <input class="search-input" placeholder="🔍 Search name, phone, ref…" id="appSearch" oninput="renderApplications()"/>
+        <button class="btn btn-ghost btn-sm" onclick="openFbkAdmin()">💬 Rider feedback <span id="fbkBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
         <button class="btn btn-ghost btn-sm" onclick="openLinkReqs()">🔗 Login links <span id="linkReqBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
         <select class="filter-select" id="appFilterStatus" onchange="renderApplications()">
           <option value="">All Status</option>
@@ -549,6 +550,7 @@
           <h2>Renewals Due</h2>
           <div class="page-head-sub">Riders whose subscriptions are expiring or already expired</div>
         </div>
+        <button class="btn btn-ghost btn-sm" onclick="openRenewReqs()">📩 Renewal requests <span id="renewReqBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
       </div>
       <div class="stats-grid" style="max-width:600px">
         <div class="stat-card">
@@ -917,6 +919,20 @@
   <div class="modal">
     <div class="modal-header"><h3>🔗 Login link requests</h3><button class="close-btn" onclick="closeModal('linkReqModal')">✕</button></div>
     <div class="modal-body" id="linkReqBody"></div>
+  </div>
+</div>
+
+<div class="overlay" id="renewReqModal">
+  <div class="modal">
+    <div class="modal-header"><h3>📩 Renewal requests</h3><button class="close-btn" onclick="closeModal('renewReqModal')">✕</button></div>
+    <div class="modal-body" id="renewReqBody"></div>
+  </div>
+</div>
+
+<div class="overlay" id="fbkAdminModal">
+  <div class="modal">
+    <div class="modal-header"><h3>💬 Rider feedback &amp; reports</h3><button class="close-btn" onclick="closeModal('fbkAdminModal')">✕</button></div>
+    <div class="modal-body" id="fbkAdminBody"></div>
   </div>
 </div>
 
@@ -1344,6 +1360,10 @@ function save(key,data,opts){
 }
 function load(key,def){try{const v=localStorage.getItem(key);return v!==null?JSON.parse(v):def;}catch(e){return def;}}
 function getSubs(){const l=load(KEYS.subs,[]);return Array.isArray(l)?l.map(o=>_joinOne('s',o)):[];}
+// Display-only copy with expiry/RSL status recomputed from the dates, so lapsed riders never show as
+// "active" from a stale cache (offline, before the first Firebase snapshot, or between sweeps).
+// Never write this back — write paths keep using getSubs().
+function getSubsView(){return getSubs().map(o=>applyAutoStatus({...o}));}
 function getSettings(){return load(KEYS.settings,{adminName:'Admin',warnDays:7});}
 function getAdvertisers(){const l=load(KEYS.advertisers,[]);return Array.isArray(l)?l.map(o=>_joinOne('a',o)):[];}
 function getRedemptions(){return load(KEYS.redemptions,[]);}
@@ -2154,6 +2174,12 @@ async function _adminSignIn(password){
     const unsub=_fbAuth.onAuthStateChanged(u=>{unsub();res(u);});
   });
   if(_fbAuth.currentUser && _fbAuth.currentUser.email===ADMIN_FIREBASE_EMAIL){
+    // A session restored from storage carries the token issued BEFORE the email was verified, so
+    // the database keeps refusing it until a new token is minted. Refresh it when unverified.
+    const _cu=_fbAuth.currentUser;
+    if(!_cu.emailVerified){
+      try{await Promise.race([(async()=>{await _cu.reload();await _cu.getIdToken(true);})(),new Promise(res=>setTimeout(res,6000))]);}catch(e){}
+    }
     return _fbAuth.currentUser;
   }
   // Sign out any stale session first
@@ -2208,7 +2234,13 @@ async function recheckAdminVerified(){
     await u.reload();
     await u.getIdToken(true);   // the verified flag only reaches the database in a NEW token
     renderAdminVerifyBar();
-    if(_fbAuth.currentUser.emailVerified)showFbMsg('✅ Email verified. Saving to Firebase is allowed.','alert-ok');
+    if(_fbAuth.currentUser.emailVerified){
+      showFbMsg('✅ Email verified. Saving to Firebase is allowed.','alert-ok');
+      // The read listener was cancelled by the earlier permission denial: re-attach it now with the
+      // fresh token, then push anything queued while unverified.
+      try{attachListeners();}catch(_){}
+      setTimeout(()=>{try{flushPendingWrites();}catch(_){}},1500);
+    }
     else showFbMsg('⚠️ Not verified yet. Open the link in the email first.','alert-warn');
   }catch(e){showFbMsg('⚠️ Could not re-check: '+((e&&e.message)||e),'alert-warn');}
 }
@@ -2370,6 +2402,23 @@ async function rebuildPublicDirectory(){
   showFbMsg(ok?'✅ Public directory is up to date.':'❌ Public directory sync failed — check Firebase Rules (riders_public / advertisers_public) and the console.',ok?'alert-ok':'alert-err');
 }
 
+
+// Says WHY the database refused the panel, instead of a bare "Offline". Checks the live token the
+// rules actually see (email_verified claim) and shows the UID that must be true under /admins.
+let _lastDiagAt=0;
+async function _diagnoseListenerError(err){
+  try{
+    if(Date.now()-_lastDiagAt<20000)return;_lastDiagAt=Date.now();
+    const u=_fbAuth&&_fbAuth.currentUser;
+    const code=(err&&err.code)||'';const msg=(err&&err.message)||String(err);
+    if(!u||u.isAnonymous){showFbMsg('❌ Database refused the panel: not signed in as admin. Settings → Firebase Sync → enter the password for '+ADMIN_FIREBASE_EMAIL+'.','alert-err');return;}
+    let claim=null;
+    try{claim=(await u.getIdTokenResult(true)).claims.email_verified===true;}catch(_){}
+    if(!/permission/i.test(code+msg)){showFbMsg('❌ Database error ('+(code||'unknown')+'): '+msg,'alert-err');return;}
+    if(claim===false){showFbMsg('❌ Database refused: your login token still says email NOT verified. Sign out, sign in again with the password (Settings → Firebase Sync), then reload.','alert-err');return;}
+    showFbMsg('❌ Database refused (permission denied) although the email is verified. Most likely this account\'s UID is not set to true under '+FB_PATH+'/admins in Firebase. UID: '+u.uid+' — or the Rules in the console are not the ones in database_rules.json (re-publish them).','alert-err');
+  }catch(e){console.warn('diagnose failed',e);}
+}
 function attachListeners(){
   if(!_fbDb||_listenerAttached)return;
   _listenerAttached=true;
@@ -2425,10 +2474,18 @@ function attachListeners(){
       }
     }
     _subsSeen=true;scheduleMirrorSync();maybeBackfillPayments();
+    // A delivered snapshot proves the database accepts this admin. After an earlier permission
+    // error the status stayed "Offline" for good (only .info/connected could restore it), so
+    // every action kept queueing. Restore it here and push the queue.
+    {const _u=_fbAuth&&_fbAuth.currentUser;
+     if(!_fbConnected&&_u&&!_u.isAnonymous){setFbStatus(true,'Connected — live');setTimeout(()=>{try{flushPendingWrites();}catch(_){}},300);}}
     refreshAll();
   },err=>{
     console.error('FB listener error:',err);
     setFbStatus(false,'Listener error — retrying…');
+    _diagnoseListenerError(err);
+    try{['/subscriptions','/zones','/advertisers','/redemptions'].forEach(k=>_fbDb.ref(FB_PATH+k).off('value'));_fbDb.ref('.info/connected').off('value');}catch(_){}
+    _payListenerDb=null;   // its listener was cancelled by the same denial; allow it to re-attach
     _listenerAttached=false;
     refreshAll();
     setTimeout(()=>attachListeners(),5000);
@@ -2564,6 +2621,7 @@ function attachListeners(){
   });
 
   _attachLinkReqs();
+  _attachRiderReqs();
 
   // Connection state — flush offline queue on reconnect.
   // Guard: only mark connected if the admin auth session is actually live.
@@ -2972,7 +3030,7 @@ function vehicleIcon(type){
 function refreshAll(){renderDashboard();renderApplications();renderSubscriptions();renderRenewals();renderAdvertisers();renderRedemptions&&renderRedemptions();updateBadges();updateAdvBadge();}
 
 function getSubStats(){
-  const subs=getSubs();
+  const subs=getSubsView();
   const now=new Date();
   const active=subs.filter(s=>s.status==='active');
   const pending=subs.filter(s=>s.status==='pending'||(s.isApplication&&s.status==='pending'));
@@ -3228,6 +3286,129 @@ async function approveLink(uid){
 async function dismissLink(uid){
   if(!safeId(uid)||!_fbDb)return;
   try{await _fbDb.ref(FB_PATH+'/link_requests/'+uid).remove();}catch(e){showFbMsg('⚠️ Could not dismiss: '+e.message,'alert-warn');}
+}
+
+// ── Rider requests: renewals + feedback (sent from the rider app's My Account) ─────────────────────
+// Renewal request: the rider/advertiser picked a plan + months and paid by mobile money; the admin confirms the
+// payment and renews through the normal renew form (pre-filled), which then marks the request approved.
+// Feedback: ratings/reports from phone-logins. Private to the admin: never published.
+let _renewReqs={},_fbk={},_renewReqCtx=null,_fbkShowDone=false;
+function _attachRiderReqs(){
+  _fbDb.ref(FB_PATH+'/renewal_requests').on('value',snap=>{
+    _renewReqs=snap.val()||{};renderRenewReqBadge();
+    const m=document.getElementById('renewReqModal');if(m&&m.classList.contains('open'))renderRenewReqs();
+  },err=>console.warn('renewal_requests listener:',err&&err.message));
+  _fbDb.ref(FB_PATH+'/rider_feedback').on('value',snap=>{
+    _fbk=snap.val()||{};renderFbkBadge();
+    const m=document.getElementById('fbkAdminModal');if(m&&m.classList.contains('open'))renderFbkAdmin();
+  },err=>console.warn('rider_feedback listener:',err&&err.message));
+}
+function _setBadge(id,n){const b=document.getElementById(id);if(b){b.textContent=n;b.style.display=n?'inline-block':'none';}}
+function renderRenewReqBadge(){_setBadge('renewReqBadge',Object.keys(_renewReqs).filter(id=>safeId(id)&&_renewReqs[id]&&_renewReqs[id].status==='pending').length);}
+function _flatFbk(){
+  const out=[];
+  Object.keys(_fbk).forEach(rid=>{
+    const per=_fbk[rid];if(!safeId(rid)||!per||typeof per!=='object')return;
+    Object.keys(per).forEach(u=>{const f=per[u];if(safeId(u)&&f&&typeof f==='object')out.push({...f,rid,uid:u});});
+  });
+  return out;
+}
+function renderFbkBadge(){_setBadge('fbkBadge',_flatFbk().filter(f=>f.status==='new').length);}
+const _dt=iso=>{try{return new Date(iso).toLocaleString('en-ZM',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}};
+
+function openRenewReqs(){renderRenewReqs();openModal('renewReqModal');}
+function renderRenewReqs(){
+  const el=document.getElementById('renewReqBody');if(!el)return;
+  const all=Object.keys(_renewReqs).filter(id=>safeId(id)&&_renewReqs[id]&&typeof _renewReqs[id]==='object').map(id=>({..._renewReqs[id],id}));
+  const pend=all.filter(q=>q.status==='pending').sort((a,b)=>String(a.requestedAt).localeCompare(String(b.requestedAt)));
+  const done=all.filter(q=>q.status!=='pending').sort((a,b)=>String(b.processedAt||b.requestedAt).localeCompare(String(a.processedAt||a.requestedAt))).slice(0,10);
+  const box='border:1px solid var(--border);border-radius:10px;padding:.8rem;margin-bottom:.6rem;font-size:.85rem;line-height:1.6';
+  const card=q=>{
+    const isAdv=q.refType==='advertiser',rec=isAdv?getAdvertisers().find(x=>x.id===q.id):getSubs().find(x=>x.id===q.id);
+    const price=(isAdv?ADV_TIER_PRICE:PLAN_PRICES)[q.plan]||0,mo=Number(q.months)||1;
+    return `<div style="${box}">
+      <div><strong>${esc((rec&&rec.name)||q.name||'Unknown')}</strong> <span class="pill-plan">${isAdv?'Advertiser':'Rider'}</span> <span style="color:var(--muted);font-size:.75rem">${esc(q.ref||q.id)}</span></div>
+      <div>Wants <strong>${esc(q.plan)}</strong> for <strong>${mo} month${mo===1?'':'s'}</strong> (K${(price*mo).toLocaleString()} at list price)</div>
+      <div>Payment reference: <strong style="font-family:monospace">${esc(q.txnId||'')}</strong></div>
+      ${rec?`<div style="color:var(--muted);font-size:.78rem">Now: ${esc(rec.status||'')} · expiry ${fmtDate(rec.expiry)}${rec.phone?' · '+esc(rec.phone):''}</div>`:'<div style="color:#b91c1c">Record not found on this device. Refresh and try again.</div>'}
+      ${q.note?`<div>Note: ${esc(q.note)}</div>`:''}
+      <div style="color:var(--muted);font-size:.75rem">Sent ${esc(_dt(q.requestedAt))}</div>
+      ${q.status==='pending'?`<div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <button class="btn btn-success btn-sm" ${rec?'':'disabled '}onclick="processRenewReq('${q.id}')">Check payment &amp; renew</button>
+        <button class="btn btn-ghost btn-sm" onclick="rejectRenewReq('${q.id}')">Reject</button></div>`
+      :`<div style="margin-top:.3rem;font-weight:600;color:${q.status==='approved'?'#065f46':'#b91c1c'}">${q.status==='approved'?'✅ Renewed':'❌ Rejected'} ${esc(_dt(q.processedAt))}${q.adminNote?' · '+esc(q.adminNote):''}</div>`}
+    </div>`;
+  };
+  el.innerHTML=(pend.length?pend.map(card).join(''):'<p style="color:var(--muted)">No pending renewal requests.</p>')
+    +(done.length?'<h4 style="margin:1rem 0 .4rem;font-size:.82rem;color:var(--muted)">Recently handled</h4>'+done.map(card).join(''):'');
+}
+function processRenewReq(id){
+  const q=_renewReqs[id];if(!q||!safeId(id))return;
+  const isAdv=q.refType==='advertiser',months=[1,3,6,12].includes(Number(q.months))?String(q.months):'1';
+  if(isAdv?!getAdvertisers().some(a=>a.id===id):!getSubs().some(r=>r.id===id)){alert('Record not found on this device. Refresh and try again.');return;}
+  closeModal('renewReqModal');
+  if(isAdv){
+    openRenewAdvModal(id);
+    document.getElementById('renewAdvTier').value=q.plan;onRenewAdvTierChange();
+    document.getElementById('renewAdvDuration').value=months;onRenewAdvTermsChange();
+    document.getElementById('renewAdvPayMethod').value='Mobile Money';
+  }else{
+    openRenewModal(id);
+    document.getElementById('renewPlan').value=q.plan;
+    document.getElementById('renewPrice').value=PLAN_PRICES[q.plan]||document.getElementById('renewPrice').value;
+    document.getElementById('renewDuration').value=months;onRenewTermsChange();
+    document.getElementById('renewPayMethod').value='Mobile Money';
+  }
+  _renewReqCtx={id,txnId:String(q.txnId||'').slice(0,50)};   // set AFTER the open*Modal call, which clears it
+}
+function _renewReqDone(id){
+  const c=_renewReqCtx;_renewReqCtx=null;
+  if(!c||c.id!==id||!_fbDb||!safeId(id))return;
+  _fbDb.ref(FB_PATH+'/renewal_requests/'+id).update({status:'approved',processedAt:new Date().toISOString()})
+    .catch(e=>showFbMsg('⚠️ Renewed, but the request could not be marked done: '+e.message,'alert-warn'));
+}
+function rejectRenewReq(id){
+  if(!safeId(id)||!_fbDb)return;
+  const note=prompt('Reason for the rider (optional):','');
+  if(note===null)return;
+  _fbDb.ref(FB_PATH+'/renewal_requests/'+id).update({status:'rejected',processedAt:new Date().toISOString(),adminNote:String(note).trim().slice(0,200)})
+    .catch(e=>showFbMsg('⚠️ Could not reject: '+e.message,'alert-warn'));
+}
+
+function openFbkAdmin(){renderFbkAdmin();openModal('fbkAdminModal');}
+function toggleFbkDone(){_fbkShowDone=!_fbkShowDone;renderFbkAdmin();}
+function renderFbkAdmin(){
+  const el=document.getElementById('fbkAdminBody');if(!el)return;
+  const all=_flatFbk(),subs=getSubs(),nNew=all.filter(f=>f.status==='new').length;
+  const list=all.filter(f=>_fbkShowDone||f.status==='new');
+  const groups={};list.forEach(f=>{(groups[f.rid]=groups[f.rid]||[]).push(f);});
+  const stars=n=>'★'.repeat(n)+'☆'.repeat(5-n);
+  const head=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem;font-size:.82rem"><span>${nNew} new · ${all.length-nNew} reviewed</span><button class="btn btn-ghost btn-sm" onclick="toggleFbkDone()">${_fbkShowDone?'Hide reviewed':'Show reviewed'}</button></div>`;
+  const ids=Object.keys(groups);
+  if(!ids.length){el.innerHTML=head+'<p style="color:var(--muted)">Nothing to review.</p>';return;}
+  el.innerHTML=head+ids.map(rid=>{
+    const r=subs.find(x=>x.id===rid),mine=all.filter(f=>f.rid===rid),rated=mine.filter(f=>f.rating),reports=mine.filter(f=>f.category);
+    const avg=rated.length?(rated.reduce((a,f)=>a+Number(f.rating),0)/rated.length).toFixed(1):null;
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:.8rem;margin-bottom:.7rem;font-size:.85rem;line-height:1.6">
+      <div><strong>${esc((r&&r.name)||groups[rid][0].riderName||rid)}</strong>${r&&r.phone?` <span style="color:var(--muted);font-size:.78rem">${esc(r.phone)}</span>`:''}</div>
+      <div style="color:var(--muted);font-size:.78rem">${avg?`Average ${avg} ★ from ${rated.length} rating${rated.length===1?'':'s'}`:'No star ratings'} · ${reports.length} report${reports.length===1?'':'s'} in total</div>
+      ${groups[rid].sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(f=>`<div style="border-top:1px dashed var(--border);margin-top:.5rem;padding-top:.5rem">
+        ${f.rating?`<span style="color:#f59e0b">${stars(Number(f.rating))}</span> `:''}${f.category?`<span class="badge badge-expired">${esc(f.category)}</span> `:''}<span style="color:var(--muted);font-size:.75rem">${esc(_dt(f.at))}${f.status==='reviewed'?' · reviewed':''}</span>
+        ${f.comment?`<div>${esc(f.comment)}</div>`:''}
+        <div style="display:flex;gap:.5rem;margin-top:.35rem">
+          ${f.status==='new'?`<button class="btn btn-success btn-sm" onclick="markFbkReviewed('${rid}','${f.uid}')">Mark reviewed</button>`:''}
+          <button class="btn btn-ghost btn-sm" onclick="removeFbk('${rid}','${f.uid}')">Remove</button></div></div>`).join('')}
+    </div>`;
+  }).join('');
+}
+function markFbkReviewed(rid,uid){
+  if(!safeId(rid)||!safeId(uid)||!_fbDb)return;
+  _fbDb.ref(FB_PATH+'/rider_feedback/'+rid+'/'+uid).update({status:'reviewed',reviewedAt:new Date().toISOString()})
+    .catch(e=>showFbMsg('⚠️ Could not update: '+e.message,'alert-warn'));
+}
+function removeFbk(rid,uid){
+  if(!safeId(rid)||!safeId(uid)||!_fbDb||!confirm('Remove this feedback permanently?'))return;
+  _fbDb.ref(FB_PATH+'/rider_feedback/'+rid+'/'+uid).remove().catch(e=>showFbMsg('⚠️ Could not remove: '+e.message,'alert-warn'));
 }
 
 function openApproveModal(appId){
@@ -3875,6 +4056,7 @@ function deleteAdv(advId){
 }
 
 function openRenewAdvModal(advId){
+  _renewReqCtx=null;
   const a=getAdvertisers().find(x=>x.id===advId);
   if(!a)return;
   document.getElementById('renewAdvId').value=advId;
@@ -3922,7 +4104,8 @@ function confirmRenewAdv(){
     paymentDate:todayStr(),renewedAt:new Date().toISOString()};
   save(KEYS.advertisers,ads);
   recordPayment({refType:'advertiser',refId:ads[i].id,name:ads[i].name,kind:'renewal',plan:tier,price,amount:amountPaid,method:payMethod,
-    paidOn:todayStr(),periodStart:start,periodEnd:toDateStr(expDate)});
+    paidOn:todayStr(),periodStart:start,periodEnd:toDateStr(expDate),txnId:(_renewReqCtx&&_renewReqCtx.id===advId?_renewReqCtx.txnId:'')});
+  _renewReqDone(advId);
   closeModal('renewAdvModal');
   refreshAll();
   // fbAdvWriteItem already queues the write when offline or on error (no second push here)
@@ -3985,7 +4168,7 @@ function renderSubscriptions(){
   const search=(document.getElementById('subSearch')?.value||'').toLowerCase();
   const fStatus=document.getElementById('subFilterStatus')?.value||'';
   const fPlan=document.getElementById('subFilterPlan')?.value||'';
-  let subs=getSubs().filter(s=>!s.isApplication||s.status!=='pending');
+  let subs=getSubsView().filter(s=>!s.isApplication||s.status!=='pending');
   if(search)subs=subs.filter(s=>(s.name+s.phone).toLowerCase().includes(search));
   if(fStatus)subs=subs.filter(s=>s.status===fStatus);
   if(fPlan)subs=subs.filter(s=>s.plan===fPlan);
@@ -4215,6 +4398,7 @@ function renderRenewals(){
 }
 
 function openRenewModal(id){
+  _renewReqCtx=null;
   const s=getSubs().find(x=>x.id===id);
   if(!s)return;
   document.getElementById('renewSubId').value=id;
@@ -4269,7 +4453,8 @@ function confirmRenew(){
     paymentMethod:payMethod,amountPaid,
     paymentDate:todayStr(),renewedAt:new Date().toISOString()});
   recordPayment({refType:'rider',refId:subs[i].id,name:subs[i].name,kind:'renewal',plan,price,amount:amountPaid,method:payMethod,
-    paidOn:todayStr(),periodStart:start,periodEnd:expiry});
+    paidOn:todayStr(),periodStart:start,periodEnd:expiry,txnId:(_renewReqCtx&&_renewReqCtx.id===id?_renewReqCtx.txnId:'')});
+  _renewReqDone(id);
   const st=subs[i].status;
   const base='Subscription renewed until '+fmtDate(expiry)+(st==='rsl_expired'?', but the rider stays suspended (RSL expired '+fmtDate(subs[i].rslExpiry)+')':st==='expired'?', but that date has already passed':'');
   save(KEYS.subs,subs);
