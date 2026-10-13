@@ -411,6 +411,7 @@
       <div class="toolbar">
         <input class="search-input" placeholder="🔍 Search name, phone, ref…" id="appSearch" oninput="renderApplications()"/>
         <button class="btn btn-ghost btn-sm" onclick="openFbkAdmin()">💬 Rider feedback <span id="fbkBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
+        <button class="btn btn-ghost btn-sm" onclick="openEditReqs()">✏️ Edit requests <span id="editReqBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
         <button class="btn btn-ghost btn-sm" onclick="openLinkReqs()">🔗 Login links <span id="linkReqBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem"></span></button>
         <select class="filter-select" id="appFilterStatus" onchange="renderApplications()">
           <option value="">All Status</option>
@@ -560,6 +561,15 @@
         <div class="stat-card">
           <div class="stat-label">Already Expired</div>
           <div class="stat-value stat-danger" id="rStatExpired">0</div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-header">
+          <h3>🔔 Reminders due</h3>
+        </div>
+        <div class="card-body">
+          <div style="font-size:.78rem;color:var(--muted);margin-bottom:.7rem">Standard and Premium riders whose plan ends within 7 days. WhatsApp (and SMS for Premium) opens with the message ready to send. Nothing is sent automatically.</div>
+          <div id="reminderList"><div class="empty"><div class="empty-icon">✅</div><p>No reminders due</p></div></div>
         </div>
       </div>
       <div class="card">
@@ -915,6 +925,13 @@
 </div>
 
 <!-- Add/Edit Subscription -->
+<div class="overlay" id="editReqModal">
+  <div class="modal">
+    <div class="modal-header"><h3>✏️ Detail change requests</h3><button class="close-btn" onclick="closeModal('editReqModal')">✕</button></div>
+    <div class="modal-body" id="editReqBody"></div>
+  </div>
+</div>
+
 <div class="overlay" id="linkReqModal">
   <div class="modal">
     <div class="modal-header"><h3>🔗 Login link requests</h3><button class="close-btn" onclick="closeModal('linkReqModal')">✕</button></div>
@@ -1189,6 +1206,30 @@
 </div>
 
 <!-- Renew Advertiser Listing -->
+<!-- ══ SEND ALERT (Premium advertisers: 1 per calendar month) ═════════ -->
+<div class="overlay" id="sendAlertModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📣 Send advertiser alert</h3>
+      <button class="close-btn" onclick="closeModal('sendAlertModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="alertAdvInfo" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.84rem;line-height:1.7"></div>
+      <input type="hidden" id="alertAdvId"/>
+      <div class="form-row">
+        <label>Alert text <span id="alertCount" style="float:right;font-weight:400;color:var(--muted)">0/140</span></label>
+        <textarea id="alertText" rows="3" maxlength="140" placeholder="e.g. 20% off all meals this Saturday. Show your MotoConnect card." oninput="onAlertTextInput()"></textarea>
+      </div>
+      <div style="font-size:.76rem;color:var(--muted);margin-bottom:.8rem">Shows in the 🔔 panel of customers and riders in the advertiser's zone for 14 days. It is an in-app alert, not a phone push notification. Each Premium advertiser gets one per calendar month.</div>
+      <div id="alertMsg" style="display:none;font-size:.82rem;margin-bottom:.8rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeModal('sendAlertModal')">Close</button>
+        <button class="btn btn-primary" id="alertSendBtn" onclick="sendAlert()">📣 Send alert</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="renewAdvModal">
   <div class="modal">
     <div class="modal-header">
@@ -2627,6 +2668,7 @@ function attachListeners(){
   });
 
   _attachLinkReqs();
+  _attachEditReqs();
   _attachRiderReqs();
 
   // Connection state — flush offline queue on reconnect.
@@ -3250,48 +3292,159 @@ function _attachLinkReqs(){
     const m=document.getElementById('linkReqModal');if(m&&m.classList.contains('open'))renderLinkReqs();
   },err=>console.warn('link_requests listener:',err&&err.message));
 }
+// The rider app saves one request per reference at link_requests/<uid>/<REF> = {ref,phone,at}.
+// Older requests were flat at link_requests/<uid> = {ref,phone,at}. Flatten both into one list.
+function _linkList(){
+  const out=[];
+  Object.keys(_linkReqs).filter(safeId).forEach(uid=>{
+    const node=_linkReqs[uid];if(!node||typeof node!=='object')return;
+    if(typeof node.ref==='string')out.push({uid,key:'',ref:node.ref,phone:node.phone,at:node.at});
+    Object.keys(node).forEach(k=>{
+      const v=node[k];
+      if(v&&typeof v==='object'&&typeof v.ref==='string'&&safeId(k))out.push({uid,key:k,ref:v.ref,phone:v.phone,at:v.at});
+    });
+  });
+  return out;
+}
 function renderLinkReqBadge(){
-  const n=Object.keys(_linkReqs).length,b=document.getElementById('linkReqBadge');
+  const n=_linkList().length,b=document.getElementById('linkReqBadge');
   if(b){b.textContent=n;b.style.display=n?'inline-block':'none';}
 }
 function _last9(p){return String(p||'').replace(/\D/g,'').slice(-9);}
+// Find the record a reference points to: a rider application (MCM-…) or an advertiser listing (ADV-…).
 function _findByRef(ref){
-  const q=String(ref||'').trim().toUpperCase();
-  return getSubs().find(s=>s&&s.id&&[s.ref,'MCM-'+String(s.id).slice(-6).toUpperCase()].some(x=>x&&String(x).toUpperCase()===q));
+  const q=String(ref||'').trim().toUpperCase();if(!q)return null;
+  const hit=(o,pre)=>o&&o.id&&[o.ref,pre+String(o.id).slice(-6).toUpperCase()].some(x=>x&&String(x).toUpperCase()===q);
+  const s=getSubs().find(o=>hit(o,'MCM-'));if(s)return{rec:s,adv:false};
+  const a=getAdvertisers().find(o=>hit(o,'ADV-'));if(a)return{rec:a,adv:true};
+  return null;
 }
 function openLinkReqs(){renderLinkReqs();openModal('linkReqModal');}
 function renderLinkReqs(){
   const el=document.getElementById('linkReqBody');if(!el)return;
-  const ids=Object.keys(_linkReqs).filter(safeId);
-  if(!ids.length){el.innerHTML='<p style="color:var(--muted)">No pending link requests.</p>';return;}
-  el.innerHTML=ids.map(uid=>{
-    const q=_linkReqs[uid]||{},rec=_findByRef(q.ref);
+  const list=_linkList();
+  if(!list.length){el.innerHTML='<p style="color:var(--muted)">No pending link requests.</p>';return;}
+  el.innerHTML=list.map(q=>{
+    const f=_findByRef(q.ref),rec=f&&f.rec,uid=q.uid;
     const phoneOk=rec&&_last9(q.phone)&&[rec.phone,rec.phone2].some(p=>_last9(p)===_last9(q.phone));
     return '<div style="border:1px solid var(--border);border-radius:10px;padding:.8rem;margin-bottom:.6rem;font-size:.85rem;line-height:1.6">'
       +'<div>Requested ref: <strong>'+esc(q.ref||'')+'</strong> · phone '+esc(q.phone||'')+'</div>'
-      +(rec?'<div>Record: <strong>'+esc(rec.name||'')+'</strong> ('+esc(rec.status||'')+') · '+esc(rec.phone||'')+'</div>'
-            +'<div style="color:'+(phoneOk?'#065f46':'#b91c1c')+'">'+(phoneOk?'✓ Phone matches the record':'⚠️ Phone does NOT match. Call the rider before approving.')+'</div>'
+      +(rec?'<div>'+(f.adv?'📣 Advertiser':'🏍️ Rider')+': <strong>'+esc(rec.name||'')+'</strong> ('+esc(rec.status||'')+') · '+esc(rec.phone||'')+'</div>'
+            +'<div style="color:'+(phoneOk?'#065f46':'#b91c1c')+'">'+(phoneOk?'✓ Phone matches the record':'⚠️ Phone does NOT match. Call them before approving.')+'</div>'
             +(rec.ownerUid&&rec.ownerUid!==uid?'<div style="color:#b91c1c">⚠️ This record is already linked to another login.</div>':'')
           :'<div style="color:#b91c1c">No record found with that reference.</div>')
       +'<div style="display:flex;gap:.5rem;margin-top:.5rem">'
-      +'<button class="btn btn-success btn-sm" '+(rec?'':'disabled ')+'onclick="approveLink(\''+uid+'\')">Approve</button>'
-      +'<button class="btn btn-ghost btn-sm" onclick="dismissLink(\''+uid+'\')">Dismiss</button></div></div>';
+      +'<button class="btn btn-success btn-sm" '+(rec?'':'disabled ')+'onclick="approveLink(\''+uid+'\',\''+q.key+'\')">Approve</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="dismissLink(\''+uid+'\',\''+q.key+'\')">Dismiss</button></div></div>';
   }).join('');
 }
-async function approveLink(uid){
-  const q=_linkReqs[uid],rec=q&&_findByRef(q.ref);
-  if(!rec||!safeId(uid)||!safeId(rec.id)||!_fbDb)return;
-  const up={};
-  up['subscriptions/'+rec.id+'/ownerUid']=uid;
-  up['subscriptions/'+rec.id+'/updatedAt']=new Date().toISOString();
-  up['owner_index/'+uid+'/'+rec.id]=true;
-  up['link_requests/'+uid]=null;
-  try{await _fbDb.ref(FB_PATH).update(up);showFbMsg('✅ Login linked to '+(rec.name||'rider')+'.','alert-ok');}
+// Remove one request: the per-reference node, or (legacy flat request) just its own fields.
+function _linkDelPaths(up,uid,key){
+  if(key)up['link_requests/'+uid+'/'+key]=null;
+  else['ref','phone','name','at'].forEach(f=>{up['link_requests/'+uid+'/'+f]=null;});
+}
+async function approveLink(uid,key){
+  key=key||'';
+  const q=_linkList().find(x=>x.uid===uid&&x.key===key),f=q&&_findByRef(q.ref),rec=f&&f.rec;
+  if(!rec||!safeId(uid)||!safeId(rec.id)||(key&&!safeId(key))||!_fbDb)return;
+  const up={},now=new Date().toISOString();
+  if(f.adv){
+    up['advertisers/'+rec.id+'/ownerUid']=uid;
+    up['advertisers/'+rec.id+'/updatedAt']=now;
+    up['owner_index_adv/'+uid+'/'+rec.id]=true;
+  }else{
+    up['subscriptions/'+rec.id+'/ownerUid']=uid;
+    up['subscriptions/'+rec.id+'/updatedAt']=now;
+    up['owner_index/'+uid+'/'+rec.id]=true;
+  }
+  _linkDelPaths(up,uid,key);
+  try{await _fbDb.ref(FB_PATH).update(up);showFbMsg('✅ Login linked to '+(rec.name||(f.adv?'advertiser':'rider'))+'.','alert-ok');}
   catch(e){showFbMsg('⚠️ Could not link: '+e.message,'alert-warn');}
 }
-async function dismissLink(uid){
-  if(!safeId(uid)||!_fbDb)return;
-  try{await _fbDb.ref(FB_PATH+'/link_requests/'+uid).remove();}catch(e){showFbMsg('⚠️ Could not dismiss: '+e.message,'alert-warn');}
+async function dismissLink(uid,key){
+  key=key||'';
+  if(!safeId(uid)||(key&&!safeId(key))||!_fbDb)return;
+  const up={};_linkDelPaths(up,uid,key);
+  try{await _fbDb.ref(FB_PATH).update(up);}catch(e){showFbMsg('⚠️ Could not dismiss: '+e.message,'alert-warn');}
+}
+
+// ── Edit requests: a rider/advertiser asks to change their own details; nothing changes until the admin approves ──
+let _editReqs={};
+const EDIT_ALLOWED={rider:['name','phone','phone2','type','zone','zone2','area','notes'],advertiser:['name','phone','category','zone','offer']};
+const EDIT_LABEL={name:'Name',phone:'Phone',phone2:'Additional number',type:'Vehicle type',zone:'Zone',zone2:'Secondary zone',area:'Home area',notes:'Notes',category:'Category',offer:'Offer'};
+const EDIT_MAXLEN={name:100,phone:15,phone2:20,type:50,zone:100,zone2:100,area:100,notes:500,category:40,offer:300};
+function _attachEditReqs(){
+  _fbDb.ref(FB_PATH+'/edit_requests').on('value',snap=>{
+    _editReqs=snap.val()||{};renderEditReqBadge();
+    const m=document.getElementById('editReqModal');if(m&&m.classList.contains('open'))renderEditReqs();
+  },err=>console.warn('edit_requests listener:',err&&err.message));
+}
+function renderEditReqBadge(){_setBadge('editReqBadge',Object.keys(_editReqs).filter(id=>safeId(id)&&_editReqs[id]&&_editReqs[id].status==='pending').length);}
+// Only whitelisted fields, trimmed and length-capped; invalid or unchanged values are dropped. Never trust the request as sent.
+function _cleanEdit(refType,ch,rec){
+  const out={};
+  (EDIT_ALLOWED[refType]||[]).forEach(f=>{
+    if(!ch||typeof ch[f]!=='string')return;
+    let v=ch[f].trim().slice(0,EDIT_MAXLEN[f]);
+    if(f==='zone'||f==='zone2')v=_canonZone(v);
+    if(f==='name'&&v.length<2)return;
+    if(f==='phone'&&v.length<9)return;
+    if((f==='zone'||f==='category')&&!v)return;
+    if(f==='zone2'&&refType==='rider'&&String(rec&&rec.plan||'').toLowerCase()==='basic')return;   // Basic has one zone only
+    if(rec&&String(rec[f]||'')===v)return;
+    out[f]=v;
+  });
+  return out;
+}
+function openEditReqs(){renderEditReqs();openModal('editReqModal');}
+function renderEditReqs(){
+  const el=document.getElementById('editReqBody');if(!el)return;
+  const all=Object.keys(_editReqs).filter(id=>safeId(id)&&_editReqs[id]&&typeof _editReqs[id]==='object').map(id=>({..._editReqs[id],id}));
+  const pend=all.filter(q=>q.status==='pending').sort((a,b)=>String(a.requestedAt).localeCompare(String(b.requestedAt)));
+  const done=all.filter(q=>q.status!=='pending').sort((a,b)=>String(b.processedAt||b.requestedAt).localeCompare(String(a.processedAt||a.requestedAt))).slice(0,10);
+  const box='border:1px solid var(--border);border-radius:10px;padding:.8rem;margin-bottom:.6rem;font-size:.85rem;line-height:1.6';
+  const card=q=>{
+    const isAdv=q.refType==='advertiser',rec=isAdv?getAdvertisers().find(x=>x.id===q.id):getSubs().find(x=>x.id===q.id);
+    const ch=q.status==='pending'?_cleanEdit(q.refType,q.changes,rec):(q.changes&&typeof q.changes==='object'?q.changes:{});
+    const rows=Object.keys(ch).map(f=>`<div><span style="color:var(--muted)">${esc(EDIT_LABEL[f]||f)}:</span> ${rec&&rec[f]?esc(String(rec[f])):'—'} → <strong>${esc(String(ch[f])||'(blank)')}</strong></div>`).join('');
+    const can=!!rec&&Object.keys(ch).length>0;
+    return `<div style="${box}">
+      <div><strong>${esc((rec&&rec.name)||q.name||'Unknown')}</strong> <span class="pill-plan">${isAdv?'Advertiser':'Rider'}</span> <span style="color:var(--muted);font-size:.75rem">${esc(q.ref||q.id)}</span></div>
+      ${rows||'<div style="color:var(--muted)">No valid changes (already applied or invalid).</div>'}
+      ${ch.phone?'<div style="color:#b91c1c;font-size:.78rem">⚠️ Phone change: call the old number to confirm before approving.</div>':''}
+      ${rec?'':'<div style="color:#b91c1c">Record not found on this device. Refresh and try again.</div>'}
+      <div style="color:var(--muted);font-size:.75rem">Sent ${esc(_dt(q.requestedAt))}</div>
+      ${q.status==='pending'?`<div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <button class="btn btn-success btn-sm" ${can?'':'disabled '}onclick="approveEditReq('${q.id}')">Approve &amp; apply</button>
+        <button class="btn btn-ghost btn-sm" onclick="rejectEditReq('${q.id}')">Reject</button></div>`
+      :`<div style="margin-top:.3rem;font-weight:600;color:${q.status==='approved'?'#065f46':'#b91c1c'}">${q.status==='approved'?'✅ Applied':'❌ Rejected'} ${esc(_dt(q.processedAt))}${q.adminNote?' · '+esc(q.adminNote):''}</div>`}
+    </div>`;
+  };
+  el.innerHTML=(pend.length?pend.map(card).join(''):'<p style="color:var(--muted)">No pending change requests.</p>')
+    +(done.length?'<h4 style="margin:1rem 0 .4rem;font-size:.82rem;color:var(--muted)">Recently handled</h4>'+done.map(card).join(''):'');
+}
+function approveEditReq(id){
+  const q=_editReqs[id];if(!q||!safeId(id)||q.status!=='pending'||!_fbDb)return;
+  const isAdv=q.refType==='advertiser',list=isAdv?getAdvertisers():getSubs(),i=list.findIndex(x=>x&&x.id===id);
+  if(i<0){alert('Record not found on this device. Refresh and try again.');return;}
+  const rec=list[i];
+  if(rec.ownerUid&&q.ownerUid&&rec.ownerUid!==q.ownerUid){alert('This record is linked to a different login. Reject this request.');return;}
+  const ch=_cleanEdit(q.refType,q.changes,rec);
+  if(!Object.keys(ch).length){alert('There is nothing valid to apply.');return;}
+  const now=new Date().toISOString(),merged={...rec,...ch,updatedAt:now},item=isAdv?merged:applyAutoStatus(merged);
+  list[i]=item;
+  save(isAdv?KEYS.advertisers:KEYS.subs,list);
+  refreshAll();
+  _syncResult(isAdv?fbAdvWriteItem(item):fbWriteItem(item),'Details updated and synced.','Details updated on this device.');
+  _fbDb.ref(FB_PATH+'/edit_requests/'+id).update({status:'approved',processedAt:now})
+    .catch(e=>showFbMsg('⚠️ Applied, but the request could not be marked done: '+e.message,'alert-warn'));
+}
+function rejectEditReq(id){
+  if(!safeId(id)||!_fbDb)return;
+  const note=prompt('Reason for the rider (optional):','');
+  if(note===null)return;
+  _fbDb.ref(FB_PATH+'/edit_requests/'+id).update({status:'rejected',processedAt:new Date().toISOString(),adminNote:String(note).trim().slice(0,200)})
+    .catch(e=>showFbMsg('⚠️ Could not reject: '+e.message,'alert-warn'));
 }
 
 // ── Rider requests: renewals + feedback (sent from the rider app's My Account) ─────────────────────
@@ -3721,6 +3874,7 @@ function renderAdvertisers(){
         `:''}
         ${a.status==='active'?`
           <button class="btn btn-warn btn-sm" onclick="openRenewAdvModal('${sid(a.id)}')">🔄 Renew</button>
+          ${_alertEligible(a)?`<button class="btn btn-ghost btn-sm" onclick="openSendAlertModal('${sid(a.id)}')">📣 ${alertSentThisMonth(a.id)?'Alert sent this month':'Send alert'}</button>`:''}
           <button class="btn btn-ghost btn-sm" onclick="openPaymentHistory('advertiser','${sid(a.id)}')">💳 Payments</button>
           ${a.voucherEnabled?`<button class="btn btn-ghost btn-sm" onclick="showStaffPin('${sid(a.id)}')">🔑 Staff PINs</button>`:''}
           <button class="btn btn-ghost btn-sm" onclick="openEditAdvModal('${sid(a.id)}')">✏️ Edit</button>
@@ -4063,6 +4217,73 @@ function deleteAdv(advId){
   openModal('confirmModal');
 }
 
+// ── Premium advertiser alert: 1 per calendar month ──
+// Written to Firebase as alerts/<YYYY-MM>_<advertiserId>. The database rules refuse a second write for the same
+// key, so the monthly limit holds even if this screen is bypassed. The app shows it in the 🔔 panel.
+const ALERT_SENT_KEY='mc_alerts_sent';
+function _alertMonth(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function _alertSentMap(){try{const m=JSON.parse(localStorage.getItem(ALERT_SENT_KEY)||'{}');return m&&typeof m==='object'?m:{};}catch(e){return {};}}
+function alertSentThisMonth(advId){return _alertSentMap()[advId]===_alertMonth();}
+function _alertMarkSent(advId){const m=_alertSentMap();m[advId]=_alertMonth();try{localStorage.setItem(ALERT_SENT_KEY,JSON.stringify(m));}catch(e){}}
+function _alertEligible(a){return !!(a&&a.status==='active'&&(a.tier||'')==='premium'&&!(a.expiry&&daysUntil(a.expiry)<0));}
+function onAlertTextInput(){
+  const t=document.getElementById('alertText'),c=document.getElementById('alertCount');
+  if(c)c.textContent=(t.value||'').length+'/140';
+}
+function _alertSay(html,ok){
+  const m=document.getElementById('alertMsg');if(!m)return;
+  m.style.display=html?'block':'none';m.style.color=ok?'#065f46':'#b91c1c';m.innerHTML=html||'';
+}
+function _alertLock(on,label){
+  const b=document.getElementById('alertSendBtn'),t=document.getElementById('alertText');
+  if(b){b.disabled=!!on;if(label)b.textContent=label;}
+  if(t)t.disabled=!!on;
+}
+async function openSendAlertModal(advId){
+  const a=getAdvertisers().find(x=>x.id===advId);if(!a)return;
+  document.getElementById('alertAdvId').value=advId;
+  document.getElementById('alertText').value='';onAlertTextInput();
+  _alertSay('');_alertLock(false,'📣 Send alert');
+  const zone=a.zone||a.zoneCustom||'';
+  document.getElementById('alertAdvInfo').innerHTML='<strong>'+esc(a.name)+'</strong> · <span class="pill-plan">PREMIUM</span><br>Goes to: customers and riders in <strong>'+esc(zone||'(no zone set)')+'</strong><br>Month: <strong>'+esc(_alertMonth())+'</strong>';
+  openModal('sendAlertModal');
+  if(!_alertEligible(a)){_alertLock(true);_alertSay('Only an active Premium advertiser can send an alert.');return;}
+  if(!zone){_alertLock(true);_alertSay('This advertiser has no zone, so there is nobody to target. Edit the listing first.');return;}
+  if(!_fbDb||!_fbConnected){_alertLock(true);_alertSay('Connect to Firebase (online) to send alerts.');return;}
+  // The database is the source of truth for "already sent this month"
+  try{
+    const snap=await _fbDb.ref(FB_PATH+'/alerts/'+_alertMonth()+'_'+advId).once('value');
+    if(snap.exists()){
+      const v=snap.val()||{};_alertMarkSent(advId);renderAdvertisers();
+      _alertLock(true,'Already sent this month');
+      _alertSay('An alert was already sent for '+esc(_alertMonth())+(typeof v.createdAt==='number'?' on '+esc(new Date(v.createdAt).toLocaleDateString('en-ZM',{day:'numeric',month:'short'})):'')+': “'+esc(v.text||'')+'”. The next one can go out from the 1st of next month.');
+    }
+  }catch(e){}
+}
+async function sendAlert(){
+  const advId=document.getElementById('alertAdvId').value;
+  const a=getAdvertisers().find(x=>x.id===advId);
+  const text=(document.getElementById('alertText').value||'').replace(/\s+/g,' ').trim();
+  if(!_alertEligible(a))return _alertSay('Only an active Premium advertiser can send an alert.');
+  const zone=(a.zone||a.zoneCustom||'').trim();
+  if(!zone)return _alertSay('This advertiser has no zone.');
+  if(text.length<3)return _alertSay('Write the alert text first (at least 3 characters).');
+  if(text.length>140)return _alertSay('Keep it to 140 characters or less.');
+  if(!_fbDb||!_fbConnected)return _alertSay('Connect to Firebase (online) to send alerts.');
+  _alertLock(true,'Sending…');_alertSay('');
+  try{
+    await _fbDb.ref(FB_PATH+'/alerts/'+_alertMonth()+'_'+advId).set({
+      advId:advId,advName:String(a.name||'').slice(0,100),zone:zone.slice(0,100),text:text,
+      month:_alertMonth(),createdAt:firebase.database.ServerValue.TIMESTAMP
+    });
+    _alertMarkSent(advId);renderAdvertisers();
+    _alertLock(true,'Sent ✓');_alertSay('✅ Alert sent to customers and riders in '+esc(zone)+'. It shows in their 🔔 panel for 14 days.',true);
+  }catch(e){
+    _alertLock(false,'📣 Send alert');
+    _alertSay('Could not send. An alert may already exist for this advertiser this month, the advertiser may not be a live Premium listing yet, or the new database rules are not published.');
+  }
+}
+
 function openRenewAdvModal(advId){
   _renewReqCtx=null;
   const a=getAdvertisers().find(x=>x.id===advId);
@@ -4392,6 +4613,7 @@ function renderRenewals(){
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('rStat7',expiring.length);
   set('rStatExpired',expired.length);
+  renderReminders();
 
   const combined=[...expiring,...expired].sort((a,b)=>(daysUntil(a.expiry)||999)-(daysUntil(b.expiry)||999));
   const el=document.getElementById('renewalList');
@@ -4410,6 +4632,54 @@ function renderRenewals(){
       ${tag}
       <button class="btn btn-warn btn-sm" onclick="openRenewModal('${sid(s.id)}')">🔄 Renew</button>
     </div>`;
+  }).join('');
+}
+
+// ── Reminders due: Standard & Premium plans ending within 7 days ──
+// Reminders are not sent automatically (that needs a paid SMS service). Each row opens WhatsApp, and SMS for
+// Premium, with the text filled in. Tapping a button marks the rider as reminded for that expiry date, kept on
+// this device only; after the rider renews the expiry changes and they come back as due next time.
+const REMINDER_DAYS=7,REMINDER_KEY='mc_reminders_sent';
+function _remGet(){try{const m=JSON.parse(localStorage.getItem(REMINDER_KEY)||'{}');return m&&typeof m==='object'?m:{};}catch(e){return {};}}
+function zmIntl(p){const d=String(p||'').replace(/\D/g,'');if(!d)return '';if(d.startsWith('260'))return d;if(d.startsWith('0'))return '260'+d.slice(1);return '260'+d;}
+function reminderDue(s){
+  if(!s||s.status!=='active')return false;
+  const p=String(s.plan||'').toLowerCase();
+  if(p!=='standard'&&p!=='premium')return false;
+  const d=daysUntil(s.expiry);
+  return d!==null&&d>=0&&d<=REMINDER_DAYS;
+}
+function reminderText(s){
+  const d=daysUntil(s.expiry),when=d<=0?'today':d===1?'tomorrow':'in '+d+' days';
+  return 'Hi '+s.name+', your MotoConnect Zambia '+s.plan+' plan ends '+when+' ('+fmtDate(s.expiry)+'). To stay listed, renew in the app (My Account > Request renewal) or reply to this message. Ref: '+(s.ref||'MCM-'+String(s.id).slice(-4).toUpperCase());
+}
+function markReminded(id){
+  const s=getSubs().find(x=>x.id===id);if(!s)return;
+  const m=_remGet(),cut=Date.now()-60*864e5;
+  Object.keys(m).forEach(k=>{if(!m[k]||!m[k].at||m[k].at<cut)delete m[k];});
+  m[id]={expiry:s.expiry,at:Date.now()};
+  try{localStorage.setItem(REMINDER_KEY,JSON.stringify(m));}catch(e){}
+  setTimeout(renderReminders,400);
+}
+function renderReminders(){
+  const el=document.getElementById('reminderList');if(!el)return;
+  const sent=_remGet();
+  const isSent=s=>!!(sent[s.id]&&sent[s.id].expiry===s.expiry);
+  const due=getSubs().filter(reminderDue).sort((a,b)=>(isSent(a)?1:0)-(isSent(b)?1:0)||daysUntil(a.expiry)-daysUntil(b.expiry));
+  if(!due.length){el.innerHTML='<div class="empty"><div class="empty-icon">✅</div><p>No reminders due. No Standard or Premium plan ends in the next '+REMINDER_DAYS+' days.</p></div>';return;}
+  el.innerHTML=due.map(s=>{
+    const d=daysUntil(s.expiry),wa=zmIntl(s.phone),prem=String(s.plan).toLowerCase()==='premium',id=sid(s.id);
+    const msg=encodeURIComponent(reminderText(s));
+    const tag=d<=0?'<span class="badge badge-expiring">Ends today</span>':'<span class="badge badge-expiring">Ends in '+d+'d</span>';
+    const done=isSent(s)?'<span style="font-size:.72rem;color:var(--ok,#047857);font-weight:700;white-space:nowrap">✓ Reminded '+esc(new Date(sent[s.id].at).toLocaleDateString('en-ZM',{day:'numeric',month:'short'}))+'</span>':'';
+    const btns=wa
+      ?'<a class="btn btn-sm" style="background:#25d366;color:#fff;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/'+wa+'?text='+msg+'" onclick="markReminded(\''+id+'\')">💬 WhatsApp</a>'
+        +(prem?'<a class="btn btn-ghost btn-sm" style="text-decoration:none" href="sms:+'+wa+'?&body='+msg+'" onclick="markReminded(\''+id+'\')">✉️ SMS</a>':'')
+      :'<span style="font-size:.76rem;color:var(--muted)">No phone on record</span>';
+    return '<div class="renewal-item" style="flex-wrap:wrap">'
+      +'<div class="renewal-info"><div class="renewal-name">'+vehicleIcon(s.type)+' '+esc(s.name)+'</div>'
+      +'<div class="renewal-sub">'+esc(s.phone||'—')+' · <span class="pill-plan">'+esc(s.plan)+'</span> · Expiry: '+fmtDate(s.expiry)+'</div></div>'
+      +tag+done+'<div style="display:flex;gap:.4rem">'+btns+'</div></div>';
   }).join('');
 }
 
