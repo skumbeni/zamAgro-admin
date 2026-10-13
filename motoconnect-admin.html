@@ -668,6 +668,16 @@
       <div class="settings-card">
         <h3>🗺️ Operating Regions</h3>
         <p style="font-size:.82rem;color:var(--muted);margin-bottom:.9rem">These regions appear in the rider application form as selectable zones. You can also accept custom regions submitted by riders during approval.</p>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.7rem .85rem;margin-bottom:.9rem">
+          <div id="zoneGeoStat" style="font-size:.82rem;font-weight:600;color:var(--text);margin-bottom:.4rem">Map points: …</div>
+          <p style="font-size:.76rem;color:var(--muted);margin:0 0 .55rem;line-height:1.4">Map points let the public directory show the nearest riders (within 20 km) when nobody is listed in a customer's zone. The button looks up each zone by name, about one per second, so keep this page open. Zones it can't find are listed below for you to set by hand with 📌.</p>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" id="zoneGeoStartBtn" onclick="startZoneGeoFill()">🗺️ Fill missing coordinates</button>
+            <button class="btn btn-ghost btn-sm" id="zoneGeoStopBtn" onclick="stopZoneGeoFill()" style="display:none">Stop</button>
+          </div>
+          <div id="zoneGeoProg" style="font-size:.78rem;color:var(--muted);margin-top:.5rem"></div>
+          <div id="zoneGeoFails" style="margin-top:.4rem"></div>
+        </div>
         <div id="zoneManagerList" style="margin-bottom:.9rem"></div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
           <div style="flex:1;min-width:160px">
@@ -773,6 +783,7 @@
       <div id="customZoneRow" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:.75rem .9rem;margin-bottom:.75rem;font-size:.83rem">
         <div style="font-weight:700;color:#92400e;margin-bottom:.4rem">⚠️ Custom region submitted by rider</div>
         <div style="color:#78350f;margin-bottom:.6rem">Primary: <strong id="customZoneLabel1">—</strong><span id="customZoneLabel2Wrap"> &nbsp;·&nbsp; Secondary: <strong id="customZoneLabel2">—</strong></span></div>
+        <div id="customZoneGeoInfo" style="margin-bottom:.6rem;font-size:.8rem;color:#78350f;line-height:1.5"></div>
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;color:#92400e;font-weight:600">
           <input type="checkbox" id="acceptCustomZone" onchange="onAcceptCustomZone()" style="width:15px;height:15px;accent-color:var(--accent2)"/>
           Accept &amp; add to regions list permanently
@@ -3176,6 +3187,7 @@ function renderApplications(){
           Plan: <span class="pill-plan">${esc(a.plan||'Basic')}</span> &nbsp;·&nbsp; Applied: ${dateStr}
           ${a.zoneCustom?`<br>📍 Custom region: <strong style="color:var(--warn)">${esc(a.zoneCustom)}</strong> <span style="font-size:.68rem;background:#fff7ed;border:1px solid #fcd34d;color:#92400e;padding:.1rem .35rem;border-radius:4px;font-weight:700">UNRECOGNISED</span>`:''}
           ${a.zone2Custom?`<br>📍 Custom region 2: <strong style="color:var(--warn)">${esc(a.zone2Custom)}</strong> <span style="font-size:.68rem;background:#fff7ed;border:1px solid #fcd34d;color:#92400e;padding:.1rem .35rem;border-radius:4px;font-weight:700">UNRECOGNISED</span>`:''}
+          ${_geoCardLine(a)}
           ${a.nrc?`<br>🪪 NRC: ${esc(a.nrc)}`:''}
           ${a.licence?`<br>🪪 Licence: ${esc(a.licence)}`:''}
           ${a.regNo?`<br>🚗 Reg No: ${esc(a.regNo)}`:''}${_regBadge(a,_allSubs)}
@@ -3670,6 +3682,8 @@ function openApproveModal(appId){
       }
       const cb=document.getElementById('acceptCustomZone');
       if(cb)cb.checked=false;
+      const gi=document.getElementById('customZoneGeoInfo');
+      if(gi)gi.innerHTML=_geoInfoHtml(a);
     }
   }
 
@@ -3728,10 +3742,13 @@ function confirmApprove(){
     const zones=getZones();
     const existing=new Set(zones.map(z=>z.name.toLowerCase()));
     const app=subs[i];
-    [app.zoneCustom,app.zone2Custom].filter(Boolean).forEach(name=>{
+    [[app.zoneCustom,app.zoneLat,app.zoneLng],[app.zone2Custom,app.zone2Lat,app.zone2Lng]].filter(x=>x[0]).forEach(([name,lat,lng])=>{
       if(!existing.has(name.toLowerCase())){
-        zones.push({id:uid(),name,desc:'Added from rider application',mult:1.0});
+        const nz={id:uid(),name,desc:'Added from rider application',mult:1.0,updatedAt:new Date().toISOString()};
+        if(typeof lat==='number'&&typeof lng==='number'&&isFinite(lat)&&isFinite(lng)){nz.lat=lat;nz.lng=lng;nz.geoSrc='application';}
+        zones.push(nz);
         existing.add(name.toLowerCase());
+        fbZoneWriteItem(nz).catch(()=>{});
       }
     });
     save(KEYS.zones,zones);
@@ -4365,6 +4382,8 @@ function confirmRenewAdv(){
 // ══════════════════════════════════════════════════════
 function renderZoneManager(){
   const zones=getZones();
+  const statEl=document.getElementById('zoneGeoStat');
+  if(statEl){const withPt=zones.filter(_zoneHasCoords).length;statEl.textContent='Map points: '+withPt+' of '+zones.length+' zones have one'+(zones.length-withPt?' · '+(zones.length-withPt)+' missing':'');}
   const el=document.getElementById('zoneManagerList');
   if(!el)return;
   if(!zones.length){el.innerHTML='<div class="text-muted" style="font-size:.82rem">No regions defined yet.</div>';return;}
@@ -4372,6 +4391,8 @@ function renderZoneManager(){
     <div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:8px;background:var(--surface2);border:1px solid var(--border);margin-bottom:.4rem">
       <span style="font-size:.85rem;flex:1;font-weight:600;color:var(--text)">${esc(z.name)}</span>
       ${z.desc?'<span style="font-size:.75rem;color:var(--muted);flex:1">'+esc(z.desc)+'</span>':''}
+      ${_zoneCoordChip(z)}
+      <button class="btn btn-ghost btn-sm" style="padding:.25rem .5rem;font-size:.72rem" onclick="adminSetZoneCoords('${sid(z.id)}')" title="Set map point">📌</button>
       <button class="btn btn-danger btn-sm" style="padding:.25rem .55rem;font-size:.72rem" onclick="adminDeleteZone('${sid(z.id)}')">✕</button>
     </div>`).join('');
 }
@@ -4403,6 +4424,137 @@ function adminDeleteZone(zoneId){
   fbZoneDeleteItem(zoneId).catch(()=>{});
   renderZoneManager();
   renderZoneWaGroupList();
+}
+
+
+// ══════════════════════════════════════════════════════
+//  ZONE MAP POINTS — used by the public directory's "nearest riders" fallback
+// ══════════════════════════════════════════════════════
+function _zoneHasCoords(z){return !!z&&typeof z.lat==='number'&&typeof z.lng==='number'&&isFinite(z.lat)&&isFinite(z.lng);}
+function _inZambia(lat,lng){return lat>=-18.5&&lat<=-8&&lng>=21.5&&lng<=34;}
+function _gmapLink(lat,lng){return 'https://www.google.com/maps?q='+encodeURIComponent(lat+','+lng);}
+function _zoneCoordChip(z){
+  if(!_zoneHasCoords(z))return '<span style="font-size:.68rem;color:var(--warn);font-weight:700;white-space:nowrap">no map point</span>';
+  const tag=z.geoSrc==='auto'?' <span title="Found automatically by name — check it if the zone name is common" style="color:var(--warn)">auto</span>':'';
+  return '<a href="'+_gmapLink(z.lat,z.lng)+'" target="_blank" rel="noopener" style="font-size:.68rem;color:#1d4ed8;font-weight:600;white-space:nowrap;text-decoration:none">📍 '+z.lat.toFixed(3)+', '+z.lng.toFixed(3)+'</a>'+tag;
+}
+
+// Details shown to the admin when a rider entered a zone that is not on the list
+function _geoInfoHtml(a){
+  let h='';
+  const loc=[a.district,a.province].filter(Boolean).join(', ');
+  if(loc)h+='<div>🏘️ District / Province: <strong>'+esc(loc)+'</strong></div>';
+  if(a.nearestZone)h+='<div>🧭 Nearest listed zone: <strong>'+esc(a.nearestZone)+'</strong></div>';
+  const one=(typed,lat,lng,geo,tag)=>{
+    if(!typed)return '';
+    if(typeof lat==='number'&&typeof lng==='number'&&isFinite(lat)&&isFinite(lng)){
+      const mism=geo&&!String(geo).toLowerCase().includes(String(typed).toLowerCase());
+      return '<div>🗺️ '+tag+' map match: <strong>'+esc(geo||'')+'</strong> · <a href="'+_gmapLink(lat,lng)+'" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">View on map ↗</a>'+
+        (mism?'<div style="color:#b91c1c;font-weight:700">⚠️ The typed name does not appear in the matched place name. Check the map before accepting.</div>':'')+'</div>';
+    }
+    return '<div style="color:#92400e">🗺️ '+tag+': no map match chosen'+(loc?' — use the district / province above to place it.':'.')+'</div>';
+  };
+  h+=one(a.zoneCustom,a.zoneLat,a.zoneLng,a.zoneGeo,'Primary')+one(a.zone2Custom,a.zone2Lat,a.zone2Lng,a.zone2Geo,'Secondary');
+  return h;
+}
+function _geoCardLine(a){
+  const loc=[a.district,a.province].filter(Boolean).join(', ');
+  const hasPt=typeof a.zoneLat==='number'&&typeof a.zoneLng==='number'&&isFinite(a.zoneLat)&&isFinite(a.zoneLng);
+  if(!loc&&!hasPt)return '';
+  return '<br>🏘️ '+(loc?esc(loc):'Location')+(hasPt?' · <a href="'+_gmapLink(a.zoneLat,a.zoneLng)+'" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:600">View on map ↗</a>':'');
+}
+
+// Set (or clear) one zone's map point by hand: paste "lat, lng" from Google Maps
+function adminSetZoneCoords(zoneId){
+  const zones=getZones();
+  const z=zones.find(x=>x.id===zoneId);
+  if(!z)return;
+  const cur=_zoneHasCoords(z)?z.lat+', '+z.lng:'';
+  const raw=prompt('Map point for "'+z.name+'".\nPaste "latitude, longitude" (for example -12.808, 28.213). In Google Maps, press and hold the spot and copy the numbers shown. Leave blank to clear.',cur);
+  if(raw===null)return;
+  const t=raw.trim();
+  if(!t){delete z.lat;delete z.lng;delete z.geoSrc;}
+  else{
+    const m=t.match(/^(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)$/);
+    if(!m){alert('Please enter two numbers like: -12.808, 28.213');return;}
+    const lat=parseFloat(m[1]),lng=parseFloat(m[2]);
+    if(!_inZambia(lat,lng)){alert('That point is outside Zambia. Check the numbers (latitude first, then longitude).');return;}
+    z.lat=Math.round(lat*1000)/1000;z.lng=Math.round(lng*1000)/1000;z.geoSrc='admin';
+  }
+  z.updatedAt=new Date().toISOString();
+  save(KEYS.zones,zones);
+  fbZoneWriteItem(z).catch(()=>{});
+  renderZoneManager();
+  renderZoneGeoFails();
+}
+
+// Auto-fill: look each zone up by name (Nominatim, ~1 request/second)
+let _zoneGeoRun=false,_zoneGeoStop=false,_zoneGeoFails=[],_zoneGeoLast=0;
+function stopZoneGeoFill(){_zoneGeoStop=true;const b=document.getElementById('zoneGeoStopBtn');if(b)b.textContent='Stopping…';}
+function renderZoneGeoFails(){
+  const el=document.getElementById('zoneGeoFails');
+  if(!el)return;
+  const zones=getZones();
+  _zoneGeoFails=_zoneGeoFails.filter(f=>{const z=zones.find(x=>x.id===f.id);return z&&!_zoneHasCoords(z);});
+  if(!_zoneGeoFails.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="font-size:.76rem;font-weight:700;color:var(--warn);margin-bottom:.3rem">Not found on the map ('+_zoneGeoFails.length+') — set by hand:</div>'+
+    _zoneGeoFails.map(f=>'<div style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;padding:.2rem 0"><span style="flex:1">'+esc(f.name)+'</span><button class="btn btn-ghost btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="adminSetZoneCoords(\''+sid(f.id)+'\')">📌 Set</button></div>').join('');
+}
+async function _zoneGeoLookup(name){
+  const clean=String(name).replace(/\(.*?\)/g,' ').replace(/\b(settlements?|references?|border zone|area|zone)\b/ig,' ').replace(/\s+/g,' ').trim();
+  const tries=[...new Set([clean||name,name])];
+  for(const q of tries){
+    const wait=1100-(Date.now()-_zoneGeoLast);
+    if(wait>0)await new Promise(r=>setTimeout(r,wait));
+    _zoneGeoLast=Date.now();
+    const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=zm&limit=1&accept-language=en&q='+encodeURIComponent(q+', Zambia'));
+    if(r.status===429||r.status===403){const e=new Error('rate');e.rate=true;throw e;}
+    if(!r.ok)continue;
+    const d=await r.json();
+    const x=Array.isArray(d)&&d[0];
+    if(x){
+      const lat=parseFloat(x.lat),lng=parseFloat(x.lon);
+      if(isFinite(lat)&&isFinite(lng)&&_inZambia(lat,lng))return{lat:Math.round(lat*1000)/1000,lng:Math.round(lng*1000)/1000};
+    }
+  }
+  return null;
+}
+async function startZoneGeoFill(){
+  if(_zoneGeoRun)return;
+  if(!navigator.onLine){alert('You are offline. Connect to the internet and try again.');return;}
+  const ids=getZones().filter(z=>z&&z.id&&!_zoneHasCoords(z)).map(z=>z.id);
+  const prog=document.getElementById('zoneGeoProg');
+  if(!ids.length){if(prog)prog.textContent='✅ Every zone already has a map point.';return;}
+  if(!confirm('Look up map points for '+ids.length+' zones?\nThis takes about '+Math.ceil(ids.length*1.3/60)+' minute(s). Keep this page open until it finishes.'))return;
+  _zoneGeoRun=true;_zoneGeoStop=false;_zoneGeoFails=[];
+  const startBtn=document.getElementById('zoneGeoStartBtn'),stopBtn=document.getElementById('zoneGeoStopBtn');
+  if(startBtn)startBtn.style.display='none';
+  if(stopBtn){stopBtn.style.display='';stopBtn.textContent='Stop';}
+  let done=0,found=0,note='';
+  try{
+    for(const id of ids){
+      if(_zoneGeoStop)break;
+      const z0=getZones().find(x=>x.id===id);
+      if(!z0||_zoneHasCoords(z0)){done++;continue;}
+      const hit=await _zoneGeoLookup(z0.name);
+      if(hit){
+        const zones=getZones();
+        const z=zones.find(x=>x.id===id);
+        if(z){z.lat=hit.lat;z.lng=hit.lng;z.geoSrc='auto';z.updatedAt=new Date().toISOString();save(KEYS.zones,zones);fbZoneWriteItem(z).catch(()=>{});found++;}
+      }else{_zoneGeoFails.push({id,name:z0.name});}
+      done++;
+      if(prog)prog.textContent='Looking up… '+done+' of '+ids.length+' · found '+found+' · not found '+_zoneGeoFails.length;
+    }
+    note=_zoneGeoStop?'Stopped.':'Finished.';
+  }catch(e){
+    note=e&&e.rate?'The map service asked us to slow down. Wait a few minutes and press the button again — it continues where it stopped.':'Network problem. Press the button again to continue.';
+  }
+  _zoneGeoRun=false;
+  if(startBtn)startBtn.style.display='';
+  if(stopBtn)stopBtn.style.display='none';
+  if(prog)prog.textContent=note+' Found '+found+' · not found '+_zoneGeoFails.length+' (of '+ids.length+' tried).';
+  renderZoneManager();
+  renderZoneGeoFails();
 }
 
 function onAcceptCustomZone(){
