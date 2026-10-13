@@ -3152,7 +3152,8 @@ function renderApplications(){
   const search=(document.getElementById('appSearch')?.value||'').toLowerCase();
   const fStatus=document.getElementById('appFilterStatus')?.value||'';
   const fType=document.getElementById('appFilterType')?.value||'';
-  let apps=getSubs().filter(s=>s.isApplication||s.status==='pending');
+  const _allSubs=getSubs();
+  let apps=_allSubs.filter(s=>s.isApplication||s.status==='pending');
   if(search)apps=apps.filter(a=>(a.name+(a.phone||'')+(a.ref||'')).toLowerCase().includes(search));
   if(fStatus)apps=apps.filter(a=>a.status===fStatus);
   if(fType)apps=apps.filter(a=>a.type===fType);
@@ -3177,7 +3178,7 @@ function renderApplications(){
           ${a.zone2Custom?`<br>📍 Custom region 2: <strong style="color:var(--warn)">${esc(a.zone2Custom)}</strong> <span style="font-size:.68rem;background:#fff7ed;border:1px solid #fcd34d;color:#92400e;padding:.1rem .35rem;border-radius:4px;font-weight:700">UNRECOGNISED</span>`:''}
           ${a.nrc?`<br>🪪 NRC: ${esc(a.nrc)}`:''}
           ${a.licence?`<br>🪪 Licence: ${esc(a.licence)}`:''}
-          ${a.regNo?`<br>🚗 Reg No: ${esc(a.regNo)}`:''}
+          ${a.regNo?`<br>🚗 Reg No: ${esc(a.regNo)}`:''}${_regBadge(a,_allSubs)}
           ${a.rslNo?`<br>📄 RSL: ${esc(a.rslNo)} (exp ${fmtDate(a.rslExpiry)})${a.rslExpiry&&new Date(a.rslExpiry)<new Date()?' <span class="badge badge-rsl_expired">Expired</span>':''}`:'<br><span style="color:var(--danger);font-size:.78rem">⚠️ No Road Service Licence submitted</span>'}
           ${a.vic?`<br>🪧 VIC: ${esc(a.vic)}`:''}
           <br>${a.declarationAccepted?'<span style="color:#0d9669">✓ Conviction declaration accepted</span>':'<span style="color:var(--danger)">✗ Conviction declaration missing</span>'}
@@ -3250,12 +3251,30 @@ function txnConflicts(rec,list){
   });
   return{errors,warnings};
 }
+// Same vehicle on more than one record: a WARNING only (it never blocks approval), because two riders can
+// legitimately share one vehicle. Rejected records are ignored, so a rider may re-apply after a rejection.
+function _normReg(r){return String(r||'').replace(/[\s\-.]+/g,'').toUpperCase();}
+function regConflicts(rec,list){
+  const warnings=[],r=_normReg(rec&&rec.regNo);
+  if(!r)return{warnings};
+  const nrc=x=>String(x||'').replace(/\W/g,'');
+  (list||[]).forEach(o=>{
+    if(!o||o.id===rec.id||_normReg(o.regNo)!==r||o.status==='rejected')return;
+    const same=(rec.ownerUid&&o.ownerUid&&rec.ownerUid===o.ownerUid)||(_last9(rec.phone)&&_last9(rec.phone)===_last9(o.phone))||(nrc(rec.nrc)&&nrc(rec.nrc)===nrc(o.nrc));
+    warnings.push('Reg No '+rec.regNo+' is already on '+(o.name||'another rider')+' ('+(o.status||'')+', '+(o.ref||o.id)+'). '+(same?'Same person: likely a duplicate application.':'Different person: check it is a shared vehicle before approving.'));
+  });
+  return{warnings};
+}
+function _regBadge(a,list){
+  if(a.status!=='pending')return '';
+  return regConflicts(a,list).warnings.map(m=>`<br><span style="color:var(--warn);font-size:.78rem;font-weight:600">⚠️ ${esc(m)}</span>`).join('');
+}
 function approvalGate(appId,rslNo,rslExpiry,list){
   const subs=list||getSubs();
   const a=subs.find(x=>x&&x.id===appId);
   if(!a)return{errors:['Application not found. Refresh and try again.'],warnings:[]};
-  const tc=txnConflicts(a,subs);
-  return{errors:[...rslProblems(rslNo,rslExpiry,'Enter the renewed RSL, or reject the application.'),...tc.errors],warnings:tc.warnings};
+  const tc=txnConflicts(a,subs),rc=regConflicts(a,subs);
+  return{errors:[...rslProblems(rslNo,rslExpiry,'Enter the renewed RSL, or reject the application.'),...tc.errors],warnings:[...tc.warnings,...rc.warnings]};
 }
 // Manual Add/Edit Rider form: same rules, applied whenever the save asks for, or would end up
 // with, an ACTIVE rider. Pending / expired / RSL-expired records stay freely editable.
