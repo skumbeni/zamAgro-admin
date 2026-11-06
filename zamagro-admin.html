@@ -1317,6 +1317,7 @@ async function confirmSuspend() {
   const suspend = _suspendAction === 'suspend';
   try {
     await fbPatch(`businesses/${_suspendTarget}/settings`, { suspended: suspend });
+    try { await publishSuspendedFlag(_suspendTarget, suspend); } catch (e) { toast('Saved, but the app copy was NOT updated: ' + e.message, 'err'); }
     biz.suspended = suspend;
     closeModal('modal-suspend');
     renderBusinessTable(allBusinesses);
@@ -1352,6 +1353,7 @@ async function confirmArchive() {
     // for an unrelated reason before being archived.
     const patch = archive ? { archived: true, suspended: true } : { archived: false };
     await fbPatch(`businesses/${_archiveTarget}/settings`, patch);
+    if (archive) { try { await publishSuspendedFlag(_archiveTarget, true); } catch (e) { toast('Saved, but the app copy was NOT updated: ' + e.message, 'err'); } }
     biz.archived = archive;
     if (archive) biz.suspended = true;
     closeModal('modal-archive');
@@ -1437,6 +1439,26 @@ function matchShopDates() {
 }
 document.getElementById('modal-sub-tier').addEventListener('change', toggleExpiryRow);
 
+/* The app reads licenses/{uid}/pub FIRST. Once that copy exists on the server, the app ignores
+   settings.licenseData and settings.suspended, so every licence or suspend change made here must also be
+   written to pub, or the owner's phone keeps showing the old plan, old shop dates and old suspend state. */
+async function publishLicensePub(uid, licData, suspended) {
+  const pub = {
+    tier: licData.tier,
+    status: licData.tier === 'trial' ? 'trial' : 'active',
+    activatedAt: licData.activatedAt,
+    updatedAt: Date.now(),
+    suspended: !!suspended
+  };
+  if (typeof licData.expiry === 'number') pub.expiry = licData.expiry;
+  if (licData.tier === 'trial') { pub.trialStart = licData.activatedAt; pub.trialEnd = licData.expiry; }
+  if (licData.shops && Object.keys(licData.shops).length) pub.shops = licData.shops;
+  await fbSet(`licenses/${uid}/pub`, pub);
+}
+async function publishSuspendedFlag(uid, flag) {
+  await fbPatch(`licenses/${uid}/pub`, { suspended: !!flag });
+}
+
 async function saveSubscription() {
   const uid    = document.getElementById('modal-sub-uid').value;
   const tier   = document.getElementById('modal-sub-tier').value;
@@ -1493,6 +1515,9 @@ async function saveSubscription() {
 
   try {
     await fbPatch(`businesses/${uid}/settings`, { licenseData: licData });
+    let pubErr = null;
+    try { await publishLicensePub(uid, licData, biz && biz.suspended); } catch (e) { pubErr = e; }
+    if (pubErr) toast('Saved, but the app copy (licenses/' + uid + '/pub) was NOT updated: ' + pubErr.message + '. The owner may still see old dates. Check the database rules allow admin writes to licenses.', 'err');
     // Update local cache
     biz.tier = tier; biz.expiry = expiry; biz.activatedAt = licData.activatedAt; biz.note = note;
     biz.paymentLog = licData.paymentLog;
