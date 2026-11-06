@@ -934,9 +934,16 @@ async function loadBusinesses() {
 
   if (!raw || typeof raw !== 'object') { allBusinesses = []; return; }
 
+  // The app reads licenses/{uid}/pub FIRST, so once a pub copy exists it is the truth about plan, dates and
+  // suspension. Show that here. Showing the older settings copy would let a Save write stale dates over the real ones.
+  let pubs = {};
+  try { pubs = (await fbGet('licenses')) || {}; } catch (e) { console.warn('licenses read failed:', e); pubs = {}; }
+
   allBusinesses = Object.entries(raw).map(([uid, biz]) => {
     const s = (biz && biz.settings) || {};
-    const lic = s.licenseData || {};
+    const old = s.licenseData || {};
+    const pub = (pubs[uid] && pubs[uid].pub && pubs[uid].pub.tier) ? pubs[uid].pub : null;
+    const lic = pub || old;
     return {
       uid,
       companyName: s.companyName || '(unnamed)',
@@ -945,12 +952,12 @@ async function loadBusinesses() {
       tier: lic.tier || 'trial',
       expiry: lic.expiry || null,
       activatedAt: lic.activatedAt || null,
-      note: lic.note || '',
+      note: old.note || '',
       shops: (s.shops && typeof s.shops === 'object') ? s.shops : {},          // owner-written: the extra shops
       shopLic: (lic.shops && typeof lic.shops === 'object') ? lic.shops : {},  // admin-written: each shop's paid-until
-      suspended: s.suspended || false,
+      suspended: pub ? pub.suspended === true : (s.suspended || false),
       archived: s.archived || false,
-      paymentLog: lic.paymentLog || []
+      paymentLog: old.paymentLog || []
     };
   });
   allBusinesses.sort((a,b) => (b.activatedAt||0) - (a.activatedAt||0));
