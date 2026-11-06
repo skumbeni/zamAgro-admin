@@ -727,6 +727,9 @@ const FB = {
   projectId:   "zamagro-tracker"
 };
 const OWNER_PANEL_KEY = 'zamagro_owner_panel_cfg';
+/* Customer emails (approved / points added / declined). After deploying zamagro-mailer.gs as a
+   web app, paste its URL here. While this is left as is, emails are simply not sent. */
+const MAILER_URL = 'https://script.google.com/macros/s/AKfycbyA9Psh3Gafbojbbj0mWQApvdrZqJeOxqWNzToeHYSoE4SzcZLPXLj3fOfmEl9XD3_A/exec';
 
 /* Panel-local config (phone, WhatsApp, etc.) stored in owner's localStorage — prices are
    fixed below and no longer part of this, so they can't drift from the public app. */
@@ -1581,6 +1584,7 @@ async function saveSubscription() {
         await fbPatch(`subscriptionRequests/${window._pendingDismissUid}/${window._pendingDismissReqId}`, { status: 'done' });
         const r = allRequests.find(r => r.uid === window._pendingDismissUid && r.reqId === window._pendingDismissReqId);
         if (r) r.status = 'done';
+        if (r) await emailRequest(r, 'approved', { tier: tier, expiry: expiry });
         renderRequestsTable(allRequests);
         updateReqBadge(allRequests.filter(r => r.status === 'pending').length);
       } catch(e) {
@@ -1817,7 +1821,7 @@ function renderRequestsTable(list) {
   tbody.innerHTML = list.map(r => {
     const isPending = r.status === 'pending';
     const txnDisplay = r.txnId
-      ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${r.txnId}</span>`
+      ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${escH(r.txnId)}</span>`
       : '<span style="color:var(--muted);font-size:.78rem">—</span>';
     const refLine = r.reqId ? `<div class="mono" style="font-size:.68rem;color:var(--muted);margin-top:.2rem">Ref ${escH(String(r.reqId).slice(-6))}</div>` : '';
     const isBundle = r.tier === 'bundle' && r.bundle;
@@ -1832,17 +1836,17 @@ function renderRequestsTable(list) {
          <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>`;
     return `<tr style="${isPending ? '' : 'opacity:.5'}">
       <td data-label="Business">
-        <div style="font-weight:600;font-size:.88rem">${r.companyName||'—'}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${r.adminUsername||''}</div>
+        <div style="font-weight:600;font-size:.88rem">${escH(r.companyName||'—')}</div>
+        <div class="mono" style="color:var(--muted);font-size:.72rem">${escH(r.adminUsername||'')}</div>
       </td>
-      <td data-label="Phone"><a href="tel:${r.phone}" style="color:var(--green)">${r.phone||'—'}</a></td>
+      <td data-label="Phone"><a href="tel:${escH(r.phone)}" style="color:var(--green)">${escH(r.phone||'—')}</a>${r.email ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;word-break:break-all">&#9993; ${escH(r.email)}${r.emailedAt ? ' &middot; sent' : ''}</div>` : ''}</td>
       <td data-label="Current Plan">${tierBadge(r.currentTier||'trial')}</td>
       <td data-label="Requesting">${requestingCell}</td>
       <td data-label="Txn ID">${txnDisplay}${refLine}</td>
-      <td data-label="Note" style="font-size:.8rem;color:var(--muted);max-width:140px">${r.note||'—'}</td>
+      <td data-label="Note" style="font-size:.8rem;color:var(--muted);max-width:140px">${escH(r.note||'—')}</td>
       <td data-label="Date" class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-        ${isPending ? actionCell : `<span style="color:var(--muted);font-size:.8rem">Done</span>`}
+        ${isPending ? actionCell : `<span style="color:var(--muted);font-size:.8rem">Done</span>${(r.email && !r.emailedAt) ? `<button class="action-btn" onclick="resendRequestEmail('${r.uid}','${r.reqId}')">&#9993; Send email</button>` : ''}`}
       </td>
     </tr>`;
   }).join('');
@@ -1935,6 +1939,60 @@ function activateFromRequest(uid, reqId) {
   window._pendingDismissReqId = reqId;
 }
 
+function isMailerConfigured() { return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(MAILER_URL); }
+
+/* Address the mailer will use: the owner's confirmed email for updates and receipts (read from their account). */
+async function requestEmailOf(r) {
+  if (!r) return '';
+  if (r._acctEmail !== undefined) return r._acctEmail;
+  let e = '';
+  try { e = String(await fbGet(`businesses/${r.uid}/settings/notifyEmail`) || '').trim(); } catch (x) {}
+  r._acctEmail = e;
+  return e;
+}
+
+/* Sends one customer email through the Apps Script mailer. Never throws. The mailer re-checks that you are an
+   admin, takes the address from the owner's account (it must be a confirmed one), and refuses a second email
+   for the same request. */
+async function emailRequest(r, kind, extra) {
+  if (!r) return false;
+  const to = await requestEmailOf(r);
+  if (!to) return false;
+  if (!isMailerConfigured()) { toast('Email not sent: paste the mailer URL into MAILER_URL first.', 'err'); return false; }
+  try {
+    await maybeRefreshToken();
+    const resp = await fetch(MAILER_URL, {
+      method: 'POST',
+      body: JSON.stringify(Object.assign({ idToken: authToken, uid: r.uid, reqId: r.reqId, kind: kind }, extra || {}))
+    });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok || !d.ok) throw new Error(d.error || ('HTTP ' + resp.status));
+    const at = Date.now();
+    try { await fbPatch(`subscriptionRequests/${r.uid}/${r.reqId}`, { emailedAt: at, emailedKind: kind }); } catch (e) {}
+    r.emailedAt = at; r.emailedKind = kind;
+    renderRequestsTable(allRequests);
+    toast('Email sent to ' + to + '.', 'ok');
+    return true;
+  } catch (e) {
+    toast('Email to ' + to + ' failed: ' + e.message, 'err');
+    return false;
+  }
+}
+
+async function resendRequestEmail(uid, reqId) {
+  const r = allRequests.find(x => x.uid === uid && x.reqId === reqId);
+  if (!r || !r.email) { toast('This request has no email address.', 'err'); return; }
+  if (r.status === 'dismissed') { await emailRequest(r, 'declined'); return; }
+  if (r.tier === 'bundle' && r.bundle) {
+    const bal = allPointsBalances.find(o => o.key === normalizePhone(r.phone));
+    await emailRequest(r, 'points', { points: r.bundle.points || 0, balance: bal ? (bal.points || 0) : null });
+    return;
+  }
+  const biz = allBusinesses.find(b => b.uid === uid);
+  if (!biz || !biz.tier) { toast('Could not find this business plan. Open the Subscriptions page first.', 'err'); return; }
+  await emailRequest(r, 'approved', { tier: biz.tier, expiry: biz.tier === 'lifetime' ? null : (biz.expiry || null) });
+}
+
 async function dismissRequest(uid, reqId) {
   try {
     await fbPatch(`subscriptionRequests/${uid}/${reqId}`, { status: 'dismissed' });
@@ -1944,6 +2002,7 @@ async function dismissRequest(uid, reqId) {
     const pending = allRequests.filter(r => r.status === 'pending').length;
     updateReqBadge(pending);
     toast('Request dismissed.', 'ok');
+    if (r) { const _to = await requestEmailOf(r); if (_to && confirm('Also email ' + _to + ' to say this request could not be processed?')) await emailRequest(r, 'declined'); }
   } catch(e) {
     toast('Error: ' + e.message, 'err');
     if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
@@ -2031,6 +2090,7 @@ async function issuePointsFromRequest(uid, reqId) {
     if (idx >= 0) allPointsBalances[idx] = { key, ...updated }; else allPointsBalances.push({ key, ...updated });
     renderPointsTable();
     toast(`Issued ${pts} points to ${updated.companyName || updated.phone}.`, 'ok');
+    await emailRequest(req, 'points', { points: pts, balance: updated.points });
   } catch(e) {
     toast('Error: ' + e.message, 'err');
     if (/permission_denied|permission denied/i.test(e.message)) showRulesFixBanner(e.message);
