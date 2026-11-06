@@ -4,24 +4,31 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ZamAgro Track — Owner Panel</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
-
-  :root {
-    --bg:       #0b1a0e;
-    --surface:  #122016;
-    --surface2: #1a2e1e;
-    --border:   #2a4030;
-    --green:    #2fbe6a;
-    --green-dim:#1a7042;
-    --amber:    #f5a623;
-    --red:      #e05252;
-    --blue:     #4a9eff;
-    --text:     #e8f0ea;
-    --muted:    #6b8f74;
-    --mono:     'IBM Plex Mono', monospace;
-    --sans:     'Inter', sans-serif;
+<meta name="color-scheme" content="light dark"/>
+<meta name="theme-color" content="#f2f5ef" id="meta-theme"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap"/>
+<script>
+(function(){
+  var KEY='zam-admin-theme';
+  function sync(t){
+    var m=document.getElementById('meta-theme'); if(m) m.setAttribute('content', t==='dark'?'#0e1b12':'#f2f5ef');
+    var b=document.getElementById('theme-btn');
+    if(b){ b.textContent = t==='dark' ? '\u2600\uFE0F Light' : '\uD83C\uDF19 Dark'; b.setAttribute('aria-label', t==='dark'?'Switch to light theme':'Switch to dark theme'); }
   }
+  var cur='light'; try{ cur=localStorage.getItem(KEY)==='dark'?'dark':'light'; }catch(e){}
+  document.documentElement.setAttribute('data-theme', cur);
+  window.toggleTheme=function(){
+    cur = cur==='dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', cur);
+    try{ localStorage.setItem(KEY,cur); }catch(e){}
+    sync(cur);
+  };
+  document.addEventListener('DOMContentLoaded', function(){ sync(cur); });
+})();
+</script>
+<style>
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
@@ -29,30 +36,30 @@
   /* ── LOGIN SCREEN ─────────────────────────────── */
   #login-screen {
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at 40% 30%, #1a3820 0%, #0b1a0e 70%);
+    background: radial-gradient(ellipse at 40% 30%, var(--login-glow) 0%, var(--bg) 70%);
   }
   .login-box {
     width: 380px; background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; padding: 2.5rem; text-align: center;
   }
-  .login-logo { font-family: var(--mono); font-size: 1.1rem; color: var(--green); margin-bottom: .3rem; letter-spacing: 2px; }
-  .login-sub  { font-size: .78rem; color: var(--muted); margin-bottom: 2rem; letter-spacing: 1px; text-transform: uppercase; }
+  .login-logo { font-family: var(--mono); font-size: 1.1rem; color: var(--green); margin-bottom: .3rem; }
+  .login-sub  { font-size: .875rem; color: var(--muted); margin-bottom: 2rem; }
   .login-box input {
     width: 100%; padding: .75rem 1rem; margin-bottom: 1rem;
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); font-family: var(--mono); font-size: .9rem; outline: none;
+    color: var(--text); font-family: var(--mono); font-size: 1rem; outline: none;
     transition: border-color .2s;
   }
   .login-box input:focus { border-color: var(--green); }
   .btn-login {
-    width: 100%; padding: .8rem; background: var(--green); color: #0b1a0e;
+    width: 100%; padding: .8rem; background: var(--green); color: var(--on-green);
     border: none; border-radius: 8px; font-family: var(--sans); font-weight: 700;
-    font-size: .95rem; cursor: pointer; transition: opacity .2s;
+    font-size: 1.0625rem; cursor: pointer; transition: opacity .2s;
   }
   .btn-login:hover { opacity: .85; }
-  .login-err { color: var(--red); font-size: .82rem; margin-top: .75rem; display: none; }
-  .login-ok  { color: var(--green); font-size: .82rem; margin-top: .75rem; display: none; line-height: 1.4; }
-  .login-forgot { color: var(--muted); font-size: .78rem; margin-top: 1rem; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .login-err { color: var(--red); font-size: .9375rem; margin-top: .75rem; display: none; }
+  .login-ok  { color: var(--green); font-size: .9375rem; margin-top: .75rem; display: none; line-height: 1.4; }
+  .login-forgot { color: var(--muted); font-size: .875rem; margin-top: 1rem; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   .login-forgot:hover { color: var(--green); }
 
   /* ── SHELL ────────────────────────────────────── */
@@ -66,14 +73,14 @@
     padding: 1.5rem 0;
   }
   .sidebar-logo {
-    font-family: var(--mono); color: var(--green); font-size: .85rem;
-    letter-spacing: 2px; padding: 0 1.2rem 1.5rem; border-bottom: 1px solid var(--border);
+    font-family: var(--mono); color: var(--green); font-size: .9375rem;
+    padding: 0 1.2rem 1.5rem; border-bottom: 1px solid var(--border);
   }
-  .sidebar-logo span { display: block; font-size: .65rem; color: var(--muted); letter-spacing: 1px; margin-top: 2px; }
+  .sidebar-logo span { display: block; font-size: .8125rem; color: var(--muted); margin-top: 2px; }
   nav { flex: 1; padding: 1rem 0; }
   .nav-item {
     display: flex; align-items: center; gap: .7rem;
-    padding: .65rem 1.2rem; cursor: pointer; font-size: .88rem;
+    padding: .65rem 1.2rem; cursor: pointer; font-size: 1rem;
     color: var(--muted); border-left: 3px solid transparent; transition: all .15s;
   }
   .nav-item:hover { color: var(--text); background: var(--surface2); }
@@ -81,12 +88,12 @@
   .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
   .sidebar-footer {
     padding: 1rem 1.2rem; border-top: 1px solid var(--border);
-    font-size: .75rem; color: var(--muted); font-family: var(--mono);
+    font-size: .875rem; color: var(--muted); font-family: var(--mono);
   }
   .btn-logout {
     margin-top: .5rem; width: 100%; padding: .5rem; background: transparent;
     border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
-    font-size: .78rem; cursor: pointer; transition: all .15s;
+    font-size: .875rem; cursor: pointer; transition: all .15s;
   }
   .btn-logout:hover { border-color: var(--red); color: var(--red); }
 
@@ -98,7 +105,7 @@
     background: var(--surface); position: sticky; top: 0; z-index: 10;
   }
   .topbar-title { font-size: 1.05rem; font-weight: 600; }
-  .topbar-meta { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+  .topbar-meta { font-family: var(--mono); font-size: .875rem; color: var(--muted); }
   .content { padding: 2rem; flex: 1; }
 
   /* VIEWS */
@@ -111,9 +118,9 @@
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 1.2rem 1.4rem;
   }
-  .stat-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: .4rem; }
+  .stat-label { font-size: .8125rem; color: var(--muted); margin-bottom: .4rem; }
   .stat-value { font-family: var(--mono); font-size: 1.7rem; font-weight: 600; color: var(--green); }
-  .stat-sub   { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+  .stat-sub   { font-size: .875rem; color: var(--muted); margin-top: .25rem; }
 
   /* ── TABLE ────────────────────────────────────── */
   .panel-card {
@@ -123,60 +130,58 @@
   .panel-card-header {
     padding: .9rem 1.4rem; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
-    font-size: .85rem; font-weight: 600;
+    font-size: .9375rem; font-weight: 600;
   }
   .panel-card-header .actions { display: flex; gap: .5rem; }
   .search-input {
     padding: .4rem .8rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: .8rem; font-family: var(--sans);
+    border-radius: 6px; color: var(--text); font-size: .9375rem; font-family: var(--sans);
     outline: none; width: 200px; transition: border-color .2s;
   }
   .search-input:focus { border-color: var(--green); }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 10px 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 560px; }
+  table { width: 100%; border-collapse: collapse; font-size: .9375rem; min-width: 560px; }
   thead th {
-    padding: .7rem 1.2rem; text-align: left; font-size: .7rem;
-    color: var(--muted); text-transform: uppercase; letter-spacing: .8px;
-    border-bottom: 1px solid var(--border); white-space: nowrap;
+    padding: .7rem 1.2rem; text-align: left; font-size: .8125rem;
+    color: var(--muted);     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
   tbody tr:last-child { border-bottom: none; }
   tbody tr:hover { background: var(--surface2); }
   tbody td { padding: .75rem 1.2rem; vertical-align: middle; }
-  .mono { font-family: var(--mono); font-size: .8rem; }
+  .mono { font-family: var(--mono); font-size: .9375rem; }
 
   /* BADGES */
   .badge {
     display: inline-flex; align-items: center; padding: 2px 9px;
-    border-radius: 20px; font-size: .72rem; font-weight: 700; letter-spacing: .3px;
-  }
+    border-radius: 20px; font-size: .8125rem; font-weight: 700;   }
   .badge-trial    { background: #2a1f0d; color: #f5a623; }
-  .badge-starter  { background: #0d2014; color: #2fbe6a; }
+  .badge-starter  { background: var(--green-bg); color: #2fbe6a; }
   .badge-standard { background: #0d1a2a; color: #4a9eff; }
   .badge-pro      { background: #0d1a2a; color: #a78bfa; }
   .badge-lifetime { background: #1a0d2a; color: #c084fc; }
-  .badge-active   { background: #0d2014; color: #2fbe6a; }
-  .badge-expired  { background: #2a0d0d; color: #e05252; }
+  .badge-active   { background: var(--green-bg); color: #2fbe6a; }
+  .badge-expired  { background: var(--red-bg); color: #e05252; }
   .badge-suspended{ background: #2a1a0d; color: #f5a623; }
   .badge-bundle   { background: #1a2a0d; color: #8bc34a; }
 
   /* ACTIONS */
   .action-btn {
-    padding: 3px 10px; border-radius: 5px; font-size: .75rem; cursor: pointer;
+    padding: 3px 10px; border-radius: 5px; font-size: .875rem; cursor: pointer;
     border: 1px solid var(--border); background: transparent; color: var(--text);
     transition: all .15s; font-family: var(--sans);
   }
   .action-btn:hover { background: var(--surface2); }
   .action-btn.danger { border-color: var(--red); color: var(--red); }
-  .action-btn.danger:hover { background: #2a0d0d; }
+  .action-btn.danger:hover { background: var(--red-bg); }
   .action-btn.success { border-color: var(--green); color: var(--green); }
-  .action-btn.success:hover { background: #0d2014; }
-  .action-btn.primary { border-color: var(--green); color: #0b1a0e; background: var(--green); }
+  .action-btn.success:hover { background: var(--green-bg); }
+  .action-btn.primary { border-color: var(--green); color: var(--on-green); background: var(--green); }
   .action-btn.primary:hover { opacity: .85; }
 
   /* ── MODAL ────────────────────────────────────── */
   .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
+    position: fixed; inset: 0; background: var(--overlay); z-index: 100;
     display: flex; align-items: center; justify-content: center; display: none;
   }
   .modal-overlay.open { display: flex; }
@@ -186,14 +191,14 @@
   }
   .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--green); }
   .form-row { margin-bottom: 1rem; }
-  .form-row label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: .35rem; text-transform: uppercase; letter-spacing: .5px; }
+  .form-row label { display: block; font-size: .875rem; color: var(--muted); margin-bottom: .35rem; }
   .form-row select, .form-row input[type=date], .form-row input[type=text] {
     width: 100%; padding: .6rem .9rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 7px; color: var(--text); font-family: var(--sans); font-size: .88rem; outline: none;
+    border-radius: 7px; color: var(--text); font-family: var(--sans); font-size: 1rem; outline: none;
   }
   .form-row select:focus, .form-row input:focus { border-color: var(--green); }
   .modal-actions { display: flex; gap: .75rem; margin-top: 1.5rem; justify-content: flex-end; }
-  .modal-err { color: var(--red); font-size: .8rem; margin-top: .5rem; display: none; }
+  .modal-err { color: var(--red); font-size: .9375rem; margin-top: .5rem; display: none; }
 
   /* ── FINANCIALS ───────────────────────────────── */
   .finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
@@ -212,33 +217,32 @@
       display: block; padding: .3rem 0; text-align: left; white-space: normal;
     }
     #view-requests tbody td[data-label]::before {
-      content: attr(data-label); display: block; font-size: .68rem;
-      color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
-      margin-bottom: .15rem;
+      content: attr(data-label); display: block; font-size: .8125rem;
+      color: var(--muted);       margin-bottom: .15rem;
     }
     #view-requests tbody td:last-child { display: flex; gap: .5rem; padding-top: .6rem; }
   }
   .revenue-bar-wrap { margin: .5rem 0; }
-  .revenue-bar-label { display: flex; justify-content: space-between; font-size: .78rem; margin-bottom: .3rem; color: var(--muted); }
+  .revenue-bar-label { display: flex; justify-content: space-between; font-size: .875rem; margin-bottom: .3rem; color: var(--muted); }
   .revenue-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
   .revenue-bar-fill  { height: 100%; border-radius: 3px; transition: width .4s ease; }
 
   /* ── SETTINGS ─────────────────────────────────── */
   .settings-group { margin-bottom: 2rem; }
-  .settings-group-title { font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
-  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: .75rem 0; border-bottom: 1px solid #1a2e1e; }
+  .settings-group-title { font-size: .8125rem; color: var(--muted); margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: .75rem 0; border-bottom: 1px solid var(--border); }
   .setting-row:last-child { border-bottom: none; }
-  .setting-label { font-size: .88rem; }
-  .setting-desc  { font-size: .75rem; color: var(--muted); margin-top: .15rem; }
+  .setting-label { font-size: 1rem; }
+  .setting-desc  { font-size: .875rem; color: var(--muted); margin-top: .15rem; }
   .setting-input {
     padding: .45rem .8rem; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: .85rem; font-family: var(--mono);
+    border-radius: 6px; color: var(--text); font-size: .9375rem; font-family: var(--mono);
     outline: none; width: 220px; transition: border-color .2s;
   }
   .setting-input:focus { border-color: var(--green); }
   .save-btn {
-    padding: .55rem 1.4rem; background: var(--green); color: #0b1a0e;
-    border: none; border-radius: 7px; font-weight: 700; font-size: .88rem;
+    padding: .55rem 1.4rem; background: var(--green); color: var(--on-green);
+    border: none; border-radius: 7px; font-weight: 700; font-size: 1rem;
     cursor: pointer; transition: opacity .2s;
   }
   .save-btn:hover { opacity: .85; }
@@ -259,7 +263,7 @@
   .ham-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
   .sidebar-backdrop {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: none; position: fixed; inset: 0; background: var(--overlay);
     z-index: 49;
   }
 
@@ -286,14 +290,14 @@
   }
 
   /* loading */
-  .loading { color: var(--muted); font-family: var(--mono); font-size: .82rem; padding: 2rem; text-align: center; }
-  .empty   { color: var(--muted); font-size: .85rem; padding: 2rem; text-align: center; }
+  .loading { color: var(--muted); font-family: var(--mono); font-size: .9375rem; padding: 2rem; text-align: center; }
+  .empty   { color: var(--muted); font-size: .9375rem; padding: 2rem; text-align: center; }
 
   /* toast */
   #toast {
     position: fixed; bottom: 2rem; right: 2rem; background: var(--surface2);
     border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1.2rem;
-    font-size: .85rem; z-index: 200; opacity: 0; transition: opacity .25s;
+    font-size: .9375rem; z-index: 200; opacity: 0; transition: opacity .25s;
     pointer-events: none;
   }
   #toast.show { opacity: 1; }
@@ -301,10 +305,103 @@
   #toast.err  { border-color: var(--red);   color: var(--red); }
 
   /* subscription payment log */
-  .payment-row { display: flex; align-items: center; gap: 1rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .85rem; }
+  .payment-row { display: flex; align-items: center; gap: 1rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .9375rem; }
   .payment-row:last-child { border-bottom: none; }
   .payment-amount { font-family: var(--mono); color: var(--green); font-weight: 600; min-width: 90px; }
-  .payment-meta   { color: var(--muted); font-size: .75rem; }
+  .payment-meta   { color: var(--muted); font-size: .875rem; }
+
+  /* ── THEME TOKENS: light by default, dark via the toggle ─────────── */
+  :root {
+    color-scheme: light;
+    --sans: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+    --bg:#f2f5ef; --surface:#ffffff; --surface2:#e9f0e6; --border:#d0dbcc; --border-strong:#78927f;
+    --text:#14241a; --muted:#4a6152;
+    --green:#136b33; --green-dim:#dff0e4; --amber:#8f5300; --red:#b3261e; --blue:#1a5fb4;
+    --c-pro:#6a4bd1; --c-life:#9a3fc7;
+    --on-green:#ffffff; --on-red:#ffffff;
+    --green-bg:#dff0e4; --red-bg:#fbe3e0; --red-text:#8c1d16; --code-bg:#ffffff;
+    --login-glow:#dcebd8; --overlay:rgba(10,20,14,.55); --focus:rgba(19,107,51,.28);
+    --bd-amber:#7a4800; --bd-amber-bg:#fdebc8; --bd-green:#0f5c2b; --bd-green-bg:#d9f0df;
+    --bd-blue:#144f9c; --bd-blue-bg:#d9e8fa; --bd-purple:#4f31b8; --bd-purple-bg:#e6dffa;
+    --bd-magenta:#7a2aa6; --bd-magenta-bg:#f0dffa; --bd-red:#9a1f18; --bd-red-bg:#fbdcd9;
+    --bd-lime:#41600f; --bd-lime-bg:#e4efcf;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0e1b12; --surface:#16261b; --surface2:#203527; --border:#355040; --border-strong:#5d7d68;
+    --text:#eef5ef; --muted:#a6bfad;
+    --green:#4fd68a; --green-dim:#123a22; --amber:#f6b94a; --red:#ff8a80; --blue:#7ab8ff;
+    --c-pro:#b49cff; --c-life:#d79bff;
+    --on-green:#08140c; --on-red:#3b0a07;
+    --green-bg:#123a22; --red-bg:#4a1a17; --red-text:#ffb4ad; --code-bg:#2a0f0d;
+    --login-glow:#1d3a24; --overlay:rgba(0,0,0,.7); --focus:rgba(79,214,138,.35);
+    --bd-amber:#fbc864; --bd-amber-bg:#3a2a0e; --bd-green:#6fe3a0; --bd-green-bg:#10341e;
+    --bd-blue:#8cc4ff; --bd-blue-bg:#10284a; --bd-purple:#c3b0ff; --bd-purple-bg:#26194f;
+    --bd-magenta:#e0b4ff; --bd-magenta-bg:#3a1a54; --bd-red:#ff9a92; --bd-red-bg:#4a1512;
+    --bd-lime:#bfe07a; --bd-lime-bg:#27380f;
+  }
+
+  /* ── READABILITY ─────────────────────────────────────────────────── */
+  html { font-size: 16px; }
+  body { font-size: 1rem; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .login-box { width: 400px; max-width: calc(100vw - 2rem); }
+  .login-logo, .sidebar-logo { font-family: var(--sans); font-weight: 700; letter-spacing: 1.5px; }
+  .login-logo { font-size: 1.4rem; }
+  .login-sub { font-size: .9375rem; }
+  .login-box input, .setting-input, .search-input { font-family: var(--sans); }
+  .login-box input { font-size: 1rem; }
+  .login-box input, .search-input, .setting-input, .form-row select,
+  .form-row input[type=date], .form-row input[type=text] { border-color: var(--border-strong); }
+  .form-row select, .form-row input[type=date], .form-row input[type=text] { font-size: 1rem; }
+  .btn-login, .save-btn { font-size: 1rem; }
+  .sidebar { width: 240px; }
+  .sidebar-logo span { font-size: .8125rem; }
+  .nav-item { font-size: 1rem; padding: .75rem 1.2rem; }
+  .nav-item.active { font-weight: 700; }
+  .sidebar-footer, .topbar-meta, .loading { font-family: var(--sans); }
+  .sidebar-footer { font-size: .875rem; }
+  .btn-logout { border-color: var(--border-strong); color: var(--text); padding: .55rem; font-size: .9375rem; }
+  .topbar-title { font-size: 1.25rem; font-weight: 700; flex: 1; margin-left: .9rem; }
+  .topbar-right { display: flex; align-items: center; gap: .9rem; }
+  .topbar-meta { font-size: .9375rem; font-variant-numeric: tabular-nums; }
+  .theme-btn { padding: .45rem .9rem; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-family: var(--sans); font-size: .9375rem; cursor: pointer; white-space: nowrap; }
+  .theme-btn:hover { background: var(--surface2); }
+  .stat-label { font-size: .9375rem; color: var(--muted); }
+  .stat-value { font-family: var(--sans); font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-sub { font-size: .875rem; }
+  .panel-card-header { font-size: 1.0625rem; font-weight: 700; }
+  table { font-size: .9375rem; }
+  thead th { font-size: .875rem; font-weight: 700; background: var(--surface2); padding: .8rem 1.1rem; }
+  tbody td { padding: .85rem 1.1rem; }
+  .mono { font-family: var(--sans); font-size: inherit; font-variant-numeric: tabular-nums; }
+  .mono.txn { font-family: var(--mono); }
+  .badge { font-size: .8125rem; padding: 3px 10px; }
+  .badge-trial, .badge-suspended { background: var(--bd-amber-bg); color: var(--bd-amber); }
+  .badge-starter, .badge-active  { background: var(--bd-green-bg); color: var(--bd-green); }
+  .badge-standard { background: var(--bd-blue-bg);    color: var(--bd-blue); }
+  .badge-pro      { background: var(--bd-purple-bg);  color: var(--bd-purple); }
+  .badge-lifetime { background: var(--bd-magenta-bg); color: var(--bd-magenta); }
+  .badge-expired  { background: var(--bd-red-bg);     color: var(--bd-red); }
+  .badge-bundle   { background: var(--bd-lime-bg);    color: var(--bd-lime); }
+  .action-btn { padding: .4rem .85rem; font-size: .9375rem; min-height: 34px; border-color: var(--border-strong); }
+  .action-btn.danger { border-color: var(--red); }
+  .action-btn.success, .action-btn.primary { border-color: var(--green); }
+  .form-row label { font-size: .9375rem; font-weight: 700; color: var(--text); }
+  .modal-title { font-size: 1.15rem; }
+  .settings-group-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .setting-label { font-size: 1rem; }
+  .setting-desc { font-size: .875rem; }
+  .revenue-bar-label { font-size: .9375rem; }
+  .revenue-bar-track { height: 8px; border-radius: 4px; }
+  .revenue-bar-fill { border-radius: 4px; }
+  .payment-row { font-size: .9375rem; }
+  .payment-amount { font-family: var(--sans); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .payment-meta { font-size: .875rem; }
+  #toast { font-size: 1rem; background: var(--surface); box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .login-box input:focus, .search-input:focus, .setting-input:focus,
+  .form-row select:focus, .form-row input:focus { box-shadow: 0 0 0 3px var(--focus); }
+  button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -359,7 +456,7 @@
           <span class="nav-icon">💰</span> Financials
         </div>
         <div class="nav-item" data-view="requests" onclick="switchView('requests',this)">
-          <span class="nav-icon">📨</span> Requests <span id="req-badge" style="display:none;background:var(--red);color:#fff;border-radius:20px;font-size:.65rem;font-weight:700;padding:1px 6px;margin-left:4px;"></span>
+          <span class="nav-icon">📨</span> Requests <span id="req-badge" style="display:none;background:var(--red);color:var(--on-red);border-radius:20px;font-size:.8125rem;font-weight:700;padding:1px 6px;margin-left:4px;"></span>
         </div>
         <div class="nav-item" data-view="pricing" onclick="switchView('pricing',this)">
           <span class="nav-icon">🏷️</span> Pricing
@@ -370,7 +467,7 @@
       </nav>
       <div class="sidebar-footer">
         <div id="sidebar-email" style="margin-bottom:.3rem;"></div>
-        <div id="sidebar-uid" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.uid || '').then(()=>{this.textContent='Copied!'; setTimeout(()=>{this.textContent='UID: '+this.dataset.uid;},1200);})" style="margin-bottom:.6rem;font-size:.7rem;color:#888;cursor:pointer;word-break:break-all;user-select:all;" title="Tap to copy"></div>
+        <div id="sidebar-uid" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.uid || '').then(()=>{this.textContent='Copied!'; setTimeout(()=>{this.textContent='UID: '+this.dataset.uid;},1200);})" style="margin-bottom:.6rem;font-size:.8125rem;color:var(--muted);cursor:pointer;word-break:break-all;user-select:all;" title="Tap to copy"></div>
         <button class="btn-logout" onclick="doLogout()">Sign out</button>
       </div>
     </aside>
@@ -380,7 +477,7 @@
       <div class="topbar">
         <button class="ham-btn" id="ham-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>
         <span class="topbar-title" id="topbar-title">Overview</span>
-        <span class="topbar-meta" id="topbar-clock"></span>
+        <div class="topbar-right"><span class="topbar-meta" id="topbar-clock"></span><button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()"></button></div>
       </div>
       <div class="content">
 
@@ -473,7 +570,7 @@
                 <button class="action-btn" onclick="loadPointsBalances()">↻ Refresh</button>
               </div>
             </div>
-            <div style="padding:.9rem 1.4rem;font-size:.8rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
+            <div style="padding:.9rem 1.4rem;font-size:.9375rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
               Points Bundles are retired and no longer sold; this screen is kept only so balances already sold can be redeemed. 1 point = 1 shop-month at whichever plan tier that shop needs. Redeem a point here to extend/activate any one of that owner's shops — the balance drops by one and the shop's subscription updates automatically.
             </div>
             <div class="table-scroll"><table>
@@ -574,7 +671,7 @@
               Special price for one owner
               <div class="actions"><button class="action-btn" onclick="loadPricingView()">↻ Refresh</button></div>
             </div>
-            <div style="padding:.9rem 1.4rem;font-size:.8rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
+            <div style="padding:.9rem 1.4rem;font-size:.9375rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
               Overrides the prices above for this owner only, and only for what they leave filled in. Leave a box empty to keep the standard price. Only that owner and their staff can read it.
             </div>
             <div style="padding:1rem 1.4rem;display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;border-bottom:1px solid var(--border,#222)">
@@ -650,7 +747,7 @@
 <div class="modal-overlay" id="modal-suspend">
   <div class="modal-box">
     <div class="modal-title" id="modal-suspend-title">Suspend Business</div>
-    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-suspend-desc"></p>
+    <p style="font-size:1rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-suspend-desc"></p>
     <div class="modal-actions">
       <button class="action-btn" onclick="closeModal('modal-suspend')">Cancel</button>
       <button class="action-btn danger" id="modal-suspend-confirm" onclick="confirmSuspend()">Confirm</button>
@@ -662,7 +759,7 @@
 <div class="modal-overlay" id="modal-archive">
   <div class="modal-box">
     <div class="modal-title" id="modal-archive-title">Archive Business</div>
-    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-archive-desc"></p>
+    <p style="font-size:1rem;color:var(--muted);margin-bottom:1.5rem;" id="modal-archive-desc"></p>
     <div class="modal-actions">
       <button class="action-btn" onclick="closeModal('modal-archive')">Cancel</button>
       <button class="action-btn danger" id="modal-archive-confirm" onclick="confirmArchive()">Confirm</button>
@@ -675,8 +772,8 @@
 <div class="modal-overlay" id="modal-sub">
   <div class="modal-box">
     <div class="modal-title">Manage Subscription</div>
-    <div style="font-size:.82rem;color:var(--muted);margin-bottom:1.2rem;" id="modal-sub-biz"></div>
-    <div id="modal-sub-reqinfo" style="display:none;font-size:.8rem;line-height:1.5;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;"></div>
+    <div style="font-size:.9375rem;color:var(--muted);margin-bottom:1.2rem;" id="modal-sub-biz"></div>
+    <div id="modal-sub-reqinfo" style="display:none;font-size:.9375rem;line-height:1.5;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;"></div>
     <input type="hidden" id="modal-sub-uid"/>
     <div class="form-row">
       <label>Plan</label>
@@ -695,14 +792,14 @@
     <div class="form-row" id="modal-sub-shops-row" style="display:none;">
       <label>Extra shops &mdash; paid until</label>
       <div id="modal-sub-shops"></div>
-      <div id="modal-sub-shops-hint" style="font-size:.75rem;color:var(--muted);margin-top:.3rem;"></div>
+      <div id="modal-sub-shops-hint" style="font-size:.875rem;color:var(--muted);margin-top:.3rem;"></div>
       <button type="button" class="action-btn" id="modal-sub-shops-match" style="margin-top:.45rem;" onclick="matchShopDates()">Match plan date</button>
-      <label style="display:flex;align-items:center;gap:.4rem;margin:.55rem 0 0;text-transform:none;letter-spacing:0;font-size:.78rem;cursor:pointer;"><input type="checkbox" id="modal-sub-automatch" checked onchange="autoMatchShopDates()"/> Auto-match: shops with a blank or expired date follow the plan date</label>
+      <label style="display:flex;align-items:center;gap:.4rem;margin:.55rem 0 0;text-transform:none;letter-spacing:0;font-size:.875rem;cursor:pointer;"><input type="checkbox" id="modal-sub-automatch" checked onchange="autoMatchShopDates()"/> Auto-match: shops with a blank or expired date follow the plan date</label>
     </div>
     <div class="form-row">
       <label>Transaction ID <span style="color:var(--danger)">*</span></label>
-      <input type="text" id="modal-sub-txnid" placeholder="e.g. ABCD123456" style="font-family:monospace;letter-spacing:.5px;" autocomplete="off"/>
-      <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem;">From Mobile Money confirmation SMS. Required.</div>
+      <input type="text" id="modal-sub-txnid" placeholder="e.g. ABCD123456" style="font-family:var(--mono);font-size:1rem;" autocomplete="off"/>
+      <div style="font-size:.875rem;color:var(--muted);margin-top:.25rem;">From Mobile Money confirmation SMS. Required.</div>
     </div>
     <div class="form-row">
       <label>Note (optional)</label>
@@ -991,19 +1088,19 @@ function showDataError(msg) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'data-error-banner';
-    el.style.cssText = 'background:#2a0d0d;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.85rem;line-height:1.6';
+    el.style.cssText = 'background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.9375rem;line-height:1.6';
     document.querySelector('.content').prepend(el);
   }
   el.innerHTML = `<strong>⚠ Data Error:</strong> ${msg}<br><br>
   <strong>Fix:</strong> In Firebase Console → Realtime Database → Rules, add this rule so your owner account can read all businesses:<br>
-  <code style="display:block;margin-top:.5rem;background:#1a0808;padding:.6rem .8rem;border-radius:5px;font-size:.8rem;color:#ffaaaa">
+  <code style="display:block;margin-top:.5rem;background:var(--code-bg);padding:.6rem .8rem;border-radius:5px;font-size:.9375rem;color:var(--red-text)">
   "businesses": {<br>
   &nbsp;&nbsp;".read": "auth != null && auth.uid === '${window._ownerUid||'YOUR_OWNER_UID'}'",<br>
   &nbsp;&nbsp;"$uid": { ... existing rules ... }<br>
   }
   </code>
   Your UID: <strong style="user-select:all;cursor:pointer" title="Tap to select">${window._ownerUid||'not found'}</strong><br><br>
-  <button onclick="retryLoad()" style="margin-top:.5rem;padding:.45rem 1rem;background:var(--green);color:#0b1a0e;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">↻ Retry</button>`;
+  <button onclick="retryLoad()" style="margin-top:.5rem;padding:.45rem 1rem;background:var(--green);color: var(--on-green);border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.9375rem">↻ Retry</button>`;
   // Show owner UID for easy copying
   const uidEl = document.getElementById('owner-uid-display');
   if (uidEl && window._ownerUid) uidEl.textContent = window._ownerUid;
@@ -1015,13 +1112,13 @@ function showRulesFixBanner(msg) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'data-error-banner';
-    el.style.cssText = 'background:#2a0d0d;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.85rem;line-height:1.6';
+    el.style.cssText = 'background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.5rem;font-size:.9375rem;line-height:1.6';
     document.querySelector('.content').prepend(el);
   }
   const uid = window._ownerUid || 'YOUR_OWNER_UID';
   el.innerHTML = `<strong>⚠ Permission Denied:</strong> ${msg}<br><br>
   <strong>Fix:</strong> your database rules only let each business write its own <code>subscriptionRequests/&lcub;uid&rcub;</code> node — your admin account (a different uid) isn't allowed to update it. In Firebase Console → Realtime Database → Rules, add:<br>
-  <code style="display:block;margin-top:.5rem;background:#1a0808;padding:.6rem .8rem;border-radius:5px;font-size:.8rem;color:#ffaaaa;white-space:pre">
+  <code style="display:block;margin-top:.5rem;background:var(--code-bg);padding:.6rem .8rem;border-radius:5px;font-size:.9375rem;color:var(--red-text);white-space:pre">
 "subscriptionRequests": {
   "$uid": {
     ".read": "auth != null",
@@ -1098,7 +1195,7 @@ function adminShopStatus(b, id) {
 function shopsSummaryHtml(b) {
   const xs = extraShopsOf(b);
   if (!xs.length) return '';
-  return '<div style="margin-top:.3rem;font-size:.72rem;line-height:1.5">' + xs.map(x => {
+  return '<div style="margin-top:.3rem;font-size:.8125rem;line-height:1.5">' + xs.map(x => {
     const st = adminShopStatus(b, x.id);
     return `<div style="color:${st.ok ? 'var(--muted)' : 'var(--red)'}">&#127978; ${escH(x.name)}${x.active === false ? ' (inactive)' : ''} &middot; ${st.text}</div>`;
   }).join('') + '</div>';
@@ -1192,14 +1289,14 @@ function renderBusinessTable(list) {
     const isArch = b.archived;
     return `<tr>
       <td>
-        <div style="font-weight:600;font-size:.88rem">${b.companyName}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${b.uid.slice(0,16)}…</div>
+        <div style="font-weight:600;font-size:1rem">${b.companyName}</div>
+        <div class="mono" style="color:var(--muted);font-size:.8125rem">${b.uid.slice(0,16)}…</div>
         ${shopsSummaryHtml(b)}
       </td>
-      <td class="mono" style="font-size:.8rem">${b.adminUsername}</td>
+      <td class="mono" style="font-size:.9375rem">${b.adminUsername}</td>
       <td>${tierBadge(b.tier)}</td>
       <td>${statusBadge(st)}</td>
-      <td class="mono" style="font-size:.8rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
+      <td class="mono" style="font-size:.9375rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
         <button class="action-btn success" onclick="openSubModal('${b.uid}')">Manage Sub</button>
         <button class="action-btn ${isSusp?'':'danger'}" onclick="openSuspendModal('${b.uid}',${isSusp})">${isSusp?'Unsuspend':'Suspend'}</button>
@@ -1232,14 +1329,14 @@ function renderSubTable(list) {
     const st = licStatus(b);
     return `<tr>
       <td>
-        <div style="font-weight:600;font-size:.88rem">${b.companyName}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${b.adminUsername}</div>
+        <div style="font-weight:600;font-size:1rem">${b.companyName}</div>
+        <div class="mono" style="color:var(--muted);font-size:.8125rem">${b.adminUsername}</div>
         ${shopsSummaryHtml(b)}
       </td>
       <td>${tierBadge(b.tier)}</td>
       <td>${statusBadge(st)}</td>
-      <td class="mono" style="font-size:.8rem">${fmtDate(b.activatedAt)}</td>
-      <td class="mono" style="font-size:.8rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
+      <td class="mono" style="font-size:.9375rem">${fmtDate(b.activatedAt)}</td>
+      <td class="mono" style="font-size:.9375rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
       <td><button class="action-btn primary" onclick="openSubModal('${b.uid}')">Manage</button></td>
     </tr>`;
   }).join('');
@@ -1281,7 +1378,7 @@ function renderFinancials() {
 
   // Plan breakdown bars
   const maxVal = Math.max(...Object.values(byTier), 1);
-  const colors = { starter:'#2fbe6a', standard:'#4a9eff', pro:'#a78bfa', lifetime:'#c084fc' };
+  const colors = { starter:'var(--green)', standard:'var(--blue)', pro:'var(--c-pro)', lifetime:'var(--c-life)' };
   const labels = { starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
   document.getElementById('plan-breakdown').innerHTML = Object.entries(byTier).map(([t,v]) => `
     <div class="revenue-bar-wrap">
@@ -1299,7 +1396,7 @@ function renderFinancials() {
     <div class="payment-row">
       <div class="payment-amount">${K(p.amount||0)}</div>
       <div>
-        <div style="font-size:.85rem">${p.biz}</div>
+        <div style="font-size:.9375rem">${p.biz}</div>
         <div class="payment-meta">${tierBadge(p.tier||'—')} &nbsp; ${fmtDate(p.ts)} ${p.note?'· '+p.note:''}</div>
       </div>
     </div>
@@ -1430,9 +1527,9 @@ function renderModalShops(uid, keepEdits) {
     const life = t ? t.life : saved.lifetime === true;
     const date = t ? t.date : (typeof saved.expiry === 'number' ? new Date(saved.expiry).toISOString().slice(0, 10) : '');
     return `<div data-sid="${escH(x.id)}" data-inactive="${x.active === false ? 1 : 0}" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem;">
-      <span style="flex:1;min-width:120px;font-size:.85rem;${x.active === false ? 'opacity:.6;' : ''}">&#127978; ${escH(x.name)}${x.active === false ? ' (inactive)' : ''}</span>
+      <span style="flex:1;min-width:120px;font-size:.9375rem;${x.active === false ? 'opacity:.6;' : ''}">&#127978; ${escH(x.name)}${x.active === false ? ' (inactive)' : ''}</span>
       <input type="date" class="ms-date" value="${date}" style="width:150px;"/>
-      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0;text-transform:none;letter-spacing:0;font-size:.78rem;cursor:pointer;"><input type="checkbox" class="ms-life"${life ? ' checked' : ''}/> Lifetime</label>
+      <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0;text-transform:none;letter-spacing:0;font-size:.875rem;cursor:pointer;"><input type="checkbox" class="ms-life"${life ? ' checked' : ''}/> Lifetime</label>
     </div>`;
   }).join('');
   hint.textContent = 'Blank or expired shop dates follow the plan date automatically (switch off below to leave a shop unpaid). A date that is still running is kept. If the plan itself expires first, the whole account is view-only.';
@@ -1679,7 +1776,7 @@ function fillOwnerSelect() {
 }
 function ownerLabel(uid) {
   const b = allBusinesses.find(x => x.uid === uid);
-  return b ? `${prEsc(b.companyName)} <span class="mono" style="color:var(--muted);font-size:.72rem">${prEsc(b.adminUsername)}</span>` : `<span class="mono">${prEsc(uid)}</span>`;
+  return b ? `${prEsc(b.companyName)} <span class="mono" style="color:var(--muted);font-size:.8125rem">${prEsc(b.adminUsername)}</span>` : `<span class="mono">${prEsc(uid)}</span>`;
 }
 function renderOwnerOverrides() {
   const tb = document.getElementById('po-table');
@@ -1689,7 +1786,7 @@ function renderOwnerOverrides() {
     const o = pricingState.owners[uid] || {};
     const pct = o.extraShopPct != null ? Number(o.extraShopPct) + '%' : '<span style="color:var(--muted)">standard</span>';
     const life = o.extraShopLifetime != null ? K(Number(o.extraShopLifetime)) : '<span style="color:var(--muted)">standard</span>';
-    return `<tr><td>${ownerLabel(uid)}</td><td class="mono">${pct}</td><td class="mono">${life}</td><td class="mono" style="font-size:.78rem">${o.updatedAt ? fmtDate(o.updatedAt) : '—'}</td>
+    return `<tr><td>${ownerLabel(uid)}</td><td class="mono">${pct}</td><td class="mono">${life}</td><td class="mono" style="font-size:.875rem">${o.updatedAt ? fmtDate(o.updatedAt) : '—'}</td>
       <td style="display:flex;gap:.4rem"><button class="action-btn" onclick="editOwnerOverride(${i})">Edit</button><button class="action-btn danger" onclick="removeOwnerOverride(${i})">Remove</button></td></tr>`;
   }).join('');
 }
@@ -1821,13 +1918,13 @@ function renderRequestsTable(list) {
   tbody.innerHTML = list.map(r => {
     const isPending = r.status === 'pending';
     const txnDisplay = r.txnId
-      ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${escH(r.txnId)}</span>`
-      : '<span style="color:var(--muted);font-size:.78rem">—</span>';
-    const refLine = r.reqId ? `<div class="mono" style="font-size:.68rem;color:var(--muted);margin-top:.2rem">Ref ${escH(String(r.reqId).slice(-6))}</div>` : '';
+      ? `<span class="mono txn" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.875rem;color:var(--blue);">${escH(r.txnId)}</span>`
+      : '<span style="color:var(--muted);font-size:.875rem">—</span>';
+    const refLine = r.reqId ? `<div class="mono" style="font-size:.8125rem;color:var(--muted);margin-top:.2rem">Ref ${escH(String(r.reqId).slice(-6))}</div>` : '';
     const isBundle = r.tier === 'bundle' && r.bundle;
     const requestingCell = isBundle
       ? `<span class="badge badge-bundle">Points Bundle</span>
-         <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">${r.bundle.points||0} pts @ ${tierBadgeLabel(r.bundle.tierPerShop)} · ${K(r.bundle.totalPrice||0)}${r.bundle.discountPct?` (${r.bundle.discountPct}% off)`:''}</div>`
+         <div style="font-size:.8125rem;color:var(--muted);margin-top:.2rem">${r.bundle.points||0} pts @ ${tierBadgeLabel(r.bundle.tierPerShop)} · ${K(r.bundle.totalPrice||0)}${r.bundle.discountPct?` (${r.bundle.discountPct}% off)`:''}</div>`
       : tierBadge(r.tier||'trial') + quoteLine(r.quote);
     const actionCell = isBundle
       ? `<button class="action-btn primary" onclick="issuePointsFromRequest('${r.uid}','${r.reqId}')">Issue ${r.bundle.points||0} Points</button>
@@ -1836,17 +1933,17 @@ function renderRequestsTable(list) {
          <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>`;
     return `<tr style="${isPending ? '' : 'opacity:.5'}">
       <td data-label="Business">
-        <div style="font-weight:600;font-size:.88rem">${escH(r.companyName||'—')}</div>
-        <div class="mono" style="color:var(--muted);font-size:.72rem">${escH(r.adminUsername||'')}</div>
+        <div style="font-weight:600;font-size:1rem">${escH(r.companyName||'—')}</div>
+        <div class="mono" style="color:var(--muted);font-size:.8125rem">${escH(r.adminUsername||'')}</div>
       </td>
-      <td data-label="Phone"><a href="tel:${escH(r.phone)}" style="color:var(--green)">${escH(r.phone||'—')}</a>${r.email ? `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;word-break:break-all">&#9993; ${escH(r.email)}${r.emailedAt ? ' &middot; sent' : ''}</div>` : ''}</td>
+      <td data-label="Phone"><a href="tel:${escH(r.phone)}" style="color:var(--green)">${escH(r.phone||'—')}</a>${r.email ? `<div style="font-size:.8125rem;color:var(--muted);margin-top:.2rem;word-break:break-all">&#9993; ${escH(r.email)}${r.emailedAt ? ' &middot; sent' : ''}</div>` : ''}</td>
       <td data-label="Current Plan">${tierBadge(r.currentTier||'trial')}</td>
       <td data-label="Requesting">${requestingCell}</td>
       <td data-label="Txn ID">${txnDisplay}${refLine}</td>
-      <td data-label="Note" style="font-size:.8rem;color:var(--muted);max-width:140px">${escH(r.note||'—')}</td>
-      <td data-label="Date" class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
+      <td data-label="Note" style="font-size:.9375rem;color:var(--muted);max-width:140px">${escH(r.note||'—')}</td>
+      <td data-label="Date" class="mono" style="font-size:.875rem">${fmtDate(r.ts)}</td>
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-        ${isPending ? actionCell : `<span style="color:var(--muted);font-size:.8rem">Done</span>${(r.email && !r.emailedAt) ? `<button class="action-btn" onclick="resendRequestEmail('${r.uid}','${r.reqId}')">&#9993; Send email</button>` : ''}`}
+        ${isPending ? actionCell : `<span style="color:var(--muted);font-size:.9375rem">Done</span>${(r.email && !r.emailedAt) ? `<button class="action-btn" onclick="resendRequestEmail('${r.uid}','${r.reqId}')">&#9993; Send email</button>` : ''}`}
       </td>
     </tr>`;
   }).join('');
@@ -1862,13 +1959,13 @@ function quoteLine(q) {
   if (L.length) {
     const once = q.planKind === 'once';
     const rows = L.map(l => `${escH(l.name || l.shopId)}${l.kind === 'main' ? ' (plan)' : ''}${once ? '' : ' × ' + (Number(l.months) || Number(q.months) || 1) + ' mo'} &mdash; ${K(Number(l.amount) || 0)}`).join('<br>');
-    return `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;line-height:1.5">${rows}<br><strong>Total ${K(Number(q.total) || 0)}${once ? ' once-off' : ''}</strong></div>`;
+    return `<div style="font-size:.8125rem;color:var(--muted);margin-top:.2rem;line-height:1.5">${rows}<br><strong>Total ${K(Number(q.total) || 0)}${once ? ' once-off' : ''}</strong></div>`;
   }
   const n = Number(q.extraShops) || 0, per = q.planKind === 'once' ? ' once-off' : '/mo';
   const txt = n
     ? `${K(Number(q.planPrice) || 0)} + ${n} × ${K(Number(q.extraShopUnit) || 0)} = ${K(Number(q.total) || 0)}${per}`
     : `${K(Number(q.planPrice) || 0)}${per}`;
-  return `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">Quoted: ${txt}</div>`;
+  return `<div style="font-size:.8125rem;color:var(--muted);margin-top:.2rem">Quoted: ${txt}</div>`;
 }
 function tierBadgeLabel(tier) {
   const labels = { trial:'Trial', starter:'Starter', standard:'Standard', pro:'Pro', lifetime:'Lifetime' };
@@ -2044,12 +2141,12 @@ function renderPointsTable() {
     const options = list.map(b => `<option value="${b.uid}">${b.companyName}${matches.length ? '' : ' (no phone match — verify)'}</option>`).join('');
     return `<tr>
       <td data-label="Owner">
-        <div style="font-weight:600;font-size:.88rem">${o.companyName||'—'}</div>
-        <a href="tel:${o.phone||''}" style="color:var(--green);font-size:.78rem">${o.phone||o.key}</a>
+        <div style="font-weight:600;font-size:1rem">${o.companyName||'—'}</div>
+        <a href="tel:${o.phone||''}" style="color:var(--green);font-size:.875rem">${o.phone||o.key}</a>
       </td>
       <td data-label="Points Available" style="font-weight:700;font-size:1rem;color:${(o.points||0)>0?'var(--green)':'var(--muted)'}">${o.points||0}</td>
       <td data-label="Total Issued" class="mono">${o.totalIssued||0}</td>
-      <td data-label="Last Updated" class="mono" style="font-size:.78rem">${fmtDate(o.lastUpdated)}</td>
+      <td data-label="Last Updated" class="mono" style="font-size:.875rem">${fmtDate(o.lastUpdated)}</td>
       <td data-label="Redeem Against Shop" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
         <select id="redeem-biz-${o.key}" style="max-width:150px;padding:.35rem;border-radius:6px;">${options || '<option value="">No businesses found</option>'}</select>
         <button class="action-btn primary" ${(o.points||0) > 0 ? '' : 'disabled'} onclick="openRedeemModal('${o.key}')">Redeem</button>
