@@ -474,7 +474,7 @@
               </div>
             </div>
             <div style="padding:.9rem 1.4rem;font-size:.8rem;color:var(--muted);border-bottom:1px solid var(--border,#222)">
-              Owners of several shops buy points in bulk (see Requests). 1 point = 1 shop-month at whichever plan tier that shop needs. Redeem a point here to extend/activate any one of that owner's shops — the balance drops by one and the shop's subscription updates automatically.
+              Points Bundles are retired and no longer sold; this screen is kept only so balances already sold can be redeemed. 1 point = 1 shop-month at whichever plan tier that shop needs. Redeem a point here to extend/activate any one of that owner's shops — the balance drops by one and the shop's subscription updates automatically.
             </div>
             <div class="table-scroll"><table>
               <thead>
@@ -676,6 +676,7 @@
   <div class="modal-box">
     <div class="modal-title">Manage Subscription</div>
     <div style="font-size:.82rem;color:var(--muted);margin-bottom:1.2rem;" id="modal-sub-biz"></div>
+    <div id="modal-sub-reqinfo" style="display:none;font-size:.8rem;line-height:1.5;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;"></div>
     <input type="hidden" id="modal-sub-uid"/>
     <div class="form-row">
       <label>Plan</label>
@@ -1375,6 +1376,8 @@ function openSubModal(uid) {
   document.getElementById('modal-sub-expiry').value = expiry;
   document.getElementById('modal-sub-err').style.display = 'none';
   document.getElementById('modal-sub-shops').innerHTML = '';   // never carry edits over from another owner
+  window._pendingDismissUid = null; window._pendingDismissReqId = null; window._pendingReqAmount = null;   // a plain open is not an approval
+  { const ri = document.getElementById('modal-sub-reqinfo'); if (ri) { ri.style.display = 'none'; ri.innerHTML = ''; } }
   toggleExpiryRow();
   document.getElementById('modal-sub').classList.add('open');
 }
@@ -1462,7 +1465,7 @@ async function saveSubscription() {
     tier, expiry, activatedAt: Date.now(), txnId, note,
     paymentLog: [
       ...(biz?.paymentLog || []),
-      { ts: Date.now(), tier, amount: prices[tier]||0, txnId, note }
+      { ts: Date.now(), tier, amount: (window._pendingDismissUid === uid && Number(window._pendingReqAmount) > 0) ? Number(window._pendingReqAmount) : (prices[tier]||0), txnId, note }
     ]
   };
 
@@ -1744,6 +1747,7 @@ function renderRequestsTable(list) {
     const txnDisplay = r.txnId
       ? `<span class="mono" style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:.78rem;color:var(--blue);letter-spacing:.3px;">${r.txnId}</span>`
       : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+    const refLine = r.reqId ? `<div class="mono" style="font-size:.68rem;color:var(--muted);margin-top:.2rem">Ref ${escH(String(r.reqId).slice(-6))}</div>` : '';
     const isBundle = r.tier === 'bundle' && r.bundle;
     const requestingCell = isBundle
       ? `<span class="badge badge-bundle">Points Bundle</span>
@@ -1762,7 +1766,7 @@ function renderRequestsTable(list) {
       <td data-label="Phone"><a href="tel:${r.phone}" style="color:var(--green)">${r.phone||'—'}</a></td>
       <td data-label="Current Plan">${tierBadge(r.currentTier||'trial')}</td>
       <td data-label="Requesting">${requestingCell}</td>
-      <td data-label="Txn ID">${txnDisplay}</td>
+      <td data-label="Txn ID">${txnDisplay}${refLine}</td>
       <td data-label="Note" style="font-size:.8rem;color:var(--muted);max-width:140px">${r.note||'—'}</td>
       <td data-label="Date" class="mono" style="font-size:.78rem">${fmtDate(r.ts)}</td>
       <td style="display:flex;gap:.4rem;flex-wrap:wrap">
@@ -1771,8 +1775,19 @@ function renderRequestsTable(list) {
     </tr>`;
   }).join('');
 }
+function quoteLinesOf(q) {
+  const L = q && q.lines;
+  if (!L) return [];
+  return (Array.isArray(L) ? L : Object.values(L)).filter(l => l && l.shopId);
+}
 function quoteLine(q) {
   if (!q || typeof q !== 'object') return '';
+  const L = quoteLinesOf(q);
+  if (L.length) {
+    const once = q.planKind === 'once';
+    const rows = L.map(l => `${escH(l.name || l.shopId)}${l.kind === 'main' ? ' (plan)' : ''}${once ? '' : ' × ' + (Number(l.months) || Number(q.months) || 1) + ' mo'} &mdash; ${K(Number(l.amount) || 0)}`).join('<br>');
+    return `<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem;line-height:1.5">${rows}<br><strong>Total ${K(Number(q.total) || 0)}${once ? ' once-off' : ''}</strong></div>`;
+  }
   const n = Number(q.extraShops) || 0, per = q.planKind === 'once' ? ' once-off' : '/mo';
   const txt = n
     ? `${K(Number(q.planPrice) || 0)} + ${n} × ${K(Number(q.extraShopUnit) || 0)} = ${K(Number(q.total) || 0)}${per}`
@@ -1797,24 +1812,51 @@ function activateFromRequest(uid, reqId) {
     allBusinesses.push(biz);
   }
   openSubModal(uid);
+  const lines = quoteLinesOf(req.quote);
   // Pre-select requested tier
   setTimeout(() => {
-    document.getElementById('modal-sub-tier').value = req.tier || 'starter';
-    const noteVal = [req.txnId ? `Txn: ${req.txnId}` : '', req.note || ''].filter(Boolean).join(' · ');
-    const txnFromReq = req.txnId || '';
-    document.getElementById('modal-sub-txnid').value = txnFromReq;
+    const isLife = req.tier === 'lifetime';
+    const mainLine = lines.find(l => l.kind === 'main');
+    // A request that does not include the Main shop leaves the plan and its date as they are.
+    const keepPlan = lines.length && !mainLine && biz.tier && biz.tier !== 'trial';
+    document.getElementById('modal-sub-tier').value = keepPlan ? biz.tier : (req.tier || 'starter');
+    document.getElementById('modal-sub-txnid').value = req.txnId || '';
     document.getElementById('modal-sub-note').value = req.note || '';
     toggleExpiryRow();
-    // Set expiry to 1 month from today by default
-    if (req.tier !== 'lifetime') {
-      const d = new Date(); d.setMonth(d.getMonth() + 1);
-      document.getElementById('modal-sub-expiry').value = d.toISOString().slice(0,10);
-    }
-    // The request was quoted for the plan plus the owner's extra shops: date them with the plan.
-    // Clear any row for a shop the owner did not pay for before saving.
+    const iso = ms => new Date(ms).toISOString().slice(0, 10);
+    const addM = (ms, n) => { const d = new Date(ms); d.setMonth(d.getMonth() + n); return d.getTime(); };
+    const base = e => (typeof e === 'number' && e > Date.now()) ? e : Date.now();
     renderModalShops(uid, false);
-    matchShopDates();
+    if (!lines.length) {
+      // Older request (no shop list): same as before: plan date for the plan and every extra shop.
+      if (!isLife) { const d = new Date(); d.setMonth(d.getMonth() + 1); document.getElementById('modal-sub-expiry').value = d.toISOString().slice(0, 10); }
+      matchShopDates();
+      return;
+    }
+    const miss = [];
+    if (mainLine && !isLife) {
+      const mo = Number(mainLine.months) || Number(req.months) || 1;
+      const cur = (biz.tier && biz.tier !== 'trial' && biz.tier !== 'lifetime') ? biz.expiry : null;
+      document.getElementById('modal-sub-expiry').value = iso(addM(base(cur), mo));
+    }
+    lines.filter(l => l.kind === 'extra').forEach(l => {
+      const row = Array.from(document.querySelectorAll('#modal-sub-shops [data-sid]')).find(r => r.dataset.sid === l.shopId);
+      if (!row) { miss.push(l.name || l.shopId); return; }
+      if (isLife) { row.querySelector('.ms-life').checked = true; row.querySelector('.ms-date').value = ''; return; }
+      const mo = Number(l.months) || Number(req.months) || 1;
+      const cur = ((biz.shopLic || {})[l.shopId] || {}).expiry;
+      row.querySelector('.ms-life').checked = false;
+      row.querySelector('.ms-date').value = iso(addM(base(cur), mo));
+    });
+    const info = document.getElementById('modal-sub-reqinfo');
+    if (info) {
+      info.style.display = '';
+      info.innerHTML = '<strong>Request ' + escH(String(reqId).slice(-6)) + '</strong>: dates below are set only for the shops on this request; other shops are untouched. Check the payment matches:<br>' +
+        quoteLine(req.quote).replace('margin-top:.2rem', 'margin-top:.3rem') +
+        (miss.length ? '<div style="color:var(--red);margin-top:.3rem">Shop not found in this account (deleted?): ' + miss.map(escH).join(', ') + '. Check with the owner.</div>' : '');
+    }
   }, 50);
+  window._pendingReqAmount = Number(req.quote && req.quote.total) || null;
   // Mark as done after save (hook into saveSubscription success)
   window._pendingDismissUid = uid;
   window._pendingDismissReqId = reqId;
