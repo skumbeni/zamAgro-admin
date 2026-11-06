@@ -697,6 +697,7 @@
       <div id="modal-sub-shops"></div>
       <div id="modal-sub-shops-hint" style="font-size:.75rem;color:var(--muted);margin-top:.3rem;"></div>
       <button type="button" class="action-btn" id="modal-sub-shops-match" style="margin-top:.45rem;" onclick="matchShopDates()">Match plan date</button>
+      <label style="display:flex;align-items:center;gap:.4rem;margin:.55rem 0 0;text-transform:none;letter-spacing:0;font-size:.78rem;cursor:pointer;"><input type="checkbox" id="modal-sub-automatch" checked onchange="autoMatchShopDates()"/> Auto-match: shops with a blank or expired date follow the plan date</label>
     </div>
     <div class="form-row">
       <label>Transaction ID <span style="color:var(--danger)">*</span></label>
@@ -1378,6 +1379,7 @@ function openSubModal(uid) {
   document.getElementById('modal-sub-expiry').value = expiry;
   document.getElementById('modal-sub-err').style.display = 'none';
   document.getElementById('modal-sub-shops').innerHTML = '';   // never carry edits over from another owner
+  { const am = document.getElementById('modal-sub-automatch'); if (am) am.checked = true; }
   window._pendingDismissUid = null; window._pendingDismissReqId = null; window._pendingReqAmount = null;   // a plain open is not an approval
   { const ri = document.getElementById('modal-sub-reqinfo'); if (ri) { ri.style.display = 'none'; ri.innerHTML = ''; } }
   toggleExpiryRow();
@@ -1386,7 +1388,7 @@ function openSubModal(uid) {
 function toggleExpiryRow() {
   const tier = document.getElementById('modal-sub-tier').value;
   document.getElementById('modal-sub-expiry-row').style.display = tier === 'lifetime' ? 'none' : '';
-  if (_subTarget) renderModalShops(_subTarget, true);
+  if (_subTarget) { renderModalShops(_subTarget, true); autoMatchShopDates(); }
 }
 
 /* Extra-shop rows in the Manage Subscription modal. Shows each shop's saved date (or Lifetime). A shop with
@@ -1423,7 +1425,7 @@ function renderModalShops(uid, keepEdits) {
       <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0;text-transform:none;letter-spacing:0;font-size:.78rem;cursor:pointer;"><input type="checkbox" class="ms-life"${life ? ' checked' : ''}/> Lifetime</label>
     </div>`;
   }).join('');
-  hint.textContent = 'Blank date = not paid, so that shop is view-only in the app. The other shops keep working. If the plan itself expires first, the whole account is view-only.';
+  hint.textContent = 'Blank or expired shop dates follow the plan date automatically (switch off below to leave a shop unpaid). A date that is still running is kept. If the plan itself expires first, the whole account is view-only.';
 }
 
 /* Copy the plan date (or Lifetime) onto every ACTIVE extra shop. Inactive shops are left as they are. */
@@ -1437,6 +1439,31 @@ function matchShopDates() {
     else { cb.checked = false; dt.value = plan; }
   });
 }
+/* Auto-match. Every ACTIVE extra shop whose date is blank or already expired follows the plan date (or becomes
+   Lifetime when the plan is Lifetime), and so does a shop this function filled in earlier when the plan date is
+   edited again. A date the admin typed, or one that is still running, is left alone. Inactive shops are skipped.
+   The "Auto-match" tick in the modal switches this off. */
+function autoMatchShopDates() {
+  const sw = document.getElementById('modal-sub-automatch');
+  if (sw && !sw.checked) return;
+  const tier = document.getElementById('modal-sub-tier').value;
+  if (tier === 'trial') return;
+  const plan = document.getElementById('modal-sub-expiry').value;
+  const today = new Date().toISOString().slice(0, 10);
+  document.querySelectorAll('#modal-sub-shops [data-sid]').forEach(r => {
+    if (r.dataset.inactive === '1') return;
+    const cb = r.querySelector('.ms-life'), dt = r.querySelector('.ms-date');
+    if (cb.checked) return;
+    const follow = !dt.value || dt.value < today || r.dataset.auto === '1';
+    if (!follow) return;
+    if (tier === 'lifetime') { cb.checked = true; dt.value = ''; r.dataset.auto = '1'; }
+    else if (plan) { dt.value = plan; r.dataset.auto = '1'; }
+  });
+}
+document.getElementById('modal-sub-shops').addEventListener('input', e => {
+  const r = e.target.closest && e.target.closest('[data-sid]'); if (r) delete r.dataset.auto;   // typed by hand: leave it alone
+});
+document.getElementById('modal-sub-expiry').addEventListener('change', autoMatchShopDates);
 document.getElementById('modal-sub-tier').addEventListener('change', toggleExpiryRow);
 
 /* The app reads licenses/{uid}/pub FIRST. Once that copy exists on the server, the app ignores
@@ -1495,6 +1522,7 @@ async function saveSubscription() {
   // shop dates are carried over; only the rows shown in the modal are changed. On a trial nothing is edited.
   const shopsOut = { ...(biz?.shopLic || {}) };
   if (tier !== 'trial') {
+    autoMatchShopDates();
     for (const r of document.querySelectorAll('#modal-sub-shops [data-sid]')) {
       const sid = r.dataset.sid;
       const life = r.querySelector('.ms-life').checked;
@@ -1526,7 +1554,7 @@ async function saveSubscription() {
         const sh = (back && back.shops) || {};
         const dd = e => (e && e.lifetime === true) ? 'lifetime' : (e && typeof e.expiry === 'number') ? new Date(e.expiry).toISOString().slice(0, 10) : 'NO DATE';
         const xs = biz ? extraShopsOf(biz) : [];
-        pubMsg = ' App copy now: ' + ((back && back.tier) || '?') + ' to ' + dd(back && back.tier === 'lifetime' ? { lifetime: true } : back) +
+        pubMsg = ' [Account ...' + String(uid).slice(-6) + '] App copy now: ' + ((back && back.tier) || '?') + ' to ' + dd(back && back.tier === 'lifetime' ? { lifetime: true } : back) +
           (xs.length ? '. Shops: ' + xs.map(x => x.name + ' = ' + dd(sh[x.id])).join(', ') : '. No extra shops are listed for this owner here, so no shop dates were set');
       } catch (e) { pubMsg = ' (Could not read the app copy back: ' + e.message + ')'; }
     }
@@ -1885,10 +1913,11 @@ function activateFromRequest(uid, reqId) {
       row.querySelector('.ms-life').checked = false;
       row.querySelector('.ms-date').value = iso(addM(base(cur), mo));
     });
+    autoMatchShopDates();
     const info = document.getElementById('modal-sub-reqinfo');
     if (info) {
       info.style.display = '';
-      info.innerHTML = '<strong>Request ' + escH(String(reqId).slice(-6)) + '</strong>: dates below are set only for the shops on this request; other shops are untouched. Check the payment matches:<br>' +
+      info.innerHTML = '<strong>Request ' + escH(String(reqId).slice(-6)) + '</strong>: shops on this request get their paid dates; any other shop with a blank or expired date is matched to the plan date (untick Auto-match to stop that). Check the payment matches:<br>' +
         quoteLine(req.quote).replace('margin-top:.2rem', 'margin-top:.3rem') +
         (miss.length ? '<div style="color:var(--red);margin-top:.3rem">Shop not found in this account (deleted?): ' + miss.map(escH).join(', ') + '. Check with the owner.</div>' : '');
     }
