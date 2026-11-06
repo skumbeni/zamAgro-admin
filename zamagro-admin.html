@@ -1518,6 +1518,18 @@ async function saveSubscription() {
     let pubErr = null;
     try { await publishLicensePub(uid, licData, biz && biz.suspended); } catch (e) { pubErr = e; }
     if (pubErr) toast('Saved, but the app copy (licenses/' + uid + '/pub) was NOT updated: ' + pubErr.message + '. The owner may still see old dates. Check the database rules allow admin writes to licenses.', 'err');
+    // Read the app copy back so what the owner's phone will see is shown here, not assumed.
+    let pubMsg = '';
+    if (!pubErr) {
+      try {
+        const back = await fbGet(`licenses/${uid}/pub`);
+        const sh = (back && back.shops) || {};
+        const dd = e => (e && e.lifetime === true) ? 'lifetime' : (e && typeof e.expiry === 'number') ? new Date(e.expiry).toISOString().slice(0, 10) : 'NO DATE';
+        const xs = biz ? extraShopsOf(biz) : [];
+        pubMsg = ' App copy now: ' + ((back && back.tier) || '?') + ' to ' + dd(back && back.tier === 'lifetime' ? { lifetime: true } : back) +
+          (xs.length ? '. Shops: ' + xs.map(x => x.name + ' = ' + dd(sh[x.id])).join(', ') : '. No extra shops are listed for this owner here, so no shop dates were set');
+      } catch (e) { pubMsg = ' (Could not read the app copy back: ' + e.message + ')'; }
+    }
     // Update local cache
     biz.tier = tier; biz.expiry = expiry; biz.activatedAt = licData.activatedAt; biz.note = note;
     biz.paymentLog = licData.paymentLog;
@@ -1527,7 +1539,7 @@ async function saveSubscription() {
     renderSubTable(allBusinesses);
     renderOverview();
     renderFinancials();
-    toast(`Subscription updated for "${biz?.companyName}".`, 'ok');
+    toast(`Subscription updated for "${biz?.companyName}".` + pubMsg, 'ok');
     // If activated from a request, mark it as done
     if (window._pendingDismissUid && window._pendingDismissReqId) {
       try {
