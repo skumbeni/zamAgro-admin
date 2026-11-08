@@ -486,6 +486,7 @@ body{padding-bottom:40px;}
 <!-- not here — see that function for why. -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-check-compat.js" defer></script>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -503,34 +504,12 @@ const FB_CONFIG = {
 };
 
 // ── FIREBASE RULES NOTE ──────────────────────────────────────────────────────
-// Phase 5 rules (operator-gated writes) — operator UID 0LtuB8qMQdgXxnKWVQysgZyBoEC2
-// (skumbeni@gmail.com) is already baked in below. These are also given as a
-// separate, standalone copy-paste block in chat — publish those in the Rules
-// tab, this comment is just documentation for this file:
-//
-//   "licenses": {
-//     ".read": true,
-//     "$depotKey": {
-//       ".read": true,
-//       ".write": "(!data.exists() && newData.child('status').val() === 'trial') || auth.uid === '0LtuB8qMQdgXxnKWVQysgZyBoEC2'"
-//     }
-//   }
-//   "subscriptionRequests": {
-//     ".read": true,
-//     "$installId": {
-//       ".read": true,
-//       "$reqKey": {
-//         ".write": "!data.exists() || auth.uid === '0LtuB8qMQdgXxnKWVQysgZyBoEC2'"
-//       }
-//     }
-//   }
-//
-// This lets the app's own client flows keep working unauthenticated —
-// signup creating a fresh 'trial' license, a depot submitting a new
-// subscription request — while every write this admin panel makes
-// (activate/suspend/renew/approve/dismiss/delete) now requires the operator's
-// Firebase Auth token, which fbGet/fbPatch/fbDelete below attach automatically
-// once you're signed in.
+// Everything this panel reads or writes now needs the operator's Firebase Auth
+// token (uid 0LtuB8qMQdgXxnKWVQysgZyBoEC2); fbGet/fbPatch/fbDelete attach it
+// once you are signed in. The authoritative rules are in database.rules.json.
+// Nodes used here: licenses (list + status changes), licenseContacts (name and
+// phone, operator-only), subscriptionRequests, depots/<k>/auth (usernames, for
+// cleanup on delete) and usernames.
 // ────────────────────────────────────────────────────────────────────────────
 
 // Phase 5 — real operator identity. Set this to the exact email you used
@@ -538,6 +517,13 @@ const FB_CONFIG = {
 // Authentication → Users → Add user). The password lives only in Firebase
 // Auth now — nothing security-relevant is stored in this file anymore.
 const OPERATOR_EMAIL = 'skumbeni@gmail.com';
+
+// App Check (reCAPTCHA v3) - same site key as the main app. Every request this
+// panel makes to Realtime Database carries an X-Firebase-AppCheck token, and the
+// Auth SDK sends one on sign-in, so this panel keeps working once App Check
+// enforcement is switched on. This page's domain must be listed on the key in the
+// reCAPTCHA admin console.
+const AC_SITE_KEY = '6LcLhystAAAAHClIZK1fQf1AbgAYJdDLwUNX9XT';
 
 const TRIAL_MS      = 30 * 24 * 60 * 60 * 1000; // 30-day trial (matches app)
 const ONE_MONTH_MS  = 30 * 24 * 60 * 60 * 1000; // 1-month active period
@@ -571,8 +557,8 @@ let _confirmFn = null;
 // signed in or the Auth SDK failed to load — requests then go out
 // unauthenticated, which the tightened rules will simply reject for any
 // write beyond the client's own open self-service paths (trial creation,
-// new subscription-request submission). Reads stay unaffected either way
-// since licenses/subscriptionRequests are still publicly readable.
+// new subscription-request submission). Reads of the licence list, contacts
+// and subscription requests are operator-only too, so they fail the same way.
 // Waits for the Firebase SDK CDN scripts to finish loading (they're `defer`,
 // so on a slow connection the login button can be clickable before they've
 // actually executed — polling here instead of trusting script-load timing
@@ -592,6 +578,16 @@ async function _ensureFirebaseReady() {
   }
   try {
     if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+    // App Check is optional here: if its script is blocked or slow we carry on
+    // without it (requests are then just unverified), never block operator login.
+    const acDeadline = Date.now() + 3000;
+    while (!firebase.appCheck && Date.now() < acDeadline) await new Promise(r => setTimeout(r, 50));
+    try {
+      if (firebase.appCheck) firebase.appCheck().activate(AC_SITE_KEY, true);
+      else console.warn('App Check SDK did not load - requests will be unverified');
+    } catch (acErr) {
+      console.warn('App Check activation failed:', acErr);
+    }
     _fbInitDone = true;
     return true;
   } catch (e) {
@@ -615,10 +611,35 @@ function _withAuthParam(url, idToken) {
   if (!idToken) return url;
   return url + (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(idToken);
 }
+// App Check token for the REST calls below. Returns null (request goes out
+// without the header) if App Check is unavailable or the exchange fails.
+async function _getAppCheckToken() {
+  try {
+    if (!firebase.appCheck) return null;
+    const res = await Promise.race([
+      firebase.appCheck().getToken(false),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('App Check token timeout')), 10000))
+    ]);
+    if (!res || res.error || !res.token) {
+      console.warn('App Check token unavailable:', res && res.error);
+      return null;
+    }
+    return res.token;
+  } catch (e) {
+    console.warn('App Check token failed (request will go out without one):', e);
+    return null;
+  }
+}
+async function _fbHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  const ac = await _getAppCheckToken();
+  if (ac) h['X-Firebase-AppCheck'] = ac;
+  return h;
+}
 async function fbGet(path) {
   const idToken = await _getIdToken();
   const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await _fbHeaders() });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
@@ -627,7 +648,7 @@ async function fbPatch(path, data) {
   const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
   const res = await fetch(url, {
     method: 'PATCH',
-    headers: {'Content-Type':'application/json'},
+    headers: await _fbHeaders({'Content-Type':'application/json'}),
     body: JSON.stringify(data)
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -636,7 +657,7 @@ async function fbPatch(path, data) {
 async function fbDelete(path) {
   const idToken = await _getIdToken();
   const url = _withAuthParam(FB_URL + '/' + path + '.json', idToken);
-  const res = await fetch(url, { method: 'DELETE' });
+  const res = await fetch(url, { method: 'DELETE', headers: await _fbHeaders() });
   if (!res.ok) throw new Error('HTTP ' + res.status);
 }
 
@@ -710,6 +731,10 @@ async function loadDepots() {
     </div>`;
   try {
     const data = await fbGet('licenses');
+    // Contact name/phone live in licenseContacts (operator-only), not in the public licence.
+    let contacts = {};
+    try { contacts = (await fbGet('licenseContacts')) || {}; }
+    catch (e) { console.warn('licenseContacts unavailable - contact details will be blank:', e); }
     if (!data) {
       ALL_DEPOTS = [];
     } else {
@@ -723,6 +748,8 @@ async function loadDepots() {
         return {
           key,
           ...val,
+          contactName:  (contacts[key] && contacts[key].contactName)  || val.contactName  || '',
+          contactPhone: (contacts[key] && contacts[key].contactPhone) || val.contactPhone || '',
           effectiveStatus: eff,
           trialDaysLeft:   trialDays,
           activeDaysLeft:  activeDays
@@ -948,7 +975,7 @@ function buildCard(d) {
     metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
   } else if (eff === 'pending_approval') {
     metaItems.push({label:'Applied On',      val: fmtDateTime(d.createdAt)});
-    metaItems.push({label:'Location',        val: [d.district, d.country].filter(Boolean).join(', ') || '—'});
+    metaItems.push({label:'Location',        val: esc([d.district, d.country].filter(Boolean).join(', ')) || '—'});
   } else if (eff === 'trial_expired') {
     metaItems.push({label:'Trial Ended',     val: `<span style="color:var(--red)">${fmtDate((d.trialStart||0) + TRIAL_MS)}</span>`});
     metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
@@ -980,23 +1007,23 @@ function buildCard(d) {
   let actions = '';
   const k = d.key;
   if (eff === 'pending_approval') {
-    actions += `<button class="act-btn act-approve" onclick="approveDepot('${k}')">⏳ Approve → Trial</button>`;
-    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">⚡ Approve → Active</button>`;
+    actions += `<button class="act-btn act-approve" data-key="${esc(k)}" onclick="approveDepot(this.dataset.key)">⏳ Approve → Trial</button>`;
+    actions += `<button class="act-btn act-activate" data-key="${esc(k)}" onclick="activateDepot(this.dataset.key)">⚡ Approve → Active</button>`;
   }
   if (eff === 'trial' || eff === 'trial_grace' || eff === 'trial_expired') {
-    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">✅ Activate</button>`;
+    actions += `<button class="act-btn act-activate" data-key="${esc(k)}" onclick="activateDepot(this.dataset.key)">✅ Activate</button>`;
   }
   if (eff === 'active') {
-    actions += `<button class="act-btn act-renew" onclick="renewDepot('${k}')">🔄 Renew</button>`;
-    actions += `<button class="act-btn act-suspend" onclick="suspendDepot('${k}')">⛔ Suspend</button>`;
+    actions += `<button class="act-btn act-renew" data-key="${esc(k)}" onclick="renewDepot(this.dataset.key)">🔄 Renew</button>`;
+    actions += `<button class="act-btn act-suspend" data-key="${esc(k)}" onclick="suspendDepot(this.dataset.key)">⛔ Suspend</button>`;
   }
   if (eff === 'expired' || eff === 'expired_grace') {
-    actions += `<button class="act-btn act-activate" onclick="activateDepot('${k}')">✅ Reactivate</button>`;
+    actions += `<button class="act-btn act-activate" data-key="${esc(k)}" onclick="activateDepot(this.dataset.key)">✅ Reactivate</button>`;
   }
   if (eff === 'suspended') {
-    actions += `<button class="act-btn act-unsuspend" onclick="unsuspendDepot('${k}')">✅ Unsuspend</button>`;
+    actions += `<button class="act-btn act-unsuspend" data-key="${esc(k)}" onclick="unsuspendDepot(this.dataset.key)">✅ Unsuspend</button>`;
   }
-  actions += `<button class="act-btn act-delete" onclick="deleteDepot('${k}')">🗑</button>`;
+  actions += `<button class="act-btn act-delete" data-key="${esc(k)}" onclick="deleteDepot(this.dataset.key)">🗑</button>`;
 
   // Build applicant info block for pending cards
   let applicantBlock = '';
@@ -1008,8 +1035,9 @@ function buildCard(d) {
   if (eff === 'pending_approval' || req) {
     const planLabel = {starter:'Starter — K90/mo', growth:'Growth — K150/mo', pro:'Pro — K300/mo'};
     const r          = req || {};
-    const planClass  = r.requestedPlan || d.requestedPlan || '';
-    const planText   = planLabel[planClass] || (planClass ? planClass.toUpperCase() : '—');
+    const planRaw    = r.requestedPlan || d.requestedPlan || '';
+    const planClass  = ['starter','growth','pro'].includes(planRaw) ? planRaw : '';
+    const planText   = planLabel[planClass] || (planRaw ? esc(String(planRaw).toUpperCase()) : '—');
     const phone      = r.phone || r.contactPhone || d.contactPhone || '';
     const txid       = r.transactionId || d.transactionId || '';
     const method     = r.paymentMethod || '';
@@ -1039,11 +1067,11 @@ function buildCard(d) {
   }
 
   return `
-  <div class="depot-card status-${eff}" id="card-${k}">
+  <div class="depot-card status-${eff}" id="card-${esc(k)}">
     <div class="dc-top">
       <div>
-        <div class="dc-name">${d.depotName || '(Unnamed Depot)'}</div>
-        <div class="dc-key">${k}</div>
+        <div class="dc-name">${esc(d.depotName) || '(Unnamed Depot)'}</div>
+        <div class="dc-key">${esc(k)}</div>
       </div>
       ${badge}
     </div>
@@ -1058,7 +1086,7 @@ function buildCard(d) {
 // ══════════════════════════════════════════════════════
 function approveDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   showConfirm(
     '🔵 Approve → 14-Day Trial',
     `Approve <strong style="color:var(--white)">${name}</strong> for a <strong style="color:var(--purple)">14-day trial</strong>?<br><br>
@@ -1079,7 +1107,7 @@ function approveDepot(key) {
 
 function activateDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   const expiry = fmtDate(Date.now() + ONE_MONTH_MS);
   showConfirm(
     '✅ Activate Depot',
@@ -1101,7 +1129,7 @@ function activateDepot(key) {
 
 function renewDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   // Extend from current expiry if still active, else from now
   const base = (d?.activeUntil && d.activeUntil > Date.now()) ? d.activeUntil : Date.now();
   const newExpiry = fmtDate(base + ONE_MONTH_MS);
@@ -1124,7 +1152,7 @@ function renewDepot(key) {
 
 function suspendDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   showConfirm(
     '⛔ Suspend Depot',
     `Suspend <strong style="color:var(--white)">${name}</strong>?<br><br>
@@ -1144,7 +1172,7 @@ function suspendDepot(key) {
 
 function unsuspendDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   showConfirm(
     '✅ Unsuspend Depot',
     `Restore access for <strong style="color:var(--white)">${name}</strong>?<br><br>
@@ -1167,10 +1195,10 @@ function unsuspendDepot(key) {
 
 function deleteDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
-  const name = d?.depotName || key;
+  const name = esc(d?.depotName || key);
   showConfirm(
     '🗑 Permanently Delete Account',
-    `This will permanently delete <strong style="color:var(--white)">${esc(name)}</strong> and <strong style="color:var(--red)">ALL of its app data</strong> — sales, purchases, expenses, staff, stock, login credentials, everything.<br><br>
+    `This will permanently delete <strong style="color:var(--white)">${name}</strong> and <strong style="color:var(--red)">ALL of its app data</strong> — sales, purchases, expenses, staff, stock, login credentials, everything.<br><br>
      <span style="color:var(--red)">⚠️ This cannot be undone.</span><br><br>
      Type the depot key to confirm:<br>
      <div style="font-family:var(--fm);color:var(--blue);margin:4px 0 8px">${esc(key)}</div>
@@ -1194,6 +1222,7 @@ function deleteDepot(key) {
       const results = await Promise.allSettled([
         fbDelete('depots/' + key),               // app data: data/meta/auth
         fbDelete('licenses/' + key),              // license record
+        fbDelete('licenseContacts/' + key),       // contact name/phone (operator-only node)
         fbDelete('subscriptionRequests/' + key),  // any pending applications
         ...usernames.map(u => fbDelete('usernames/' + u))
       ]);
@@ -1281,8 +1310,8 @@ async function loadSubRequests() {
       section.style.display = 'block';
       document.getElementById('sub-req-count').textContent = '!';
       list.innerHTML = `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:10px;padding:11px 13px;font-size:13px;color:var(--red);">
-        ⚠️ Failed to load subscription requests: ${e.message}<br>
-        <span style="color:var(--muted);font-size:11px">Check Firebase rules — subscriptionRequests node needs .read: true</span>
+        ⚠️ Failed to load subscription requests: ${esc(e.message)}<br>
+        <span style="color:var(--muted);font-size:11px">Check you are signed in as the operator — subscriptionRequests is operator-read only</span>
       </div>`;
     }
   }
@@ -1302,7 +1331,7 @@ function renderSubRequests() {
   list.innerHTML = ALL_SUB_REQS.map(r => {
     const name  = r.depotName || r.installId || '(Unnamed)';
     const plan  = r.requestedPlan || '';
-    const pText = planLabel[plan] || (plan ? plan.toUpperCase() : '—');
+    const pText = planLabel[plan] || (plan ? esc(String(plan).toUpperCase()) : '—');
     const pCls  = planClass[plan] || '';
     const phone = r.phone || r.contactPhone || '';
     const txid  = r.transactionId || r.txid || '';
@@ -1337,12 +1366,20 @@ function renderSubRequests() {
       </div>
       <div class="sub-req-time">Submitted: ${date}</div>
       <div class="sub-req-actions">
-        <button class="act-btn act-approve" onclick="approveSubRequest('${esc(id)}','${esc(r.reqKey)}')">⏳ → Trial</button>
-        <button class="act-btn act-activate" onclick="activateSubRequest('${esc(id)}','${esc(r.reqKey)}','${esc(plan)}')">⚡ → Active</button>
-        <button class="act-btn act-delete" onclick="dismissSubRequest('${esc(id)}','${esc(r.reqKey)}')">✕ Dismiss</button>
+        <button class="act-btn act-approve" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" onclick="approveSubRequest(this.dataset.id,this.dataset.req)">⏳ → Trial</button>
+        <button class="act-btn act-activate" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" data-plan="${esc(plan)}" onclick="activateSubRequest(this.dataset.id,this.dataset.req,this.dataset.plan)">⚡ → Active</button>
+        <button class="act-btn act-delete" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" onclick="dismissSubRequest(this.dataset.id,this.dataset.req)">✕ Dismiss</button>
       </div>
     </div>`;
   }).join('');
+}
+
+// Phone numbers go in licenseContacts (operator-only). licenses/<k> is readable by anyone who knows the key.
+async function _saveContactPhone(installId, r) {
+  const phone = (r && (r.phone || r.contactPhone)) || '';
+  if (!phone) return;
+  try { await fbPatch('licenseContacts/' + installId, { contactPhone: phone }); }
+  catch (e) { console.warn('Could not save contact phone:', e); }
 }
 
 async function _markSubReqDone(installId, reqKey, newStatus) {
@@ -1352,7 +1389,7 @@ async function _markSubReqDone(installId, reqKey, newStatus) {
 
 function approveSubRequest(installId, reqKey) {
   const r = ALL_SUB_REQS.find(x => x.installId === installId);
-  const name = r?.depotName || installId;
+  const name = esc(r?.depotName || installId);
   showConfirm(
     '🔵 Approve → Trial',
     `Approve <strong style="color:var(--white)">${name}</strong> for a <strong style="color:var(--purple)">14-day trial</strong>?<br><br>
@@ -1364,11 +1401,11 @@ function approveSubRequest(installId, reqKey) {
       await fbPatch('licenses/' + installId, {
         status: 'trial',
         depotName: r?.depotName || '',
-        contactPhone: r?.phone || r?.contactPhone || '',
         requestedPlan: r?.requestedPlan || 'pro',
         trialStart: now,
         approvedOn: now
       });
+      await _saveContactPhone(installId, r);
       await _markSubReqDone(installId, reqKey, 'approved_trial');
       toast('✅ Approved → Trial');
       await loadAll();
@@ -1378,10 +1415,10 @@ function approveSubRequest(installId, reqKey) {
 
 function activateSubRequest(installId, reqKey, plan) {
   const r = ALL_SUB_REQS.find(x => x.installId === installId);
-  const name = r?.depotName || installId;
+  const name = esc(r?.depotName || installId);
   showConfirm(
     '⚡ Approve → Active',
-    `Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:var(--green)">${(plan||'pro').toUpperCase()}</strong> plan for 1 month?<br><br>
+    `Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:var(--green)">${esc((plan||'pro').toUpperCase())}</strong> plan for 1 month?<br><br>
      Status will be set to <strong style="color:var(--green)">ACTIVE</strong>.`,
     'act-activate',
     async () => {
@@ -1390,11 +1427,11 @@ function activateSubRequest(installId, reqKey, plan) {
         status: 'active',
         tier: plan || 'pro',
         depotName: r?.depotName || '',
-        contactPhone: r?.phone || r?.contactPhone || '',
         requestedPlan: plan || 'pro',
         activeUntil: now + 30 * 24 * 60 * 60 * 1000,
         activatedOn: now
       });
+      await _saveContactPhone(installId, r);
       await _markSubReqDone(installId, reqKey, 'approved_active');
       toast('✅ Activated on ' + (plan||'pro').toUpperCase() + ' plan');
       await loadAll();
@@ -1404,7 +1441,7 @@ function activateSubRequest(installId, reqKey, plan) {
 
 function dismissSubRequest(installId, reqKey) {
   const r = ALL_SUB_REQS.find(x => x.installId === installId);
-  const name = r?.depotName || installId;
+  const name = esc(r?.depotName || installId);
   showConfirm(
     '✕ Dismiss Request',
     `Dismiss the subscription application from <strong style="color:var(--white)">${name}</strong>?<br><br>
