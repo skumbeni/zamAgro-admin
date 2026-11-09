@@ -649,11 +649,11 @@
               <div class="setting-desc" id="pr-status" style="margin-bottom:.75rem;">Loading…</div>
               <div class="setting-row">
                 <div><div class="setting-label">Extra shop = % of the plan's monthly price</div><div class="setting-desc">0 to 100. Rounded to the nearest K5.</div></div>
-                <input class="setting-input" id="pr-pct" type="number" min="0" max="100" step="1" placeholder="50" oninput="renderPricingPreview()"/>
+                <input class="setting-input" id="pr-pct" type="number" min="0" max="100" step="1" placeholder="20" oninput="renderPricingPreview()"/>
               </div>
               <div class="setting-row">
                 <div><div class="setting-label">Lifetime: price per extra shop (K, once)</div><div class="setting-desc">Charged once for each extra shop.</div></div>
-                <input class="setting-input" id="pr-life" type="number" min="0" max="100000" step="5" placeholder="1250" oninput="renderPricingPreview()"/>
+                <input class="setting-input" id="pr-life" type="number" min="0" max="100000" step="5" placeholder="500" oninput="renderPricingPreview()"/>
               </div>
               <div class="setting-desc" style="margin:1rem 0 .4rem;">What owners will pay per extra shop (extra shops are always free during the 1-month trial):</div>
               <div class="table-scroll"><table>
@@ -1172,7 +1172,7 @@ function fmtDate(ts) {
 }
 /* ── PER-SHOP PAID-UNTIL ─────────────────────────────────────────
    An owner's extra shops live in settings.shops (written by the owner). Each shop's paid-until date lives in
-   licenseData.shops (written only here): { [shopId]: { expiry: ms } | { lifetime: true } }. The app turns a
+   licenseData.shops (written only here): { [shopId]: { expiry: ms, tier?: 'starter'|'standard'|'pro' } | { lifetime: true } }. The app turns a
    shop view-only when its date has passed or it has no date (free during the trial). Same rule as the app. */
 function escH(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -1188,7 +1188,7 @@ function adminShopStatus(b, id) {
   if (e && e.lifetime === true) return { ok: true, text: 'Lifetime' };
   if (e && typeof e.expiry === 'number') {
     const on = e.expiry > Date.now();
-    return { ok: on, text: (on ? 'paid to ' : 'lapsed ') + fmtDate(e.expiry) };
+    return { ok: on, text: (on ? 'paid to ' : 'lapsed ') + fmtDate(e.expiry) + (on && e.tier ? ' &middot; ' + tierBadgeLabel(e.tier) : '') };
   }
   return { ok: false, text: 'not paid' };
 }
@@ -1498,6 +1498,8 @@ function toggleExpiryRow() {
   if (_subTarget) { renderModalShops(_subTarget, true); autoMatchShopDates(); }
 }
 
+const SHOP_TIER_RANK = { starter: 1, standard: 2, pro: 3 };
+function setShopPlanChoice(row, v) { const sel = row && row.querySelector('.ms-tier'); if (sel && Array.from(sel.options).some(o => o.value === v)) { sel.value = v; sel.dataset.hand = '1'; } }
 /* Extra-shop rows in the Manage Subscription modal. Shows each shop's saved date (or Lifetime). A shop with
    neither saved is blank = "not paid". keepEdits: re-draw after a plan change without losing what was typed. */
 function renderModalShops(uid, keepEdits) {
@@ -1519,20 +1521,31 @@ function renderModalShops(uid, keepEdits) {
   matchBtn.style.display = '';
   const typed = {};
   if (keepEdits) box.querySelectorAll('[data-sid]').forEach(r => {
-    typed[r.dataset.sid] = { date: r.querySelector('.ms-date').value, life: r.querySelector('.ms-life').checked };
+    const _ps = r.querySelector('.ms-tier');
+    typed[r.dataset.sid] = { date: r.querySelector('.ms-date').value, life: r.querySelector('.ms-life').checked, plan: (_ps && _ps.dataset.hand === '1') ? _ps.value : '' };
   });
+  const planTier = SHOP_TIER_RANK[tier] ? tier : null;                 // plan being saved, when it is Starter/Standard/Pro
   box.innerHTML = xs.map(x => {
     const saved = (biz.shopLic || {})[x.id] || {};
     const t = typed[x.id];
     const life = t ? t.life : saved.lifetime === true;
     const date = t ? t.date : (typeof saved.expiry === 'number' ? new Date(saved.expiry).toISOString().slice(0, 10) : '');
+    // What "Keep" would leave the shop on: its stored plan, or (older shops with none stored) the plan the account is on now.
+    const running = typeof saved.expiry === 'number' && saved.expiry > Date.now();
+    const keepTier = SHOP_TIER_RANK[saved.tier] ? saved.tier : (running && SHOP_TIER_RANK[biz.tier] ? biz.tier : null);
+    const showKeep = !!keepTier && keepTier !== planTier;
+    const choice = t && t.plan ? t.plan : ((running && showKeep) ? 'keep' : 'plan');
+    const planSel = (planTier && tier !== 'lifetime') ? `<select class="ms-tier"${t && t.plan ? ' data-hand="1"' : ''} title="Plan this shop will be on" style="width:auto;padding:.35rem .5rem;font-size:.875rem;">` +
+      (showKeep ? `<option value="keep"${choice === 'keep' ? ' selected' : ''}>Keep ${escH(tierBadgeLabel(keepTier))}</option>` : '') +
+      `<option value="plan"${(choice === 'plan' || !showKeep) ? ' selected' : ''}>${showKeep ? 'Move to ' : ''}${escH(tierBadgeLabel(planTier))}</option></select>` : '';
     return `<div data-sid="${escH(x.id)}" data-inactive="${x.active === false ? 1 : 0}" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem;">
       <span style="flex:1;min-width:120px;font-size:.9375rem;${x.active === false ? 'opacity:.6;' : ''}">&#127978; ${escH(x.name)}${x.active === false ? ' (inactive)' : ''}</span>
+      ${planSel}
       <input type="date" class="ms-date" value="${date}" style="width:150px;"/>
       <label style="display:inline-flex;align-items:center;gap:.3rem;margin:0;text-transform:none;letter-spacing:0;font-size:.875rem;cursor:pointer;"><input type="checkbox" class="ms-life"${life ? ' checked' : ''}/> Lifetime</label>
     </div>`;
   }).join('');
-  hint.textContent = 'Blank or expired shop dates follow the plan date automatically (switch off below to leave a shop unpaid). A date that is still running is kept. If the plan itself expires first, the whole account is view-only.';
+  hint.textContent = 'Blank or expired shop dates follow the plan date automatically (switch off below to leave a shop unpaid). A date that is still running is kept. Each shop runs on its own plan: "Keep" leaves a shop on the plan it was paid on, "Move to" puts it on the plan above. If the plan itself expires first, the whole account is view-only.';
 }
 
 /* Copy the plan date (or Lifetime) onto every ACTIVE extra shop. Inactive shops are left as they are. */
@@ -1543,7 +1556,7 @@ function matchShopDates() {
     if (r.dataset.inactive === '1') return;
     const cb = r.querySelector('.ms-life'), dt = r.querySelector('.ms-date');
     if (tier === 'lifetime') { cb.checked = true; dt.value = ''; }
-    else { cb.checked = false; dt.value = plan; }
+    else { cb.checked = false; dt.value = plan; setShopPlanChoice(r, 'plan'); }
   });
 }
 /* Auto-match. Every ACTIVE extra shop whose date is blank or already expired follows the plan date (or becomes
@@ -1564,11 +1577,12 @@ function autoMatchShopDates() {
     const follow = !dt.value || dt.value < today || r.dataset.auto === '1';
     if (!follow) return;
     if (tier === 'lifetime') { cb.checked = true; dt.value = ''; r.dataset.auto = '1'; }
-    else if (plan) { dt.value = plan; r.dataset.auto = '1'; }
+    else if (plan) { dt.value = plan; r.dataset.auto = '1'; setShopPlanChoice(r, 'plan'); }
   });
 }
 document.getElementById('modal-sub-shops').addEventListener('input', e => {
   const r = e.target.closest && e.target.closest('[data-sid]'); if (r) delete r.dataset.auto;   // typed by hand: leave it alone
+  if (e.target.classList && e.target.classList.contains('ms-tier')) e.target.dataset.hand = '1';
 });
 document.getElementById('modal-sub-expiry').addEventListener('change', autoMatchShopDates);
 document.getElementById('modal-sub-tier').addEventListener('change', toggleExpiryRow);
@@ -1640,7 +1654,20 @@ async function saveSubscription() {
       } else if (dv) {
         const ms = new Date(dv).getTime();
         if (isNaN(ms)) { errEl.textContent = 'One of the shop dates is not a valid date.'; errEl.style.display = 'block'; return; }
-        if (!(prev && prev.expiry === ms)) shopsOut[sid] = { expiry: ms, updatedAt: Date.now() };
+        // The shop's plan is stored with its date. "Keep" = the plan it was paid on (older shops with none stored
+        // keep the account's current plan, so an upgrade below does not silently upgrade them); "plan" = the plan saved here.
+        const ps = r.querySelector('.ms-tier');
+        const prevTier = (prev && SHOP_TIER_RANK[prev.tier]) ? prev.tier : null;
+        const prevRunning = !!(prev && typeof prev.expiry === 'number' && prev.expiry > Date.now());
+        const keepTier = prevTier || (prevRunning && SHOP_TIER_RANK[biz && biz.tier] ? biz.tier : null);
+        const planTier = SHOP_TIER_RANK[tier] ? tier : null;
+        const shopPlan = (ps && ps.value === 'keep' && keepTier) ? keepTier : (planTier || keepTier || null);
+        const sameDate = !!(prev && prev.expiry === ms);
+        const next = Object.assign({}, sameDate ? prev : {}, { expiry: ms });
+        delete next.lifetime;
+        if (shopPlan) next.tier = shopPlan; else delete next.tier;
+        if (!sameDate || prev.tier !== next.tier) next.updatedAt = Date.now();
+        shopsOut[sid] = next;
       } else {
         delete shopsOut[sid];
       }
@@ -1719,8 +1746,8 @@ async function saveSubscription() {
 
 /* ── PRICING (extra shops) ───────────────────────────────────── */
 /* Published to Firebase: pricing/default (public) and pricing/owners/{uid} (that owner + staff only).
-   The app uses its own built-in 50% / K1,250 until something is published here. */
-const PRICING_FALLBACK = { pct: 50, lifetime: 1250 };
+   The app uses its own built-in 20% / K500 until something is published here. */
+const PRICING_FALLBACK = { pct: 20, lifetime: 500 };
 let pricingState = { def: null, owners: {} };
 let _poKeys = [];
 
@@ -2020,6 +2047,7 @@ function activateFromRequest(uid, reqId) {
       const cur = ((biz.shopLic || {})[l.shopId] || {}).expiry;
       row.querySelector('.ms-life').checked = false;
       row.querySelector('.ms-date').value = iso(addM(base(cur), mo));
+      setShopPlanChoice(row, 'plan');
     });
     autoMatchShopDates();
     const info = document.getElementById('modal-sub-reqinfo');
