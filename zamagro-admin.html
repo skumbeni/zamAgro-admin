@@ -645,8 +645,12 @@
         <div id="view-pricing" class="view">
           <div class="panel-card" style="padding:1.5rem">
             <div class="settings-group" style="margin-bottom:0">
-              <div class="settings-group-title">Extra shop price — applies to every owner</div>
+              <div class="settings-group-title">Plan and extra shop prices — apply to every owner</div>
               <div class="setting-desc" id="pr-status" style="margin-bottom:.75rem;">Loading…</div>
+              <div class="setting-row"><div><div class="setting-label">Starter plan (K per month)</div><div class="setting-desc">Shown in the app, landing page, request form and guide.</div></div><input class="setting-input" id="pr-starter" type="number" min="1" max="100000" step="1" placeholder="200" oninput="renderPricingPreview()"/></div>
+              <div class="setting-row"><div><div class="setting-label">Standard plan (K per month)</div></div><input class="setting-input" id="pr-standard" type="number" min="1" max="100000" step="1" placeholder="300" oninput="renderPricingPreview()"/></div>
+              <div class="setting-row"><div><div class="setting-label">Pro plan (K per month)</div></div><input class="setting-input" id="pr-pro" type="number" min="1" max="100000" step="1" placeholder="399" oninput="renderPricingPreview()"/></div>
+              <div class="setting-row"><div><div class="setting-label">Lifetime plan (K, once)</div><div class="setting-desc">Also the target of the customer's optional Lifetime goal.</div></div><input class="setting-input" id="pr-main-life" type="number" min="1" max="100000" step="5" placeholder="2500" oninput="renderPricingPreview()"/></div>
               <div class="setting-row">
                 <div><div class="setting-label">Extra shop = % of the plan's monthly price</div><div class="setting-desc">0 to 100. Rounded to the nearest K5.</div></div>
                 <input class="setting-input" id="pr-pct" type="number" min="0" max="100" step="1" placeholder="40" oninput="renderPricingPreview()"/>
@@ -834,14 +838,17 @@ let panelCfg = JSON.parse(localStorage.getItem(OWNER_PANEL_KEY) || '{}');
 
 /* Fixed to match the public app's actual tier prices exactly — do not make these
    editable from this panel again; that's what let admin and public pricing drift
-   apart before. If prices change, update them here AND in the public app together. */
-const PRICES = () => ({
-  starter:  200,
-  standard: 300,
-  pro:      399,
-  lifetime: 2500,
-  trial: 0
-});
+   apart before. Plan prices are now set on the Pricing page (published to pricing/default); the numbers here are only the built-in fallback. */
+const PRICES_BUILTIN = { starter: 200, standard: 300, pro: 399, lifetime: 2500, trial: 0 };
+const PRICES = () => Object.assign({}, PRICES_BUILTIN, window._planPrices || {});
+// Live plan prices published from the Pricing page. Used for revenue figures, default payment amounts and the Lifetime goal.
+async function loadPlanPrices() {
+  try {
+    const d = await fbGet('pricing/default'), p = {};
+    [['starter', 'planStarter'], ['standard', 'planStandard'], ['pro', 'planPro'], ['lifetime', 'planLifetime']].forEach(([k, f]) => { if (d && typeof d[f] === 'number' && d[f] > 0) p[k] = d[f]; });
+    window._planPrices = p; window._planPricesLoaded = true;
+  } catch (e) { /* keep the built-in prices */ }
+}
 
 /* ── AUTH STATE ──────────────────────────────────────────────── */
 let authToken = null;
@@ -1039,6 +1046,7 @@ async function loadBusinesses() {
   let pubs = {};
   try { pubs = (await fbGet('licenses')) || {}; } catch (e) { console.warn('licenses read failed:', e); pubs = {}; }
 
+  await loadPlanPrices();
   allBusinesses = Object.entries(raw).map(([uid, biz]) => {
     const s = (biz && biz.settings) || {};
     const old = s.licenseData || {};
@@ -1057,6 +1065,7 @@ async function loadBusinesses() {
       shopLic: (lic.shops && typeof lic.shops === 'object') ? lic.shops : {},  // admin-written: each shop's paid-until
       suspended: pub ? pub.suspended === true : (s.suspended || false),
       archived: s.archived || false,
+      goal: s.lifetimeGoal === true,                                           // owner chose the optional Lifetime goal in the app
       paymentLog: old.paymentLog || []
     };
   });
@@ -1331,6 +1340,7 @@ function renderSubTable(list) {
       <td>
         <div style="font-weight:600;font-size:1rem">${b.companyName}</div>
         <div class="mono" style="color:var(--muted);font-size:.8125rem">${b.adminUsername}</div>
+        ${goalTagHtml(b)}
         ${shopsSummaryHtml(b)}
       </td>
       <td>${tierBadge(b.tier)}</td>
@@ -1479,6 +1489,7 @@ function openSubModal(uid) {
   _subTarget = uid;
   document.getElementById('modal-sub-uid').value = uid;
   document.getElementById('modal-sub-biz').textContent = `${biz?.companyName} · ${biz?.adminUsername}`;
+  if (biz && biz.goal && biz.tier !== 'lifetime') document.getElementById('modal-sub-biz').textContent += ` · 🎯 Lifetime goal: ${K(goalPaidTotal(biz.paymentLog))} of ${K(PRICES().lifetime)}`;
   document.getElementById('modal-sub-tier').value = biz?.tier || 'trial';
   document.getElementById('modal-sub-txnid').value = '';
   document.getElementById('modal-sub-note').value = biz?.note || '';
@@ -1487,7 +1498,7 @@ function openSubModal(uid) {
   document.getElementById('modal-sub-err').style.display = 'none';
   document.getElementById('modal-sub-shops').innerHTML = '';   // never carry edits over from another owner
   { const am = document.getElementById('modal-sub-automatch'); if (am) am.checked = true; }
-  window._pendingDismissUid = null; window._pendingDismissReqId = null; window._pendingReqAmount = null;   // a plain open is not an approval
+  window._pendingDismissUid = null; window._pendingDismissReqId = null; window._pendingReqAmount = null; window._pendingMainAmount = null;   // a plain open is not an approval
   { const ri = document.getElementById('modal-sub-reqinfo'); if (ri) { ri.style.display = 'none'; ri.innerHTML = ''; } }
   toggleExpiryRow();
   document.getElementById('modal-sub').classList.add('open');
@@ -1590,6 +1601,13 @@ document.getElementById('modal-sub-tier').addEventListener('change', toggleExpir
 /* The app reads licenses/{uid}/pub FIRST. Once that copy exists on the server, the app ignores
    settings.licenseData and settings.suspended, so every licence or suspend change made here must also be
    written to pub, or the owner's phone keeps showing the old plan, old shop dates and old suspend state. */
+function goalTagHtml(b) {
+  if (!b.goal || b.tier === 'lifetime') return '';
+  const life = PRICES().lifetime, paid = goalPaidTotal(b.paymentLog), done = life > 0 && paid >= life;
+  return `<div style="font-size:.78rem;margin-top:.2rem;font-weight:600;color:${done ? '#1E6B35' : '#6A1B9A'};">🎯 Lifetime goal: ${K(paid)} of ${K(life)}${done ? ' · reached, ready to claim' : ''}</div>`;
+}
+// Running total of Main-plan payments (Lifetime purchases excluded). Published so the customer's app can show Lifetime-goal progress.
+function goalPaidTotal(log) { return (log || []).reduce((t, p) => (p && p.tier !== 'lifetime') ? t + (Number(p.mainAmount != null ? p.mainAmount : p.amount) || 0) : t, 0); }
 async function publishLicensePub(uid, licData, suspended) {
   const pub = {
     tier: licData.tier,
@@ -1601,6 +1619,7 @@ async function publishLicensePub(uid, licData, suspended) {
   if (typeof licData.expiry === 'number') pub.expiry = licData.expiry;
   if (licData.tier === 'trial') { pub.trialStart = licData.activatedAt; pub.trialEnd = licData.expiry; }
   if (licData.shops && Object.keys(licData.shops).length) pub.shops = licData.shops;
+  if (Array.isArray(licData.paymentLog) && licData.tier !== 'lifetime') pub.paidTotal = goalPaidTotal(licData.paymentLog);
   await fbSet(`licenses/${uid}/pub`, pub);
 }
 async function publishSuspendedFlag(uid, flag) {
@@ -1629,13 +1648,19 @@ async function saveSubscription() {
     expiry = new Date(dateVal).getTime();
   }
 
+  if (!window._planPricesLoaded) await loadPlanPrices();
   const prices = PRICES();
   const biz = allBusinesses.find(b => b.uid === uid);
+  // Lifetime goal: a customer whose logged Main-plan payments already reach the Lifetime price is upgraded at no charge.
+  const fromReq = window._pendingDismissUid === uid;
+  const goalDone = tier === 'lifetime' && (prices.lifetime || 0) > 0 && goalPaidTotal(biz && biz.paymentLog) >= prices.lifetime && !(fromReq && Number(window._pendingReqAmount) > 0);
+  const payEntry = { ts: Date.now(), tier, amount: goalDone ? 0 : ((fromReq && Number(window._pendingReqAmount) > 0) ? Number(window._pendingReqAmount) : (prices[tier]||0)), txnId, note: goalDone ? ('Lifetime goal reached. ' + (note || '')).trim() : note };
+  if (fromReq && window._pendingMainAmount != null) payEntry.mainAmount = window._pendingMainAmount;
   const licData = {
     tier, expiry, activatedAt: Date.now(), txnId, note,
     paymentLog: [
       ...(biz?.paymentLog || []),
-      { ts: Date.now(), tier, amount: (window._pendingDismissUid === uid && Number(window._pendingReqAmount) > 0) ? Number(window._pendingReqAmount) : (prices[tier]||0), txnId, note }
+      payEntry
     ]
   };
 
@@ -1752,9 +1777,14 @@ let pricingState = { def: null, owners: {} };
 let _poKeys = [];
 
 // Same formula as the app: percentage of the monthly plan price, rounded to the nearest K5.
-function extraShopPriceAdmin(tier, pct, lifetime) {
+function extraShopPriceAdmin(tier, pct, lifetime, P) {
   if (tier === 'lifetime') return lifetime;
-  return Math.round((PRICES()[tier] * pct / 100) / 5) * 5;
+  return Math.round(((P || PRICES())[tier] * pct / 100) / 5) * 5;
+}
+// The four plan prices typed on the Pricing page, or null if any is missing or invalid.
+function planInputs() {
+  const o = { starter: prNum('pr-starter'), standard: prNum('pr-standard'), pro: prNum('pr-pro'), lifetime: prNum('pr-main-life') };
+  return Object.values(o).every(v => v != null && isFinite(v) && v > 0 && v <= 100000) ? o : null;
 }
 function prEsc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function prNum(id) { const v = document.getElementById(id).value.trim(); return v === '' ? null : Number(v); }
@@ -1767,6 +1797,10 @@ async function loadPricingView() {
     pricingState.owners = (raw && raw.owners) || {};
   } catch (e) { toast('Could not load pricing: ' + e.message, 'err'); return; }
   const d = pricingState.def;
+  await loadPlanPrices();
+  const P0 = PRICES();
+  document.getElementById('pr-starter').value = P0.starter; document.getElementById('pr-standard').value = P0.standard;
+  document.getElementById('pr-pro').value = P0.pro; document.getElementById('pr-main-life').value = P0.lifetime;
   document.getElementById('pr-pct').value  = d ? d.extraShopPct      : PRICING_FALLBACK.pct;
   document.getElementById('pr-life').value = d ? d.extraShopLifetime : PRICING_FALLBACK.lifetime;
   document.getElementById('pr-status').textContent = d
@@ -1779,18 +1813,21 @@ async function loadPricingView() {
 function renderPricingPreview() {
   const pct = prNum('pr-pct'), life = prNum('pr-life'), el = document.getElementById('pr-preview');
   if (!prOk(pct, 100) || !prOk(life, 100000)) { el.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">Enter both numbers to see the prices.</td></tr>'; return; }
-  const P = PRICES();
+  const P = planInputs() || PRICES();
   el.innerHTML = [['starter','Starter'],['standard','Standard'],['pro','Pro'],['lifetime','Lifetime']].map(([t, label]) => {
     const per = t === 'lifetime' ? ' once' : '/mo';
-    return `<tr><td>${label}</td><td class="mono">${K(P[t])}${t === 'lifetime' ? ' once' : '/mo'}</td><td class="mono"><strong>${K(extraShopPriceAdmin(t, pct, life))}${per}</strong></td></tr>`;
+    return `<tr><td>${label}</td><td class="mono">${K(P[t])}${t === 'lifetime' ? ' once' : '/mo'}</td><td class="mono"><strong>${K(extraShopPriceAdmin(t, pct, life, P))}${per}</strong></td></tr>`;
   }).join('');
 }
 async function savePricingDefault() {
   const pct = prNum('pr-pct'), life = prNum('pr-life');
   if (!prOk(pct, 100)) { toast('The percentage must be between 0 and 100.', 'err'); return; }
   if (!prOk(life, 100000)) { toast('The Lifetime price must be between K0 and K100,000.', 'err'); return; }
+  const plans = planInputs();
+  if (!plans) { toast('Enter all four plan prices (each above 0 and up to K100,000).', 'err'); return; }
   try {
-    await fbSet('pricing/default', { extraShopPct: pct, extraShopLifetime: life, updatedAt: Date.now(), updatedBy: window._ownerUid || '' });
+    await fbSet('pricing/default', { extraShopPct: pct, extraShopLifetime: life, planStarter: plans.starter, planStandard: plans.standard, planPro: plans.pro, planLifetime: plans.lifetime, updatedAt: Date.now(), updatedBy: window._ownerUid || '' });
+    window._planPrices = plans; window._planPricesLoaded = true;
     toast('Prices published.', 'ok');
     loadPricingView();
   } catch (e) { toast('Could not publish: ' + e.message, 'err'); }
@@ -2059,6 +2096,8 @@ function activateFromRequest(uid, reqId) {
     }
   }, 50);
   window._pendingReqAmount = Number(req.quote && req.quote.total) || null;
+  // Only the Main-plan part of a payment counts toward the customer's Lifetime goal (extra shops do not).
+  window._pendingMainAmount = (function () { const L = quoteLinesOf(req.quote).filter(l => l.kind === 'main'); return L.length ? L.reduce((t, l) => t + (Number(l.amount) || 0), 0) : null; })();
   // Mark as done after save (hook into saveSubscription success)
   window._pendingDismissUid = uid;
   window._pendingDismissReqId = reqId;
