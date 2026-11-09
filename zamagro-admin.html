@@ -649,11 +649,11 @@
               <div class="setting-desc" id="pr-status" style="margin-bottom:.75rem;">Loading…</div>
               <div class="setting-row">
                 <div><div class="setting-label">Extra shop = % of the plan's monthly price</div><div class="setting-desc">0 to 100. Rounded to the nearest K5.</div></div>
-                <input class="setting-input" id="pr-pct" type="number" min="0" max="100" step="1" placeholder="20" oninput="renderPricingPreview()"/>
+                <input class="setting-input" id="pr-pct" type="number" min="0" max="100" step="1" placeholder="40" oninput="renderPricingPreview()"/>
               </div>
               <div class="setting-row">
                 <div><div class="setting-label">Lifetime: price per extra shop (K, once)</div><div class="setting-desc">Charged once for each extra shop.</div></div>
-                <input class="setting-input" id="pr-life" type="number" min="0" max="100000" step="5" placeholder="500" oninput="renderPricingPreview()"/>
+                <input class="setting-input" id="pr-life" type="number" min="0" max="100000" step="5" placeholder="2500" oninput="renderPricingPreview()"/>
               </div>
               <div class="setting-desc" style="margin:1rem 0 .4rem;">What owners will pay per extra shop (extra shops are always free during the 1-month trial):</div>
               <div class="table-scroll"><table>
@@ -1746,8 +1746,8 @@ async function saveSubscription() {
 
 /* ── PRICING (extra shops) ───────────────────────────────────── */
 /* Published to Firebase: pricing/default (public) and pricing/owners/{uid} (that owner + staff only).
-   The app uses its own built-in 20% / K500 until something is published here. */
-const PRICING_FALLBACK = { pct: 20, lifetime: 500 };
+   The app uses its own built-in 40% / K2,500 until something is published here. */
+const PRICING_FALLBACK = { pct: 40, lifetime: 2500 };
 let pricingState = { def: null, owners: {} };
 let _poKeys = [];
 
