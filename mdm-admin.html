@@ -518,6 +518,28 @@ const FB_CONFIG = {
 // Auth now — nothing security-relevant is stored in this file anymore.
 const OPERATOR_EMAIL = 'skumbeni@gmail.com';
 
+// Google Apps Script mailer (mdm-mail.gs). Sends approval / rejection messages from
+// support@nexlitedigitalsolutionslimited.digital. Paste the deployed Web app URL here.
+const MAIL_ENDPOINT = 'https://script.google.com/macros/s/AKfycby9WIKyhsgmzE0TPhzW1gcQRupjt2F02bjsvLOp97bHvGhUrT1gie0YfKvDETyIzGvk1Q/exec';
+async function _sendDecisionEmail(installId, r, decision, note, activeUntil) {
+  if (!/^https:\/\/script\.google\.com\/macros\//.test(MAIL_ENDPOINT)) return { sent: false, why: 'MAIL_ENDPOINT is not set in this file' };
+  const dep = (typeof ALL_DEPOTS !== 'undefined' ? ALL_DEPOTS : []).find(d => d.key === installId) || {};
+  const to = String((r && r.email) || dep.contactEmail || '').trim().toLowerCase();
+  if (!to) return { sent: false, why: 'no email address on file' };
+  try {
+    const idToken = await _getIdToken();
+    const res = await fetch(MAIL_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'sub_decision', idToken, to, decision,
+        name: (r && r.depotName) || dep.depotName || '', plan: (r && r.requestedPlan) || '',
+        planLabel: (r && r.planLabel) || '', reference: (r && r.transactionId) || '',
+        note: note || '', activeUntil: activeUntil || 0 })
+    });
+    const j = await res.json();
+    return j.ok ? { sent: true, to } : { sent: false, why: j.error || 'mail error' };
+  } catch (e) { return { sent: false, why: (e && e.message) || 'network error' }; }
+}
+
 // App Check (reCAPTCHA v3) - same site key as the main app. Every request this
 // panel makes to Realtime Database carries an X-Firebase-AppCheck token, and the
 // Auth SDK sends one on sign-in, so this panel keeps working once App Check
@@ -750,6 +772,7 @@ async function loadDepots() {
           ...val,
           contactName:  (contacts[key] && contacts[key].contactName)  || val.contactName  || '',
           contactPhone: (contacts[key] && contacts[key].contactPhone) || val.contactPhone || '',
+          contactEmail: (contacts[key] && contacts[key].contactEmail) || val.contactEmail || '',
           effectiveStatus: eff,
           trialDaysLeft:   trialDays,
           activeDaysLeft:  activeDays
@@ -937,6 +960,7 @@ function renderDepots() {
         (d.depotName||'').toLowerCase().includes(q) ||
         (d.contactName||'').toLowerCase().includes(q) ||
         (d.contactPhone||'').toLowerCase().includes(q) ||
+    (d.contactEmail||'').toLowerCase().includes(q) ||
         (d.transactionId||'').toLowerCase().includes(q) ||
         (d.district||'').toLowerCase().includes(q))
     : ALL_DEPOTS;
@@ -1039,11 +1063,16 @@ function buildCard(d) {
     const planClass  = ['starter','growth','pro'].includes(planRaw) ? planRaw : '';
     const planText   = planLabel[planClass] || (planRaw ? esc(String(planRaw).toUpperCase()) : '—');
     const phone      = r.phone || r.contactPhone || d.contactPhone || '';
+    const email      = r.email || d.contactEmail || '';
     const txid       = r.transactionId || d.transactionId || '';
     const method     = r.paymentMethod || '';
     applicantBlock = `
     <div class="applicant-block">
       <div class="applicant-block-title">📋 Subscription Application</div>
+      ${email ? `<div class="applicant-row">
+        <span class="applicant-icon">✉️</span>
+        <div><div class="applicant-val"><a href="mailto:${esc(email)}" style="color:var(--white);text-decoration:none">${esc(email)}</a></div><div class="applicant-sub">Email${r.emailVerified ? ' · verified' : ' · not verified'}</div></div>
+      </div>` : ''}
       ${phone ? `<div class="applicant-row">
         <span class="applicant-icon">📞</span>
         <div><div class="applicant-val"><a href="tel:${esc(phone)}" style="color:var(--white);text-decoration:none">${esc(phone)}</a></div><div class="applicant-sub">Phone — tap to call</div></div>
@@ -1334,6 +1363,7 @@ function renderSubRequests() {
     const pText = planLabel[plan] || (plan ? esc(String(plan).toUpperCase()) : '—');
     const pCls  = planClass[plan] || '';
     const phone = r.phone || r.contactPhone || '';
+    const email = r.email || '';
     const txid  = r.transactionId || r.txid || '';
     const method= r.paymentMethod || '';
     const date  = r.submittedAt ? new Date(r.submittedAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}) : '—';
@@ -1348,6 +1378,10 @@ function renderSubRequests() {
           <span class="sub-req-icon">📦</span>
           <div><div class="sub-req-val">Requested Plan <span class="plan-pill ${pCls}">${pText}</span></div></div>
         </div>
+        ${email ? `<div class="sub-req-row">
+          <span class="sub-req-icon">✉️</span>
+          <div><div class="sub-req-val"><a href="mailto:${esc(email)}" style="color:var(--white);text-decoration:none">${esc(email)}</a></div><div class="sub-req-lbl">Email${r.emailVerified ? ' · verified' : ' · not verified'}</div></div>
+        </div>` : ''}
         ${phone ? `<div class="sub-req-row">
           <span class="sub-req-icon">📞</span>
           <div><div class="sub-req-val"><a href="tel:${esc(phone)}" style="color:var(--white);text-decoration:none">${esc(phone)}</a></div><div class="sub-req-lbl">Phone — tap to call</div></div>
@@ -1368,6 +1402,7 @@ function renderSubRequests() {
       <div class="sub-req-actions">
         <button class="act-btn act-approve" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" onclick="approveSubRequest(this.dataset.id,this.dataset.req)">⏳ → Trial</button>
         <button class="act-btn act-activate" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" data-plan="${esc(plan)}" onclick="activateSubRequest(this.dataset.id,this.dataset.req,this.dataset.plan)">⚡ → Active</button>
+        <button class="act-btn act-delete" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" onclick="rejectSubRequest(this.dataset.id,this.dataset.req)">✉️ Reject</button>
         <button class="act-btn act-delete" data-id="${esc(id)}" data-req="${esc(r.reqKey)}" onclick="dismissSubRequest(this.dataset.id,this.dataset.req)">✕ Dismiss</button>
       </div>
     </div>`;
@@ -1375,11 +1410,15 @@ function renderSubRequests() {
 }
 
 // Phone numbers go in licenseContacts (operator-only). licenses/<k> is readable by anyone who knows the key.
-async function _saveContactPhone(installId, r) {
+async function _saveContactPhone(installId, r) {   // keeps the old name; now also saves the email
   const phone = (r && (r.phone || r.contactPhone)) || '';
-  if (!phone) return;
-  try { await fbPatch('licenseContacts/' + installId, { contactPhone: phone }); }
-  catch (e) { console.warn('Could not save contact phone:', e); }
+  const email = String((r && r.email) || '').trim().toLowerCase();
+  const patch = {};
+  if (phone) patch.contactPhone = phone;
+  if (email) patch.contactEmail = email;
+  if (!Object.keys(patch).length) return;
+  try { await fbPatch('licenseContacts/' + installId, patch); }
+  catch (e) { console.warn('Could not save contact details:', e); }
 }
 
 async function _markSubReqDone(installId, reqKey, newStatus) {
@@ -1407,7 +1446,8 @@ function approveSubRequest(installId, reqKey) {
       });
       await _saveContactPhone(installId, r);
       await _markSubReqDone(installId, reqKey, 'approved_trial');
-      toast('✅ Approved → Trial');
+      const m = await _sendDecisionEmail(installId, r, 'approved_trial', '');
+      toast(m.sent ? '✅ Approved → Trial · email sent to ' + m.to : '✅ Approved → Trial · email NOT sent (' + m.why + ')');
       await loadAll();
     }
   );
@@ -1433,7 +1473,27 @@ function activateSubRequest(installId, reqKey, plan) {
       });
       await _saveContactPhone(installId, r);
       await _markSubReqDone(installId, reqKey, 'approved_active');
-      toast('✅ Activated on ' + (plan||'pro').toUpperCase() + ' plan');
+      const m = await _sendDecisionEmail(installId, r, 'approved_active', '', now + 30 * 24 * 60 * 60 * 1000);
+      toast(m.sent ? '✅ Activated on ' + (plan||'pro').toUpperCase() + ' · email sent to ' + m.to : '✅ Activated on ' + (plan||'pro').toUpperCase() + ' · email NOT sent (' + m.why + ')');
+      await loadAll();
+    }
+  );
+}
+
+function rejectSubRequest(installId, reqKey) {
+  const r = ALL_SUB_REQS.find(x => x.installId === installId);
+  const name = esc(r?.depotName || installId);
+  showConfirm(
+    '✉️ Reject Application',
+    `Reject the application from <strong style="color:var(--white)">${name}</strong> and email them?<br><br>
+     <textarea id="rej-reason" rows="3" maxlength="300" placeholder="Reason (included in the email)" style="width:100%;margin-top:4px;padding:9px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:13px"></textarea>
+     <div style="color:var(--muted);font-size:12px;margin-top:6px">The licence record is not changed.</div>`,
+    'act-delete',
+    async () => {
+      const note = (document.getElementById('rej-reason')?.value || '').trim();
+      await _markSubReqDone(installId, reqKey, 'rejected');
+      const m = await _sendDecisionEmail(installId, r, 'rejected', note);
+      toast(m.sent ? 'Rejected · email sent to ' + m.to : 'Rejected · email NOT sent (' + m.why + ')');
       await loadAll();
     }
   );
