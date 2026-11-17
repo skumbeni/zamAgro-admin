@@ -336,6 +336,17 @@ body{padding-bottom:40px;}
 .fin-alert-text{}
 .fin-alert-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:2px;}
 .fin-alert-sub{font-size:11px;color:var(--muted);line-height:1.5;}
+
+/* Plan prices */
+.price-note{font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:12px;}
+.price-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+.price-name{flex:1;font-size:13px;font-weight:600;color:var(--white);}
+.price-row.fixed .price-name{color:var(--muted);font-weight:500;}
+.price-k,.price-mo{font-family:var(--fm);font-size:12px;color:var(--muted);}
+.price-in{width:96px;flex:none;padding:9px 10px;font-family:var(--fm);text-align:right;}
+.price-err{display:none;background:var(--red-dim);border:1px solid rgba(231,76,60,.35);color:#ff9a8e;border-radius:9px;padding:9px 11px;font-size:12px;margin:4px 0 10px;line-height:1.5;}
+.price-meta{font-size:11px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5;}
+#price-save-btn:disabled{opacity:.45;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -441,6 +452,31 @@ body{padding-bottom:40px;}
 
       <!-- At-risk alert -->
       <div id="fin-alert-wrap"></div>
+    </div>
+  </div>
+
+  <!-- Plan Prices: the monthly price of each plan. The main app reads the same record (tierPrices/). -->
+  <div class="fin-panel" id="price-panel">
+    <div class="fin-header" onclick="togglePricePanel()">
+      <div class="fin-header-left">
+        <div class="fin-header-icon">🏷️</div>
+        <div>
+          <div class="fin-header-title">Plan Prices</div>
+          <div class="fin-header-sub" id="price-header-sub">Tap to expand</div>
+        </div>
+      </div>
+      <div class="fin-chevron" id="price-chevron">▼</div>
+    </div>
+    <div class="fin-body" id="price-body">
+      <div class="price-note">Monthly price of each plan, in kwacha. Every price the app shows (landing page, Plans &amp; Pricing, upgrade screens, sign-up, receipts) follows what you save here. The revenue figures above use the same prices.</div>
+      <div class="price-row fixed"><span class="tier-dot" style="background:#4a6a8a"></span><span class="price-name">Free <span style="font-weight:400">· always free</span></span><span class="price-k">K</span><span class="price-in" style="text-align:right;color:var(--muted)">0</span><span class="price-mo">/mo</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#00e096"></span><label class="price-name" for="price-in-starter">Starter</label><span class="price-k">K</span><input class="fi price-in" id="price-in-starter" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#f5a623"></span><label class="price-name" for="price-in-growth">Growth</label><span class="price-k">K</span><input class="fi price-in" id="price-in-growth" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#a78bfa"></span><label class="price-name" for="price-in-pro">Pro</label><span class="price-k">K</span><input class="fi price-in" id="price-in-pro" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#3b9eff"></span><label class="price-name" for="price-in-multisite">Multi-Site <span style="font-weight:400;color:var(--muted)">· not sold publicly yet</span></label><span class="price-k">K</span><input class="fi price-in" id="price-in-multisite" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
+      <div class="price-err" id="price-err"></div>
+      <button class="btn bg" id="price-save-btn" onclick="savePlanPrices()">💾 Save Prices</button>
+      <div class="price-meta" id="price-meta"></div>
     </div>
   </div>
 
@@ -838,6 +874,102 @@ const TIER_PRICE = { free: 0, starter: 90, growth: 150, pro: 300, multisite: 600
 const TIER_COLOR = { free: '#4a6a8a', starter: '#00e096', growth: '#f5a623', pro: '#a78bfa', multisite: '#3b9eff' };
 const TIER_LABEL = { free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', multisite: 'Multi-Site' };
 
+// ══════════════════════════════════════════════════════
+// PLAN PRICES  (database node tierPrices/, the same one the main app reads)
+// TIER_PRICE above holds the CURRENT prices: loadTierPrices() overwrites it in place with what is saved, so the
+// revenue figures and every plan label here use one set of numbers. TIER_PRICE_DEFAULT is only the fallback
+// (nothing saved yet, or the saved prices could not be loaded); it is the main app's built-in fallback too.
+// ══════════════════════════════════════════════════════
+const TIER_PRICE_DEFAULT = { free: 0, starter: 90, growth: 150, pro: 300, multisite: 600 };
+const PRICE_TIERS = ['starter', 'growth', 'pro', 'multisite'];
+let PRICES_LOADED = false, PRICES_UPDATED_AT = 0, _priceDirty = false, _priceOpen = false;
+
+async function loadTierPrices() {
+  try {
+    const d = await fbGet('tierPrices');
+    Object.assign(TIER_PRICE, TIER_PRICE_DEFAULT);
+    PRICE_TIERS.forEach(t => { if (d && typeof d[t] === 'number' && isFinite(d[t]) && d[t] >= 0) TIER_PRICE[t] = d[t]; });
+    PRICES_UPDATED_AT = (d && typeof d.updatedAt === 'number') ? d.updatedAt : 0;
+    PRICES_LOADED = true;
+  } catch (e) {
+    console.warn('tierPrices could not be loaded - the prices already held (built-in ones at first) are used:', e);
+    PRICES_LOADED = false;
+  }
+  renderPricePanel();
+}
+
+function renderPricePanel() {
+  const sub = document.getElementById('price-header-sub');
+  if (!sub) return;
+  sub.textContent = PRICES_LOADED ? PRICE_TIERS.map(t => TIER_LABEL[t] + ' K' + TIER_PRICE[t]).join('  ·  ') : '⚠️ Saved prices could not be loaded';
+  if (!_priceDirty) PRICE_TIERS.forEach(t => { const i = document.getElementById('price-in-' + t); if (i) i.value = TIER_PRICE[t]; });   // never overwrite numbers being typed
+  document.getElementById('price-meta').textContent = !PRICES_LOADED
+    ? 'The saved prices could not be loaded, so the figures here use the built-in prices. Tap ↻ to try again. Saving is off until they load.'
+    : PRICES_UPDATED_AT ? 'Last changed ' + fmtDateTime(PRICES_UPDATED_AT)
+    : 'Not changed here yet: the apps use their built-in prices (the ones shown).';
+  document.getElementById('price-save-btn').disabled = !PRICES_LOADED;
+}
+
+function togglePricePanel() {
+  _priceOpen = !_priceOpen;
+  document.getElementById('price-body').classList.toggle('open', _priceOpen);
+  document.getElementById('price-chevron').classList.toggle('open', _priceOpen);
+}
+
+function onPriceInput() {
+  _priceDirty = true;
+  document.getElementById('price-err').style.display = 'none';
+}
+
+function _priceErr(msg) {
+  const el = document.getElementById('price-err');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function savePlanPrices() {
+  document.getElementById('price-err').style.display = 'none';
+  if (!PRICES_LOADED) return _priceErr('The saved prices have not loaded yet. Tap ↻ and try again.');
+  const next = {};
+  for (const t of PRICE_TIERS) {
+    const raw = String(document.getElementById('price-in-' + t).value).trim();
+    if (!/^\d+$/.test(raw)) return _priceErr(TIER_LABEL[t] + ': enter a whole number of kwacha (no decimals, no minus).');
+    const n = Number(raw);
+    if (n < 1 || n > 100000) return _priceErr(TIER_LABEL[t] + ': the price must be between K1 and K100,000.');
+    next[t] = n;
+  }
+  const changes = PRICE_TIERS.filter(t => next[t] !== TIER_PRICE[t]);
+  if (!changes.length) { toast('No price was changed'); return; }
+  const seq = PRICE_TIERS.map(t => next[t]);
+  const inOrder = seq.every((v, i) => i === 0 || v >= seq[i - 1]);
+  const rows = changes.map(t => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0"><span style="color:var(--white);font-weight:600">${TIER_LABEL[t]}</span><span><span style="color:var(--muted)">K${TIER_PRICE[t]}</span> → <strong style="color:var(--green)">K${next[t]}</strong> /mo</span></div>`).join('');
+  showConfirm(
+    '🏷️ Change plan prices',
+    `${rows}
+     ${inOrder ? '' : '<div style="color:var(--amber);font-size:12px;margin-top:8px;line-height:1.5">⚠️ A higher plan costs less than a lower one. Check the numbers before confirming.</div>'}
+     <div style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.55">Phones pick up the new prices within a minute of opening the app (an offline phone keeps showing the last prices it saw). Applications already submitted keep the price their customer was shown. Expiry dates and active plans do not change. The revenue figures here are recalculated at the new prices.</div>`,
+    'act-activate',
+    async () => {
+      try {
+        await fbPatch('tierPrices', Object.assign({}, next, { updatedAt: { '.sv': 'timestamp' } }));
+      } catch (e) {
+        throw new Error(e.message + ' (have the new database rules been published? tierPrices needs them)');
+      }
+      _priceDirty = false;
+      await loadTierPrices();               // read back what is stored, including the server's timestamp
+      updateFinancialSummary(); renderDepots(); renderSubRequests();
+      toast('✅ Prices saved');
+    }
+  );
+}
+
+// Plan label for an application: the price its customer was quoted (planPrice), and today's price if that differs.
+function reqPlanText(r, plan) {
+  if (!['starter', 'growth', 'pro'].includes(plan)) return plan ? esc(String(plan).toUpperCase()) : '—';
+  const quoted = (r && typeof r.planPrice === 'number') ? r.planPrice : null;
+  const now = TIER_PRICE[plan];
+  return TIER_LABEL[plan] + ' — K' + (quoted !== null ? quoted : now) + '/mo' + (quoted !== null && quoted !== now ? ' (now K' + now + ')' : '');
+}
+
 let _finOpen = false;
 
 function toggleFinPanel() {
@@ -1057,11 +1189,10 @@ function buildCard(d) {
   // never appeared even though a request was sitting in ALL_SUB_REQS.
   const req = ALL_SUB_REQS.find(r => r.installId === k);
   if (eff === 'pending_approval' || req) {
-    const planLabel = {starter:'Starter — K90/mo', growth:'Growth — K150/mo', pro:'Pro — K300/mo'};
     const r          = req || {};
     const planRaw    = r.requestedPlan || d.requestedPlan || '';
     const planClass  = ['starter','growth','pro'].includes(planRaw) ? planRaw : '';
-    const planText   = planLabel[planClass] || (planRaw ? esc(String(planRaw).toUpperCase()) : '—');
+    const planText   = reqPlanText(r, planRaw);
     const phone      = r.phone || r.contactPhone || d.contactPhone || '';
     const email      = r.email || d.contactEmail || '';
     const txid       = r.transactionId || d.transactionId || '';
@@ -1354,13 +1485,12 @@ function renderSubRequests() {
   section.style.display = 'block';
   badge.textContent = ALL_SUB_REQS.length;
 
-  const planLabel = {starter:'Starter — K90/mo', growth:'Growth — K150/mo', pro:'Pro — K300/mo'};
   const planClass = {starter:'starter', growth:'growth', pro:'pro'};
 
   list.innerHTML = ALL_SUB_REQS.map(r => {
     const name  = r.depotName || r.installId || '(Unnamed)';
     const plan  = r.requestedPlan || '';
-    const pText = planLabel[plan] || (plan ? esc(String(plan).toUpperCase()) : '—');
+    const pText = reqPlanText(r, plan);
     const pCls  = planClass[plan] || '';
     const phone = r.phone || r.contactPhone || '';
     const email = r.email || '';
@@ -1519,6 +1649,9 @@ function dismissSubRequest(installId, reqKey) {
 // COMBINED LOAD (depots + subscription requests)
 // ══════════════════════════════════════════════════════
 async function loadAll() {
+  // Prices first (one small read): the depot cards, application labels and revenue figures all draw from them.
+  // A failure here is not fatal (the built-in prices are used and the Plan Prices panel says so).
+  await loadTierPrices();
   // Run both independently — a failure in one should not block the other
   await Promise.allSettled([loadDepots(), loadSubRequests()]);
   updateStats();
