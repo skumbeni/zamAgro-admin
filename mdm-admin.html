@@ -468,12 +468,16 @@ body{padding-bottom:40px;}
       <div class="fin-chevron" id="price-chevron">▼</div>
     </div>
     <div class="fin-body" id="price-body">
-      <div class="price-note">Monthly price of each plan, in kwacha. Every price the app shows (landing page, Plans &amp; Pricing, upgrade screens, sign-up, receipts) follows what you save here. The revenue figures above use the same prices.</div>
+      <div class="price-note">Monthly price of each plan, in kwacha (Lifetime is a single payment). Every price the app shows (landing page, Plans &amp; Pricing, upgrade screens, sign-up, receipts) follows what you save here. The revenue figures above use the same prices.</div>
       <div class="price-row fixed"><span class="tier-dot" style="background:#4a6a8a"></span><span class="price-name">Free <span style="font-weight:400">· always free</span></span><span class="price-k">K</span><span class="price-in" style="text-align:right;color:var(--muted)">0</span><span class="price-mo">/mo</span></div>
       <div class="price-row"><span class="tier-dot" style="background:#00e096"></span><label class="price-name" for="price-in-starter">Starter</label><span class="price-k">K</span><input class="fi price-in" id="price-in-starter" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
       <div class="price-row"><span class="tier-dot" style="background:#f5a623"></span><label class="price-name" for="price-in-growth">Growth</label><span class="price-k">K</span><input class="fi price-in" id="price-in-growth" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
       <div class="price-row"><span class="tier-dot" style="background:#a78bfa"></span><label class="price-name" for="price-in-pro">Pro</label><span class="price-k">K</span><input class="fi price-in" id="price-in-pro" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
-      <div class="price-row"><span class="tier-dot" style="background:#3b9eff"></span><label class="price-name" for="price-in-multisite">Multi-Site <span style="font-weight:400;color:var(--muted)">· not sold publicly yet</span></label><span class="price-k">K</span><input class="fi price-in" id="price-in-multisite" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">/mo</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#e5c07b"></span><label class="price-name" for="price-in-lifetime">Lifetime <span style="font-weight:400;color:var(--muted)">· one payment, never expires</span></label><span class="price-k">K</span><input class="fi price-in" id="price-in-lifetime" type="number" inputmode="numeric" min="1" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">once</span></div>
+      <div class="price-note" style="margin-top:16px">Extra sites. Any plan can add more sites. Each extra site costs this percentage of the plan's monthly price, rounded to the nearest K5 (on Free it is worked out from Starter, so Free is never a way to get free sites). Lifetime has its own once-off price for each extra site. Extra sites are free during the trial.</div>
+      <div class="price-row"><span class="tier-dot" style="background:#3b9eff"></span><label class="price-name" for="price-in-extrapct">Extra site price <span style="font-weight:400;color:var(--muted)">· % of the plan price</span></label><input class="fi price-in" id="price-in-extrapct" type="number" inputmode="numeric" min="0" max="100" step="1" oninput="onPriceInput()"/><span class="price-mo">%</span></div>
+      <div class="price-row"><span class="tier-dot" style="background:#e5c07b"></span><label class="price-name" for="price-in-extralife">Lifetime extra site <span style="font-weight:400;color:var(--muted)">· once-off each</span></label><span class="price-k">K</span><input class="fi price-in" id="price-in-extralife" type="number" inputmode="numeric" min="0" max="100000" step="1" oninput="onPriceInput()"/><span class="price-mo">once</span></div>
+      <div class="price-meta" id="extra-table" style="text-align:left;margin-bottom:16px"></div>
       <div class="price-err" id="price-err"></div>
       <button class="btn bg" id="price-save-btn" onclick="savePlanPrices()">💾 Save Prices</button>
       <div class="price-meta" id="price-meta"></div>
@@ -870,9 +874,11 @@ function fmtDateTime(ts) {
 // ══════════════════════════════════════════════════════
 // FINANCIAL SUMMARY
 // ══════════════════════════════════════════════════════
-const TIER_PRICE = { free: 0, starter: 90, growth: 150, pro: 300, multisite: 600 };
-const TIER_COLOR = { free: '#4a6a8a', starter: '#00e096', growth: '#f5a623', pro: '#a78bfa', multisite: '#3b9eff' };
-const TIER_LABEL = { free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', multisite: 'Multi-Site' };
+const TIER_PRICE = { free: 0, starter: 90, growth: 150, pro: 300, lifetime: 1900 };   // lifetime = ONE payment, never counted as monthly revenue
+const TIER_COLOR = { free: '#4a6a8a', starter: '#00e096', growth: '#f5a623', pro: '#a78bfa', lifetime: '#e5c07b' };
+const TIER_LABEL = { free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', lifetime: 'Lifetime' };
+// The old flat 'multisite' plan no longer exists: a depot still carrying it is counted and shown as Pro (same as the apps).
+const _normTier = t => (t === 'multisite' ? 'pro' : t);
 
 // ══════════════════════════════════════════════════════
 // PLAN PRICES  (database node tierPrices/, the same one the main app reads)
@@ -880,8 +886,19 @@ const TIER_LABEL = { free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'P
 // revenue figures and every plan label here use one set of numbers. TIER_PRICE_DEFAULT is only the fallback
 // (nothing saved yet, or the saved prices could not be loaded); it is the main app's built-in fallback too.
 // ══════════════════════════════════════════════════════
-const TIER_PRICE_DEFAULT = { free: 0, starter: 90, growth: 150, pro: 300, multisite: 600 };
-const PRICE_TIERS = ['starter', 'growth', 'pro', 'multisite'];
+const TIER_PRICE_DEFAULT = { free: 0, starter: 90, growth: 150, pro: 300, lifetime: 1900 };
+// Extra sites: price of each = a % of the plan's monthly price (Lifetime: its own once-off price). Same built-in fallback as the app.
+const EXTRA_DEFAULT = { pct: 50, lifetime: 950 };
+const EXTRA = { pct: EXTRA_DEFAULT.pct, lifetime: EXTRA_DEFAULT.lifetime };
+// IDENTICAL to extraSitePrice() in index.html (tests compare them). Price of ONE extra site on a plan, in kwacha.
+function extraSitePrice(plan, prices, pct, lifetimeExtra) {
+  if (plan === 'lifetime') return lifetimeExtra;
+  const base = plan === 'free' ? prices.starter : prices[plan];
+  if (!(base >= 0)) return null;
+  if (!(pct > 0)) return 0;
+  return Math.max(5, Math.round(base * pct / 100 / 5) * 5);
+}
+const PRICE_TIERS = ['starter', 'growth', 'pro', 'lifetime'];
 let PRICES_LOADED = false, PRICES_UPDATED_AT = 0, _priceDirty = false, _priceOpen = false;
 
 async function loadTierPrices() {
@@ -889,6 +906,8 @@ async function loadTierPrices() {
     const d = await fbGet('tierPrices');
     Object.assign(TIER_PRICE, TIER_PRICE_DEFAULT);
     PRICE_TIERS.forEach(t => { if (d && typeof d[t] === 'number' && isFinite(d[t]) && d[t] >= 0) TIER_PRICE[t] = d[t]; });
+    EXTRA.pct = (d && typeof d.extraSitePct === 'number' && isFinite(d.extraSitePct) && d.extraSitePct >= 0 && d.extraSitePct <= 100) ? d.extraSitePct : EXTRA_DEFAULT.pct;
+    EXTRA.lifetime = (d && typeof d.extraSiteLifetime === 'number' && isFinite(d.extraSiteLifetime) && d.extraSiteLifetime >= 0) ? d.extraSiteLifetime : EXTRA_DEFAULT.lifetime;
     PRICES_UPDATED_AT = (d && typeof d.updatedAt === 'number') ? d.updatedAt : 0;
     PRICES_LOADED = true;
   } catch (e) {
@@ -901,13 +920,33 @@ async function loadTierPrices() {
 function renderPricePanel() {
   const sub = document.getElementById('price-header-sub');
   if (!sub) return;
-  sub.textContent = PRICES_LOADED ? PRICE_TIERS.map(t => TIER_LABEL[t] + ' K' + TIER_PRICE[t]).join('  ·  ') : '⚠️ Saved prices could not be loaded';
-  if (!_priceDirty) PRICE_TIERS.forEach(t => { const i = document.getElementById('price-in-' + t); if (i) i.value = TIER_PRICE[t]; });   // never overwrite numbers being typed
+  sub.textContent = PRICES_LOADED ? PRICE_TIERS.map(t => TIER_LABEL[t] + ' K' + TIER_PRICE[t]).join('  ·  ') + '  ·  Extra site ' + EXTRA.pct + '%' : '⚠️ Saved prices could not be loaded';
+  if (!_priceDirty) {                                                                                    // never overwrite numbers being typed
+    PRICE_TIERS.forEach(t => { const i = document.getElementById('price-in-' + t); if (i) i.value = TIER_PRICE[t]; });
+    const ep = document.getElementById('price-in-extrapct'), el = document.getElementById('price-in-extralife');
+    if (ep) ep.value = EXTRA.pct; if (el) el.value = EXTRA.lifetime;
+  }
+  renderExtraTable();
   document.getElementById('price-meta').textContent = !PRICES_LOADED
     ? 'The saved prices could not be loaded, so the figures here use the built-in prices. Tap ↻ to try again. Saving is off until they load.'
     : PRICES_UPDATED_AT ? 'Last changed ' + fmtDateTime(PRICES_UPDATED_AT)
     : 'Not changed here yet: the apps use their built-in prices (the ones shown).';
   document.getElementById('price-save-btn').disabled = !PRICES_LOADED;
+}
+
+// Live table under the Extra sites fields: what each extra site costs on every plan, from the numbers currently typed.
+function renderExtraTable() {
+  const box = document.getElementById('extra-table'); if (!box) return;
+  const num = id => { const el = document.getElementById(id); const raw = el ? String(el.value).trim() : ''; return /^\d+$/.test(raw) ? Number(raw) : null; };
+  const prices = Object.assign({}, TIER_PRICE);
+  PRICE_TIERS.forEach(t => { const n = num('price-in-' + t); if (n !== null) prices[t] = n; });
+  const pct = num('price-in-extrapct'), life = num('price-in-extralife');
+  if (pct === null || pct > 100 || life === null) { box.textContent = 'Enter the percentage (0 to 100) and the Lifetime extra-site price to see the table.'; return; }
+  const rows = ['free', 'starter', 'growth', 'pro'].map(t => {
+    const p = extraSitePrice(t, prices, pct, life);
+    return '<div style="display:flex;justify-content:space-between;gap:12px;margin:3px 0"><span>' + TIER_LABEL[t] + (t === 'free' ? ' (from Starter)' : '') + '</span><span style="color:var(--white)">K' + p + '/mo per extra site</span></div>';
+  }).join('') + '<div style="display:flex;justify-content:space-between;gap:12px;margin:3px 0"><span>Lifetime</span><span style="color:var(--white)">K' + life + ' once per extra site</span></div>';
+  box.innerHTML = '<div style="margin-bottom:4px;color:var(--muted)">Each extra site costs:</div>' + rows;
 }
 
 function togglePricePanel() {
@@ -918,6 +957,7 @@ function togglePricePanel() {
 
 function onPriceInput() {
   _priceDirty = true;
+  renderExtraTable();
   document.getElementById('price-err').style.display = 'none';
 }
 
@@ -937,11 +977,20 @@ function savePlanPrices() {
     if (n < 1 || n > 100000) return _priceErr(TIER_LABEL[t] + ': the price must be between K1 and K100,000.');
     next[t] = n;
   }
+  const rawPct = String(document.getElementById('price-in-extrapct').value).trim();
+  if (!/^\d+$/.test(rawPct) || Number(rawPct) > 100) return _priceErr('Extra site price: enter a whole percentage from 0 to 100.');
+  const rawLife = String(document.getElementById('price-in-extralife').value).trim();
+  if (!/^\d+$/.test(rawLife) || Number(rawLife) > 100000) return _priceErr('Lifetime extra site: enter a whole number of kwacha from 0 to 100,000.');
+  const nextPct = Number(rawPct), nextLife = Number(rawLife);
   const changes = PRICE_TIERS.filter(t => next[t] !== TIER_PRICE[t]);
-  if (!changes.length) { toast('No price was changed'); return; }
-  const seq = PRICE_TIERS.map(t => next[t]);
+  const extraChanges = [];
+  if (nextPct !== EXTRA.pct) extraChanges.push(['Extra site price', EXTRA.pct + '%', nextPct + '%']);
+  if (nextLife !== EXTRA.lifetime) extraChanges.push(['Lifetime extra site', 'K' + EXTRA.lifetime, 'K' + nextLife]);
+  if (!changes.length && !extraChanges.length) { toast('No price was changed'); return; }
+  const seq = ['starter', 'growth', 'pro'].map(t => next[t]);
   const inOrder = seq.every((v, i) => i === 0 || v >= seq[i - 1]);
-  const rows = changes.map(t => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0"><span style="color:var(--white);font-weight:600">${TIER_LABEL[t]}</span><span><span style="color:var(--muted)">K${TIER_PRICE[t]}</span> → <strong style="color:var(--green)">K${next[t]}</strong> /mo</span></div>`).join('');
+  const rows = changes.map(t => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0"><span style="color:var(--white);font-weight:600">${TIER_LABEL[t]}</span><span><span style="color:var(--muted)">K${TIER_PRICE[t]}</span> → <strong style="color:var(--green)">K${next[t]}</strong> ${t === 'lifetime' ? 'once' : '/mo'}</span></div>`).join('')
+    + extraChanges.map(c => `<div style="display:flex;justify-content:space-between;gap:12px;margin:5px 0"><span style="color:var(--white);font-weight:600">${c[0]}</span><span><span style="color:var(--muted)">${c[1]}</span> → <strong style="color:var(--green)">${c[2]}</strong></span></div>`).join('');
   showConfirm(
     '🏷️ Change plan prices',
     `${rows}
@@ -950,7 +999,7 @@ function savePlanPrices() {
     'act-activate',
     async () => {
       try {
-        await fbPatch('tierPrices', Object.assign({}, next, { updatedAt: { '.sv': 'timestamp' } }));
+        await fbPatch('tierPrices', Object.assign({}, next, { extraSitePct: nextPct, extraSiteLifetime: nextLife, multisite: null, updatedAt: { '.sv': 'timestamp' } }));   // multisite: null removes the retired K600 plan price that may still be stored
       } catch (e) {
         throw new Error(e.message + ' (have the new database rules been published? tierPrices needs them)');
       }
@@ -964,10 +1013,11 @@ function savePlanPrices() {
 
 // Plan label for an application: the price its customer was quoted (planPrice), and today's price if that differs.
 function reqPlanText(r, plan) {
-  if (!['starter', 'growth', 'pro'].includes(plan)) return plan ? esc(String(plan).toUpperCase()) : '—';
+  if (!['starter', 'growth', 'pro', 'lifetime'].includes(plan)) return plan ? esc(String(plan).toUpperCase()) : '—';
   const quoted = (r && typeof r.planPrice === 'number') ? r.planPrice : null;
-  const now = TIER_PRICE[plan];
-  return TIER_LABEL[plan] + ' — K' + (quoted !== null ? quoted : now) + '/mo' + (quoted !== null && quoted !== now ? ' (now K' + now + ')' : '');
+  const site = !!(r && r.siteOf);                                   // an extra site pays the extra-site price, not the plan price
+  const now = site ? extraSitePrice(plan, TIER_PRICE, EXTRA.pct, EXTRA.lifetime) : TIER_PRICE[plan];
+  return TIER_LABEL[plan] + (site ? ' (extra site)' : '') + ' — K' + (quoted !== null ? quoted : now) + (plan === 'lifetime' ? ' once' : '/mo') + (quoted !== null && quoted !== now ? ' (now K' + now + ')' : '');
 }
 
 let _finOpen = false;
@@ -989,8 +1039,9 @@ function updateFinancialSummary() {
   let mrr = 0;
   const tierCounts = {};
   for (const d of payingDepots) {
-    const tier = (d.tier || 'pro').toLowerCase();
-    const price = TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : TIER_PRICE.pro;
+    const tier = _normTier((d.tier || 'pro').toLowerCase());
+    let price = tier === 'lifetime' ? 0 : (TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : TIER_PRICE.pro);   // a Lifetime plan is one payment: no monthly revenue
+    if (SITE_PARENT[d.key] && tier !== 'lifetime') { const xp = extraSitePrice(tier, TIER_PRICE, EXTRA.pct, EXTRA.lifetime); if (xp !== null) price = xp; }   // an extra site pays the extra-site price
     mrr += price;
     if (!tierCounts[tier]) tierCounts[tier] = { count: 0, revenue: 0 };
     tierCounts[tier].count++;
@@ -998,7 +1049,7 @@ function updateFinancialSummary() {
   }
 
   const trialPotential = trialDepots.reduce((s, d) => {
-    const tier = (d.requestedPlan || d.tier || 'pro').toLowerCase();
+    const tier = _normTier((d.requestedPlan || d.tier || 'pro').toLowerCase());
     return s + (TIER_PRICE[tier] !== undefined ? TIER_PRICE[tier] : TIER_PRICE.pro);
   }, 0);
 
@@ -1026,9 +1077,9 @@ function updateFinancialSummary() {
       <div class="tier-row">
         <div class="tier-dot" style="background:${color}"></div>
         <div class="tier-info">
-          <div class="tier-name">${TIER_LABEL[tier] || tier} <span style="font-size:10px;color:var(--muted);font-weight:400">· K${price}/mo</span></div>
+          <div class="tier-name">${TIER_LABEL[tier] || tier} <span style="font-size:10px;color:var(--muted);font-weight:400">· ${tier === 'lifetime' ? 'paid once' : 'K' + price + '/mo'}</span></div>
           <div class="tier-bar-wrap"><div class="tier-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-          <div class="tier-count">${data.count} depot${data.count !== 1 ? 's' : ''} · ${pct}% of MRR</div>
+          <div class="tier-count">${data.count} depot${data.count !== 1 ? 's' : ''}${tier === 'lifetime' ? ' · not in MRR' : ' · ' + pct + '% of MRR'}</div>
         </div>
         <div class="tier-rev" style="color:${color}">K${data.revenue.toLocaleString()}</div>
       </div>`;
@@ -1037,7 +1088,7 @@ function updateFinancialSummary() {
 
   const alertWrap = document.getElementById('fin-alert-wrap');
   if (atRisk.length > 0) {
-    const atRiskMRR = atRisk.reduce((s,d) => s + (TIER_PRICE[(d.tier||'pro').toLowerCase()] !== undefined ? TIER_PRICE[(d.tier||'pro').toLowerCase()] : TIER_PRICE.pro), 0);
+    const atRiskMRR = atRisk.reduce((s,d) => s + (TIER_PRICE[_normTier((d.tier||'pro').toLowerCase())] !== undefined ? TIER_PRICE[_normTier((d.tier||'pro').toLowerCase())] : TIER_PRICE.pro), 0);
     alertWrap.innerHTML = `
     <div class="fin-alert warn" style="margin-top:10px">
       <div class="fin-alert-icon">\u26a0\ufe0f</div>
@@ -1136,8 +1187,11 @@ function buildCard(d) {
     metaItems.push({label:'Trial Ended',     val: `<span style="color:var(--red)">${fmtDate((d.trialStart||0) + TRIAL_MS)}</span>`});
     metaItems.push({label:'Trial Started',   val: fmtDate(d.trialStart)});
   } else if (eff === 'active') {
+    if (d.tier === 'lifetime') metaItems.push({label:'Plan', val: '<span style="color:#e5c07b">Lifetime · never expires</span>'});
+    else {
     metaItems.push({label:'Days Remaining',  val: `<span style="color:var(--green)">${d.activeDaysLeft} days</span>`});
     metaItems.push({label:'Expires',         val: fmtDate(d.activeUntil)});
+    }
   } else if (eff === 'expired_grace') {
     const graceEnds = (d.activeUntil||0) + SUB_GRACE_MS;
     metaItems.push({label:'Grace Ends',      val: `<span style="color:var(--amber)">${fmtDate(graceEnds)}</span>`});
@@ -1149,6 +1203,10 @@ function buildCard(d) {
     metaItems.push({label:'Status',          val: `<span style="color:var(--amber)">Suspended</span>`});
     metaItems.push({label:'Activated On',    val: fmtDate(d.activatedOn)});
   }
+  if (d.extraSitesOn) metaItems.push({label:'Extra Sites', val: '<span style="color:var(--green)">Allowed</span>'});
+  if (SITE_PARENT[d.key]) metaItems.push({label:'Extra site of', val: esc(SITE_PARENT[d.key].name)});
+  const _kids = SITE_KIDS[d.key];
+  if (_kids && _kids.length) metaItems.push({label:'Its sites', val: esc(_kids.map(k => { const dd = ALL_DEPOTS.find(x => x.key === k.installId); return (dd && dd.depotName) || k.name || k.installId; }).join(', '))});
   metaItems.push({label:'Registered',       val: fmtDate(d.createdAt)});
   if (d.activatedOn) metaItems.push({label:'Last Activated', val: fmtDate(d.activatedOn)});
 
@@ -1179,6 +1237,7 @@ function buildCard(d) {
   if (eff === 'suspended') {
     actions += `<button class="act-btn act-unsuspend" data-key="${esc(k)}" onclick="unsuspendDepot(this.dataset.key)">✅ Unsuspend</button>`;
   }
+  actions += `<button class="act-btn act-renew" data-key="${esc(k)}" onclick="toggleExtraSites(this.dataset.key)">🏬 Extra sites: ${d.extraSitesOn ? 'ON' : 'OFF'}</button>`;
   actions += `<button class="act-btn act-delete" data-key="${esc(k)}" onclick="deleteDepot(this.dataset.key)">🗑</button>`;
 
   // Build applicant info block for pending cards
@@ -1212,6 +1271,7 @@ function buildCard(d) {
         <span class="applicant-icon">📦</span>
         <div><div class="applicant-val">Requested Plan <span class="plan-pill ${planClass}">${planText}</span></div></div>
       </div>
+      ${siteReqRows(r, 'applicant')}
       ${method ? `<div class="applicant-row">
         <span class="applicant-icon">💳</span>
         <div><div class="applicant-val">${esc(method)}</div><div class="applicant-sub">Payment Method</div></div>
@@ -1290,6 +1350,7 @@ function activateDepot(key) {
 function renewDepot(key) {
   const d = ALL_DEPOTS.find(x => x.key === key);
   const name = esc(d?.depotName || key);
+  if (d && d.tier === 'lifetime') { toast('Lifetime plans never expire: nothing to renew'); return; }
   // Extend from current expiry if still active, else from now
   const base = (d?.activeUntil && d.activeUntil > Date.now()) ? d.activeUntil : Date.now();
   const newExpiry = fmtDate(base + ONE_MONTH_MS);
@@ -1305,6 +1366,27 @@ function renewDepot(key) {
         renewedOn: Date.now()
       });
       toast('🔄 Subscription renewed until ' + newExpiry);
+      await loadAll();
+    }
+  );
+}
+
+// Rollout switch for the Extra sites feature. Stored as licenses/<id>/extraSitesOn (true, or removed = off).
+// The app reads it with every licence check; while it is off the app shows nothing about sites.
+// No rules change is needed: the licence's $other rule already lets only this admin account write it.
+function toggleExtraSites(key) {
+  const d = ALL_DEPOTS.find(x => x.key === key);
+  const name = esc(d?.depotName || key);
+  const turningOn = !(d && d.extraSitesOn);
+  showConfirm(
+    turningOn ? '🏬 Allow extra sites' : '🏬 Turn off extra sites',
+    turningOn
+      ? `Let <strong style="color:var(--white)">${name}</strong> add extra sites?<br><br>The owner will see <strong style="color:var(--green)">Settings → My Sites</strong> after their next licence check.`
+      : `Hide extra sites for <strong style="color:var(--white)">${name}</strong>?<br><br>Sites already created are kept. They stay reachable from the sites themselves, but no new ones can be added.`,
+    'act-renew',
+    async () => {
+      await fbPatch('licenses/' + key, { extraSitesOn: turningOn ? true : null });
+      toast(turningOn ? '🏬 Extra sites allowed' : '🏬 Extra sites turned off');
       await loadAll();
     }
   );
@@ -1444,6 +1526,77 @@ function toast(msg) {
 // ══════════════════════════════════════════════════════
 let ALL_SUB_REQS = []; // [{installId, reqKey, ...payload}]
 
+// ── EXTRA SITES (admin side) ─────────────────────────────────────────────────────────────────────────────────────────────
+// A site's licence does not say which main depot it belongs to, so the links are read from the MAIN depots' own site lists
+// (depots/<main>/data/sites, readable by the operator). Only depots with the Extra sites switch ON are read, plus any main
+// depot that a pending site request names.
+let SITE_PARENT = {};     // site installId -> { key, name } of its main depot
+let SITE_KIDS = {};       // main installId -> [{ installId, name }]  (null = could not be read)
+let SITE_REQ_CHECK = {};  // 'installId|reqKey' -> { state: 'ok' | 'missing' | 'nomain' | 'unknown', mainName, mainOn }
+
+async function loadSiteLinks() {
+  SITE_PARENT = {}; SITE_KIDS = {}; SITE_REQ_CHECK = {};
+  try {
+    const mains = ALL_DEPOTS.filter(d => d.extraSitesOn === true);
+    ALL_SUB_REQS.forEach(r => {
+      if (r.siteOf && /^[A-Za-z0-9_-]{3,64}$/.test(r.siteOf) && !mains.some(m => m.key === r.siteOf)) {
+        const m = ALL_DEPOTS.find(d => d.key === r.siteOf); if (m) mains.push(m);
+      }
+    });
+    await Promise.all(mains.map(async m => {
+      try {
+        const sites = await fbGet('depots/' + m.key + '/data/sites');
+        const rows = sites ? Object.values(sites).filter(x => x && typeof x === 'object' && typeof x.installId === 'string') : [];
+        SITE_KIDS[m.key] = rows.map(x => ({ installId: x.installId, name: String(x.name || '') }));
+        rows.forEach(x => { SITE_PARENT[x.installId] = { key: m.key, name: m.depotName || m.key }; });
+      } catch (e) { SITE_KIDS[m.key] = null; }
+    }));
+  } catch (e) { console.warn('site links unavailable:', e); }
+  ALL_SUB_REQS.filter(r => r.siteOf).forEach(r => { SITE_REQ_CHECK[r.installId + '|' + r.reqKey] = checkSiteRequest(r); });
+}
+// The automatic check on a request that says "extra site of X": X must exist, and X's own site list must contain the requesting depot.
+function checkSiteRequest(r) {
+  const main = ALL_DEPOTS.find(d => d.key === r.siteOf);
+  if (!main) return { state: 'nomain', mainName: r.siteOf, mainOn: false };
+  const kids = SITE_KIDS[r.siteOf];
+  const state = (kids === undefined || kids === null) ? 'unknown' : (kids.some(k => k.installId === r.installId) ? 'ok' : 'missing');
+  return { state, mainName: main.depotName || main.key, mainOn: main.extraSitesOn === true };
+}
+// The extra-site rows of a request, in the markup of the request card ('sub-req') or of the depot card's application block ('applicant').
+function siteReqRows(r, cls) {
+  if (!r || !r.siteOf) return '';
+  const chk = SITE_REQ_CHECK[r.installId + '|' + r.reqKey] || checkSiteRequest(r);
+  const row = (icon, val, lbl, color) => `<div class="${cls}-row"><span class="${cls}-icon">${icon}</span><div><div class="${cls}-val"${color ? ` style="color:${color}"` : ''}>${val}</div>${lbl ? `<div class="${cls === 'applicant' ? 'applicant-sub' : 'sub-req-lbl'}">${lbl}</div>` : ''}</div></div>`;
+  let h = row('🏬', 'Extra site of ' + esc(chk.mainName), 'Main depot');
+  if (chk.state === 'ok') h += row('✅', 'Listed in the main depot\'s site list', chk.mainOn ? '' : 'Note: the Extra sites switch is OFF for the main depot', 'var(--green)');
+  else if (chk.state === 'missing') h += row('⛔', 'NOT in the main depot\'s site list', 'Do not approve unless you can explain this', 'var(--red)');
+  else if (chk.state === 'nomain') h += row('⛔', 'Main depot not found', 'The key in the request matches no depot', 'var(--red)');
+  else h += row('⚠️', 'Could not read the main depot\'s site list', 'Check it by hand before approving', 'var(--amber)');
+  const plan = r.requestedPlan || '';
+  const expected = ['starter', 'growth', 'pro', 'lifetime'].includes(plan) ? extraSitePrice(plan, TIER_PRICE, EXTRA.pct, EXTRA.lifetime) : null;
+  if (expected !== null && typeof r.planPrice === 'number') {
+    const once = plan === 'lifetime' ? ' once' : '/mo';
+    h += r.planPrice === expected
+      ? row('✅', 'K' + r.planPrice + once + ' quoted · matches the extra-site price', '', 'var(--green)')
+      : row('⚠️', 'K' + r.planPrice + once + ' quoted · extra-site price is now K' + expected + once, 'Prices may have changed since the request', 'var(--amber)');
+  }
+  return h;
+}
+// A warning block for the approval confirmation of a site request ('' for a normal request).
+function siteConfirmNote(r) {
+  if (!r || !r.siteOf) return '';
+  const chk = SITE_REQ_CHECK[r.installId + '|' + r.reqKey] || checkSiteRequest(r);
+  const bits = ['<div style="margin-bottom:10px;font-size:13px;line-height:1.6"><strong style="color:var(--white)">🏬 Extra site of ' + esc(chk.mainName) + '</strong>'];
+  if (chk.state === 'missing') bits.push('<br><span style="color:var(--red)">⛔ This depot is NOT in the main depot\'s site list.</span>');
+  else if (chk.state === 'nomain') bits.push('<br><span style="color:var(--red)">⛔ The main depot named in the request was not found.</span>');
+  else if (chk.state === 'unknown') bits.push('<br><span style="color:var(--amber)">⚠️ The main depot\'s site list could not be read.</span>');
+  const plan = r.requestedPlan || '';
+  const expected = ['starter', 'growth', 'pro', 'lifetime'].includes(plan) ? extraSitePrice(plan, TIER_PRICE, EXTRA.pct, EXTRA.lifetime) : null;
+  if (expected !== null && typeof r.planPrice === 'number' && r.planPrice !== expected) bits.push('<br><span style="color:var(--amber)">⚠️ Quoted K' + r.planPrice + ', extra-site price is now K' + expected + '.</span>');
+  bits.push('</div>');
+  return bits.join('');
+}
+
 async function loadSubRequests() {
   try {
     const data = await fbGet('subscriptionRequests');
@@ -1508,6 +1661,7 @@ function renderSubRequests() {
           <span class="sub-req-icon">📦</span>
           <div><div class="sub-req-val">Requested Plan <span class="plan-pill ${pCls}">${pText}</span></div></div>
         </div>
+        ${siteReqRows(r, 'sub-req')}
         ${email ? `<div class="sub-req-row">
           <span class="sub-req-icon">✉️</span>
           <div><div class="sub-req-val"><a href="mailto:${esc(email)}" style="color:var(--white);text-decoration:none">${esc(email)}</a></div><div class="sub-req-lbl">Email${r.emailVerified ? ' · verified' : ' · not verified'}</div></div>
@@ -1586,24 +1740,28 @@ function approveSubRequest(installId, reqKey) {
 function activateSubRequest(installId, reqKey, plan) {
   const r = ALL_SUB_REQS.find(x => x.installId === installId);
   const name = esc(r?.depotName || installId);
+  const life = plan === 'lifetime';                       // Lifetime: one payment, no end date (activeUntil 0 = active with no expiry)
   showConfirm(
     '⚡ Approve → Active',
-    `Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:var(--green)">${esc((plan||'pro').toUpperCase())}</strong> plan for 1 month?<br><br>
+    life ? `${siteConfirmNote(r)}Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:#e5c07b">LIFETIME</strong> plan?<br><br>
+     Status will be set to <strong style="color:var(--green)">ACTIVE</strong> with <strong style="color:var(--white)">no expiry date</strong>. Only approve it once the one-off payment has arrived.`
+    : `${siteConfirmNote(r)}Activate <strong style="color:var(--white)">${name}</strong> on the <strong style="color:var(--green)">${esc((plan||'pro').toUpperCase())}</strong> plan for 1 month?<br><br>
      Status will be set to <strong style="color:var(--green)">ACTIVE</strong>.`,
     'act-activate',
     async () => {
       const now = Date.now();
+      const until = life ? 0 : now + 30 * 24 * 60 * 60 * 1000;
       await fbPatch('licenses/' + installId, {
         status: 'active',
         tier: plan || 'pro',
         depotName: r?.depotName || '',
         requestedPlan: plan || 'pro',
-        activeUntil: now + 30 * 24 * 60 * 60 * 1000,
+        activeUntil: until,
         activatedOn: now
       });
       await _saveContactPhone(installId, r);
       await _markSubReqDone(installId, reqKey, 'approved_active');
-      const m = await _sendDecisionEmail(installId, r, 'approved_active', '', now + 30 * 24 * 60 * 60 * 1000);
+      const m = await _sendDecisionEmail(installId, r, 'approved_active', '', until);
       toast(m.sent ? '✅ Activated on ' + (plan||'pro').toUpperCase() + ' · email sent to ' + m.to : '✅ Activated on ' + (plan||'pro').toUpperCase() + ' · email NOT sent (' + m.why + ')');
       await loadAll();
     }
@@ -1654,8 +1812,10 @@ async function loadAll() {
   await loadTierPrices();
   // Run both independently — a failure in one should not block the other
   await Promise.allSettled([loadDepots(), loadSubRequests()]);
+  await loadSiteLinks();   // extra sites: who belongs to whom, and the automatic check of each site request
   updateStats();
   renderSubRequests();
+  if (Object.keys(SITE_PARENT).length || Object.keys(SITE_KIDS).length) renderDepots();   // redraw the cards with the site links
 }
 
 // Close confirm on backdrop click
