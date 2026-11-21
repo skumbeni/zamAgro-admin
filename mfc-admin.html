@@ -35,7 +35,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <p id="err" class="err"></p>
   </div>
   <div id="app" class="hidden">
-    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button><button id="t-manual" onclick="setTab('manual')">Add order</button></div>
+    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button><button id="t-pay" onclick="setTab('pay')">Payments</button><button id="t-prices" onclick="setTab('prices')">Prices</button><button id="t-manual" onclick="setTab('manual')">Add order</button></div>
     <div id="body"></div>
   </div>
 </main>
@@ -66,18 +66,19 @@ auth.onAuthStateChanged(async u=>{
   show(true);
   const s=db.ref("suppliers"),o=db.ref("orders").orderByChild("createdAt").limitToLast(100),t=db.ref("towns");
   s.on("value",x=>{suppliers=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
+  db.ref("settings/pricing").on("value",x=>{const p=x.val();if(p){const n=(v,d)=>isFinite(Number(v))&&v!==null&&v!==""?Number(v):d;FEE.pct=n(p.servicePct,FEE.pct);FEE.min=n(p.serviceMin,FEE.min);FEE.minFood=n(p.minFood,FEE.minFood);FEE.zones=[n(p.d1,FEE.zones[0]),n(p.d2,FEE.zones[1]),n(p.d3,FEE.zones[2])];FEE.updatedAt=Number(p.updatedAt)||0}if(tab==="prices"||tab==="manual")render()},fail);
   t.on("value",x=>{towns=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
-  o.on("value",x=>{orders=x.val()||{};if(tab==="orders")render()},fail);
+  o.on("value",x=>{orders=x.val()||{};if(tab==="orders"||tab==="pay")render()},fail);
   subs=[s,o,t];render();
 });
 
-function setTab(t){tab=t;["orders","suppliers","towns","manual"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
+function setTab(t){tab=t;["orders","suppliers","towns","pay","prices","manual"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
 // Redraws the tab but keeps anything being typed, so a live update never wipes a half-filled form.
 function render(){
   const b=$("body"),ae=document.activeElement;
   formKeep={};b.querySelectorAll("input[id],select[id],textarea[id]").forEach(e=>{formKeep[e.id]=e.value});
   const fid=ae&&ae.id&&b.contains(ae)?ae.id:"",pos=fid&&ae.selectionStart!=null?ae.selectionStart:null;
-  b.innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():tab==="towns"?renderTowns():renderManual();
+  b.innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():tab==="towns"?renderTowns():tab==="pay"?renderPayments():tab==="prices"?renderPrices():renderManual();
   Object.keys(formKeep).forEach(id=>{const e=$(id);if(!e)return;if(e.tagName==="SELECT"){if(Array.from(e.options).some(o=>o.value===formKeep[id]))e.value=formKeep[id]}else e.value=formKeep[id]});
   if(fid&&$(fid)){$(fid).focus();try{if(pos!=null)$(fid).setSelectionRange(pos,pos)}catch(e){}}
   if(tab==="manual")mCalc();
@@ -92,7 +93,7 @@ const waDigits=v=>String(v||"").replace(/\D/g,"").replace(/^0/,"260");
 // A supplier belongs to a town by townId; older suppliers are matched by their saved area name.
 const townOf=s=>s.townId&&towns[s.townId]?s.townId:(Object.keys(towns).find(k=>String(towns[k].name).toLowerCase()===String(s.area||"").trim().toLowerCase())||"");
 
-const FEE={pct:10,min:10,minFood:50,zones:[20,30,45]};
+const FEE={pct:10,min:10,minFood:50,zones:[20,30,45],updatedAt:0};
 const GROUPS={new:["new"],active:["confirmed","paid","purchased","delivering"],done:["delivered","cancelled"]};
 const ago=t=>{const m=Math.max(0,Math.round((Date.now()-(Number(t)||0))/60000));return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" d ago"};
 function setFilter(f){ofilter=f;render()}
@@ -110,9 +111,11 @@ function checkOrder(o){
   });
   const food=Number(o.food),service=Number(o.service),delivery=Number(o.delivery),total=Number(o.total);
   if(Math.abs(sum-food)>0.01)msgs.push("Items add up to "+K(sum)+" but the food total says "+K(food));
-  const fee=Math.max(FEE.min,sum*FEE.pct/100);
-  if(Math.abs(service-fee)>0.01)msgs.push("Service fee is "+K(service)+", it should be "+K(fee));
-  if(FEE.zones.indexOf(delivery)<0)msgs.push("Delivery fee "+K(delivery)+" is not one of the standard fees");
+  if(Number(o.createdAt)>=FEE.updatedAt){
+    const fee=Math.max(FEE.min,sum*FEE.pct/100);
+    if(Math.abs(service-fee)>0.01)msgs.push("Service fee is "+K(service)+", it should be "+K(fee));
+    if(FEE.zones.indexOf(delivery)<0)msgs.push("Delivery fee "+K(delivery)+" is not one of the standard fees");
+  }
   if(Math.abs(total-(food+service+delivery))>0.01)msgs.push("Total "+K(total)+" does not equal food + service + delivery");
   return msgs;
 }
@@ -125,10 +128,11 @@ function orderCard(o){
   return `<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div>
 <div class="muted">${new Date(o.createdAt).toLocaleString()} · ${o.town?esc(o.town)+" · ":""}${esc(o.payment)} · food ${K(o.food)}, service ${K(o.service)}, delivery ${K(o.delivery)}</div>
 <div>${badges}</div>
+${o.paidAt?`<div class="muted">Paid ${esc(new Date(o.paidAt).toLocaleString())}${o.txn?" · Txn "+esc(o.txn):""}</div>`:""}
 <pre>${esc((o.items||[]).join("\n"))}</pre>
 <div>${esc(o.customer)} · ${esc(o.phone)}<br>${esc(o.address)}${o.notes?"<br><em>"+esc(o.notes)+"</em>":""}</div>
 ${verdict}
-<div class="row" style="margin-top:10px"><select aria-label="Order status" data-k="${esc(o.key)}" onchange="upd('orders/'+this.dataset.k,{status:this.value})">${STATUSES.map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select>
+<div class="row" style="margin-top:10px"><select aria-label="Order status" data-k="${esc(o.key)}" onchange="setStatus(this.dataset.k,this.value)">${STATUSES.map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select>
 <a href="${esc("https://wa.me/"+p+"?text="+encodeURIComponent(hi))}" target="_blank" rel="noopener"><button>Message customer</button></a>
 <button class="del" data-k="${esc(o.key)}" onclick="delOrder(this.dataset.k)">Delete</button></div></div>`;
 }
@@ -140,6 +144,51 @@ function renderOrders(){
   const list=all.filter(o=>inG(o,ofilter));
   return `<div class="row" style="margin-bottom:12px">${chip("all","All")}${chip("new","New, not yet handled")}${chip("active","In progress")}${chip("done","Finished")}</div>`
     +(list.map(orderCard).join("")||'<div class="card muted">No orders in this view.</div>');
+}
+
+const PAID_SET=["paid","purchased","delivering","delivered"];let pfilter="all";
+function setPFilter(f){pfilter=f;render()}
+// Marking an order paid records when, and (optionally) the mobile money transaction ID.
+function setStatus(k,s){
+  const v={status:s};
+  if(s==="paid"){
+    const t=prompt("Mobile money transaction ID (optional, leave blank to skip):");
+    if(t===null){render();return}
+    const id=t.trim().slice(0,40);
+    if(id&&Object.entries(orders).some(([ok,o])=>ok!==k&&o.txn===id)&&!confirm("This transaction ID is already on another order. Save it anyway?")){render();return}
+    v.paidAt=firebase.database.ServerValue.TIMESTAMP;if(id)v.txn=id;
+  }
+  upd("orders/"+k,v);
+}
+function renderPayments(){
+  const now=Date.now(),when=o=>Number(o.paidAt||o.createdAt)||0;
+  const inR=o=>pfilter==="all"||(pfilter==="today"?new Date(when(o)).toDateString()===new Date().toDateString():now-when(o)<=7*864e5);
+  const list=Object.entries(orders).map(([k,o])=>({...o,key:k})).filter(o=>PAID_SET.includes(o.status)&&inR(o)).sort((a,b)=>when(b)-when(a));
+  const sum=f=>list.reduce((a,o)=>a+Number(o[f]||0),0),byM={};list.forEach(o=>{byM[o.payment]=(byM[o.payment]||0)+Number(o.total||0)});
+  const chip=(g,l)=>`<button class="chip ${pfilter===g?"on":""}" onclick="setPFilter('${g}')">${l}</button>`;
+  return `<div class="row" style="margin-bottom:12px">${chip("today","Today")}${chip("week","Last 7 days")}${chip("all","All")}</div>
+<div class="card"><div class="row sp"><strong>Collected (${list.length} orders)</strong><strong>${K(sum("total"))}</strong></div>
+<div class="row sp muted"><span>Your fees (service + delivery)</span><span>${K(sum("service")+sum("delivery"))}</span></div>
+<div class="row sp muted"><span>Food to pay restaurants</span><span>${K(sum("food"))}</span></div>
+${Object.keys(byM).map(m=>`<div class="row sp muted"><span>${esc(m)}</span><span>${K(byM[m])}</span></div>`).join("")}</div>`
+  +(list.map(o=>`<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div><div class="muted">${esc(new Date(when(o)).toLocaleString())} · ${esc(o.payment)}${o.txn?" · Txn "+esc(o.txn):""} · ${esc(o.customer)}</div></div>`).join("")||'<div class="card muted">No payments in this period.</div>');
+}
+
+/* ---------- Prices (fees and minimum order; menu item prices are edited per item under Suppliers and menus) ---------- */
+function renderPrices(){
+  const f=(id,l,v,st)=>`<div><label class="muted" for="${id}" style="display:block;font-size:12px">${l}</label><input id="${id}" type="number" min="0" step="${st||1}" inputmode="decimal" value="${v}" style="width:130px"></div>`;
+  return `<div class="card"><strong>Fees and minimum order</strong>
+<div class="muted" style="margin:4px 0 12px">These show in the shop, on the landing page and in the order checks here. They apply to new orders straight away; past orders keep the prices they were placed at. Menu item prices are set per item under Suppliers and menus and also update everywhere live.</div>
+<div class="row">${f("pp","Service fee (%)",FEE.pct,"0.1")}${f("pm","Minimum service fee (K)",FEE.min)}${f("pf","Minimum food order (K)",FEE.minFood)}</div>
+<div class="row" style="margin-top:10px">${f("pd1","Delivery 0–3 km (K)",FEE.zones[0])}${f("pd2","Delivery 3–6 km (K)",FEE.zones[1])}${f("pd3","Delivery 6–10 km (K)",FEE.zones[2])}</div>
+<button class="pri" style="margin-top:14px" onclick="savePrices()">Save prices</button></div>`;
+}
+function savePrices(){
+  const g=id=>Number($(id).value),v={servicePct:g("pp"),serviceMin:g("pm"),minFood:g("pf"),d1:g("pd1"),d2:g("pd2"),d3:g("pd3")};
+  if(Object.values(v).some(x=>!isFinite(x)||x<0))return alert("Enter a number (0 or more) in every box.");
+  if(v.servicePct>50)return alert("Service fee percentage cannot be more than 50.");
+  if(!(v.d1>0&&v.d2>0&&v.d3>0))return alert("Delivery fees must be more than 0.");
+  db.ref("settings/pricing").set({...v,updatedAt:firebase.database.ServerValue.TIMESTAMP}).then(()=>alert("Prices saved. They now apply everywhere.")).catch(fail);
 }
 
 /* ---------- Towns ---------- */
