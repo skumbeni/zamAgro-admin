@@ -20,6 +20,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .item{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)}
 .off{opacity:.55}.hidden{display:none!important}#login{max-width:340px;margin:60px auto}#login input{width:100%;margin-bottom:10px}
 .err{color:var(--danger);font-size:13px;margin:8px 0 0}pre{white-space:pre-wrap;margin:6px 0;font:inherit}
+.chip{border-radius:999px}.chip.on{background:var(--brand2);color:var(--brand);border-color:#cfe3d5;font-weight:700}
+.badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;background:#fff3cd;color:#72501d;margin:4px 4px 0 0}.badge.ok{background:var(--brand2);color:var(--brand)}
+.warnbox{background:#fff7e9;border:1px solid #f3dfb9;color:#72501d;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -32,7 +35,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <p id="err" class="err"></p>
   </div>
   <div id="app" class="hidden">
-    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button></div>
+    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button><button id="t-manual" onclick="setTab('manual')">Add order</button></div>
     <div id="body"></div>
   </div>
 </main>
@@ -47,7 +50,7 @@ const auth=firebase.auth(),db=firebase.database(),$=id=>document.getElementById(
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const K=n=>"K"+(Number(n)||0).toFixed(2);
 const STATUSES=["new","confirmed","paid","purchased","delivering","delivered","cancelled"];
-let suppliers={},orders={},towns={},tab="orders",open=null,subs=[];
+let suppliers={},orders={},towns={},tab="orders",open=null,subs=[],ofilter="all",formKeep={};
 
 const show=on=>{$("login").classList.toggle("hidden",on);$("app").classList.toggle("hidden",!on);$("out").classList.toggle("hidden",!on)};
 $("loginBtn").onclick=()=>{$("err").textContent="";auth.signInWithEmailAndPassword($("email").value.trim(),$("pass").value).catch(e=>$("err").textContent="Sign-in failed ("+e.code+"). Check your email and password.")};
@@ -62,14 +65,24 @@ auth.onAuthStateChanged(async u=>{
   if(!ok){$("err").textContent="This account is not an admin yet. Add this UID under admins in the database: "+u.uid;await auth.signOut();return}
   show(true);
   const s=db.ref("suppliers"),o=db.ref("orders").orderByChild("createdAt").limitToLast(100),t=db.ref("towns");
-  s.on("value",x=>{suppliers=x.val()||{};if(tab==="suppliers"||tab==="towns")render()},fail);
-  t.on("value",x=>{towns=x.val()||{};if(tab==="suppliers"||tab==="towns")render()},fail);
+  s.on("value",x=>{suppliers=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
+  t.on("value",x=>{towns=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
   o.on("value",x=>{orders=x.val()||{};if(tab==="orders")render()},fail);
   subs=[s,o,t];render();
 });
 
-function setTab(t){tab=t;["orders","suppliers","towns"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
-function render(){$("body").innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():renderTowns()}
+function setTab(t){tab=t;["orders","suppliers","towns","manual"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
+// Redraws the tab but keeps anything being typed, so a live update never wipes a half-filled form.
+function render(){
+  const b=$("body"),ae=document.activeElement;
+  formKeep={};b.querySelectorAll("input[id],select[id],textarea[id]").forEach(e=>{formKeep[e.id]=e.value});
+  const fid=ae&&ae.id&&b.contains(ae)?ae.id:"",pos=fid&&ae.selectionStart!=null?ae.selectionStart:null;
+  b.innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():tab==="towns"?renderTowns():renderManual();
+  Object.keys(formKeep).forEach(id=>{const e=$(id);if(!e)return;if(e.tagName==="SELECT"){if(Array.from(e.options).some(o=>o.value===formKeep[id]))e.value=formKeep[id]}else e.value=formKeep[id]});
+  if(fid&&$(fid)){$(fid).focus();try{if(pos!=null)$(fid).setSelectionRange(pos,pos)}catch(e){}}
+  if(tab==="manual")mCalc();
+}
+const clr=ids=>ids.forEach(i=>{const e=$(i);if(e)e.value=""});
 const fail=e=>alert("Not saved: "+e.message);
 const upd=(p,v)=>db.ref(p).update(v).catch(fail);
 const rm=(p,m)=>confirm(m)&&db.ref(p).remove().catch(fail);
@@ -79,19 +92,54 @@ const waDigits=v=>String(v||"").replace(/\D/g,"").replace(/^0/,"260");
 // A supplier belongs to a town by townId; older suppliers are matched by their saved area name.
 const townOf=s=>s.townId&&towns[s.townId]?s.townId:(Object.keys(towns).find(k=>String(towns[k].name).toLowerCase()===String(s.area||"").trim().toLowerCase())||"");
 
-function renderOrders(){
-  const list=Object.entries(orders).map(([k,o])=>({...o,key:k})).sort((a,b)=>b.createdAt-a.createdAt);
-  if(!list.length)return'<div class="card muted">No orders yet. Orders appear here when a customer taps Continue on WhatsApp.</div>';
-  return list.map(o=>{
-    const p=String(o.phone||"").replace(/\D/g,"").replace(/^0/,"260");
-    return `<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div>
+const FEE={pct:10,min:10,minFood:50,zones:[20,30,45]};
+const GROUPS={new:["new"],active:["confirmed","paid","purchased","delivering"],done:["delivered","cancelled"]};
+const ago=t=>{const m=Math.max(0,Math.round((Date.now()-(Number(t)||0))/60000));return m<1?"just now":m<60?m+" min ago":m<1440?Math.round(m/60)+" h ago":Math.round(m/1440)+" d ago"};
+function setFilter(f){ofilter=f;render()}
+// Re-prices an order from its saved lines against the live menu and fee rules. null = older order with no saved lines.
+function checkOrder(o){
+  if(!Array.isArray(o.lines)||!o.lines.length)return null;
+  const msgs=[],sup=suppliers[o.restaurantId];let sum=0;
+  o.lines.forEach(l=>{
+    const q=Number(l.qty)||0,p=Number(l.price)||0;sum+=q*p;
+    if(sup&&sup.items){
+      const cur=sup.items[l.id];
+      if(!cur)msgs.push(esc(l.name)+" is no longer on the menu");
+      else if(Number(cur.price)!==p)msgs.push(esc(l.name)+": ordered at "+K(p)+", menu now "+K(cur.price));
+    }
+  });
+  const food=Number(o.food),service=Number(o.service),delivery=Number(o.delivery),total=Number(o.total);
+  if(Math.abs(sum-food)>0.01)msgs.push("Items add up to "+K(sum)+" but the food total says "+K(food));
+  const fee=Math.max(FEE.min,sum*FEE.pct/100);
+  if(Math.abs(service-fee)>0.01)msgs.push("Service fee is "+K(service)+", it should be "+K(fee));
+  if(FEE.zones.indexOf(delivery)<0)msgs.push("Delivery fee "+K(delivery)+" is not one of the standard fees");
+  if(Math.abs(total-(food+service+delivery))>0.01)msgs.push("Total "+K(total)+" does not equal food + service + delivery");
+  return msgs;
+}
+function orderCard(o){
+  const p=waDigits(o.phone);
+  const hi="Hi "+(o.customer||"")+", this is Food Connect about your order "+o.ref+" ("+(o.restaurant||"")+", "+K(o.total)+")."+(o.status==="new"?" Please confirm you would like to go ahead.":"");
+  const chk=checkOrder(o);
+  const badges=(o.status==="new"?`<span class="badge">⏳ New · ${esc(ago(o.createdAt))} · look for ${esc(o.ref)} in WhatsApp</span>`:"")+(o.source==="manual"?'<span class="badge ok">Added manually</span>':"");
+  const verdict=chk===null?"":chk.length?`<div class="warnbox">⚠ Check before taking payment or buying:<br>${chk.map(m=>"• "+m).join("<br>")}</div>`:'<div><span class="badge ok">✓ Totals match items and current menu</span></div>';
+  return `<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div>
 <div class="muted">${new Date(o.createdAt).toLocaleString()} · ${o.town?esc(o.town)+" · ":""}${esc(o.payment)} · food ${K(o.food)}, service ${K(o.service)}, delivery ${K(o.delivery)}</div>
+<div>${badges}</div>
 <pre>${esc((o.items||[]).join("\n"))}</pre>
 <div>${esc(o.customer)} · ${esc(o.phone)}<br>${esc(o.address)}${o.notes?"<br><em>"+esc(o.notes)+"</em>":""}</div>
+${verdict}
 <div class="row" style="margin-top:10px"><select aria-label="Order status" data-k="${esc(o.key)}" onchange="upd('orders/'+this.dataset.k,{status:this.value})">${STATUSES.map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select>
-<a href="https://wa.me/${p}" target="_blank" rel="noopener"><button>Message customer</button></a>
+<a href="${esc("https://wa.me/"+p+"?text="+encodeURIComponent(hi))}" target="_blank" rel="noopener"><button>Message customer</button></a>
 <button class="del" data-k="${esc(o.key)}" onclick="delOrder(this.dataset.k)">Delete</button></div></div>`;
-  }).join("");
+}
+function renderOrders(){
+  const all=Object.entries(orders).map(([k,o])=>({...o,key:k})).sort((a,b)=>b.createdAt-a.createdAt);
+  if(!all.length)return'<div class="card muted">No orders yet. Orders appear here when a customer taps Continue on WhatsApp, or when you add one in the Add order tab.</div>';
+  const inG=(o,g)=>g==="all"||GROUPS[g].includes(o.status);
+  const chip=(g,l)=>`<button class="chip ${ofilter===g?"on":""}" onclick="setFilter('${g}')">${l} (${all.filter(o=>inG(o,g)).length})</button>`;
+  const list=all.filter(o=>inG(o,ofilter));
+  return `<div class="row" style="margin-bottom:12px">${chip("all","All")}${chip("new","New, not yet handled")}${chip("active","In progress")}${chip("done","Finished")}</div>`
+    +(list.map(orderCard).join("")||'<div class="card muted">No orders in this view.</div>');
 }
 
 /* ---------- Towns ---------- */
@@ -126,7 +174,7 @@ function addTown(){
   const c=parseCoords($("tla").value.trim(),$("tln").value.trim(),$("trd").value.trim());if(!c)return;
   const t={name,whatsapp:waDigits($("tw").value),radius:c.radius,active:true};
   if(c.lat!==null){t.lat=c.lat;t.lng=c.lng}
-  db.ref("towns").push(t).catch(fail);
+  db.ref("towns").push(t).then(()=>clr(["tn","tw","tla","tln","trd"])).catch(fail);
 }
 function editTown(id){
   const t=towns[id],name=ask("Town name:",t.name);
@@ -168,7 +216,7 @@ function toggleOpen(id){open=open===id?null:id;render()}
 function addSup(){
   const name=$("sn").value.trim();if(!name)return alert("Enter a supplier name.");
   const tid=$("sa").value,t=towns[tid];if(!t)return alert("Choose a town.");
-  db.ref("suppliers").push({name,category:$("sc").value.trim(),icon:$("si").value.trim()||"🏪",townId:tid,area:t.name,eta:$("se").value.trim()||"To be confirmed",active:true}).catch(fail);
+  db.ref("suppliers").push({name,category:$("sc").value.trim(),icon:$("si").value.trim()||"🏪",townId:tid,area:t.name,eta:$("se").value.trim()||"To be confirmed",active:true}).then(()=>clr(["sn","sc","si","se"])).catch(fail);
 }
 function editSup(id){
   const s=suppliers[id],name=ask("Supplier name:",s.name);
@@ -185,12 +233,68 @@ function delSup(id){rm("suppliers/"+id,"Delete "+suppliers[id].name+" and its wh
 function addItem(sid){
   const name=$("in_"+sid).value.trim(),price=parseFloat($("ip_"+sid).value);
   if(!name||!(price>=0))return alert("Enter an item name and a price.");
-  db.ref(`suppliers/${sid}/items`).push({name,description:$("id_"+sid).value.trim(),price,available:true}).catch(fail);
+  db.ref(`suppliers/${sid}/items`).push({name,description:$("id_"+sid).value.trim(),price,available:true}).then(()=>clr(["in_"+sid,"id_"+sid,"ip_"+sid])).catch(fail);
 }
 function editItem(sid,k){
   const i=suppliers[sid].items[k],name=ask("Item name:",i.name),price=parseFloat(ask("Price (K):",i.price));
   if(!name||!(price>=0))return alert("Enter an item name and a valid price.");
   upd(`suppliers/${sid}/items/${k}`,{name,description:ask("Description:",i.description),price});
+}
+
+/* ---------- Add order (for orders that reached you only on WhatsApp) ---------- */
+function mSel(get){
+  const act=Object.entries(towns).filter(([,t])=>t.active!==false);
+  const tid=(get("mt")&&towns[get("mt")])?get("mt"):(act[0]?act[0][0]:"");
+  const rs=Object.entries(suppliers).filter(([,s])=>s.active!==false&&townOf(s)===tid);
+  const rid=rs.some(([id])=>id===get("mr"))?get("mr"):(rs[0]?rs[0][0]:"");
+  return {act,tid,rs,rid};
+}
+function renderManual(){
+  const {act,tid,rs,rid}=mSel(id=>formKeep[id]);
+  if(!act.length)return'<div class="card muted">Add a town and a supplier first, then you can record orders here.</div>';
+  const tOpts=act.map(([id,t])=>`<option value="${esc(id)}" ${id===tid?"selected":""}>${esc(t.name)}</option>`).join("");
+  const rOpts=rs.map(([id,s])=>`<option value="${esc(id)}" ${id===rid?"selected":""}>${esc((s.icon||"🏪")+" "+s.name)}</option>`).join("");
+  const s=suppliers[rid],items=s?Object.entries(s.items||{}).filter(([,i])=>i.available!==false):[];
+  const rows=items.length?items.map(([k,i])=>`<div class="item"><span>${esc(i.name)} <span class="muted">${K(i.price)}</span></span><input id="mq_${esc(k)}" type="number" min="0" step="1" inputmode="numeric" placeholder="0" style="width:80px" oninput="mCalc()" aria-label="Quantity of ${esc(i.name)}"></div>`).join("")
+    :'<div class="muted" style="padding:8px 0">'+(rid?"This restaurant has no available menu items.":"No active restaurants in this town yet.")+'</div>';
+  const zl=["0–3 km","3–6 km","6–10 km"];
+  return `<div class="card"><strong>Add an order that came in on WhatsApp</strong>
+<div class="muted" style="margin:4px 0 10px">Use this for landing-page or direct WhatsApp orders, so they are recorded, priced and checked like shop orders. Saved as Confirmed.</div>
+<div class="row"><select id="mt" aria-label="Town" onchange="render()">${tOpts}</select><select id="mr" aria-label="Restaurant" onchange="render()">${rOpts}</select></div>
+<div style="margin-top:8px">${rows}</div>
+<div class="row" style="margin-top:8px"><select id="mz" aria-label="Delivery zone" onchange="mCalc()">${FEE.zones.map((f,i)=>`<option value="${i}">${zl[i]} · K${f}</option>`).join("")}</select></div>
+<div class="row" style="margin-top:8px"><input id="mc" placeholder="Customer name" maxlength="80"><input id="mp" type="tel" placeholder="Phone / WhatsApp" maxlength="20"></div>
+<div class="row" style="margin-top:8px"><input id="ma" placeholder="Delivery address and landmark" maxlength="250" style="flex:1;min-width:220px"></div>
+<div class="row" style="margin-top:8px"><select id="mpay" aria-label="Payment method"><option>MTN Mobile Money</option><option>Airtel Money</option><option>Cash deposit / transfer (confirm)</option></select><input id="mn" placeholder="Notes (optional)" maxlength="400" style="flex:1;min-width:160px"></div>
+<div id="mtot" class="muted" style="margin:10px 0"></div>
+<button class="pri" onclick="saveManual()">Save order</button></div>`;
+}
+function mCalc(){
+  const {rid}=mSel(id=>$(id)?$(id).value:""),s=suppliers[rid],lines=[];
+  if(s)Object.entries(s.items||{}).forEach(([k,i])=>{const e=$("mq_"+k),q=e?Math.floor(Number(e.value)):0;if(q>0&&i.available!==false)lines.push({id:k,name:String(i.name||"Item"),qty:q,price:Number(i.price)||0})});
+  const food=lines.reduce((a,l)=>a+l.qty*l.price,0),service=food?Math.max(FEE.min,food*FEE.pct/100):0;
+  const delivery=food?FEE.zones[Number($("mz")?$("mz").value:0)||0]:0,total=food+service+delivery;
+  const box=$("mtot");
+  if(box)box.textContent=food?`Food ${K(food)} · service ${K(service)} · delivery ${K(delivery)} · total ${K(total)}`+(food<FEE.minFood?` · minimum food order is ${K(FEE.minFood)}`:""):"Enter quantities to see the total.";
+  return {lines,food,service,delivery,total,rid};
+}
+function saveManual(){
+  const c=mCalc(),g=id=>$(id)?$(id).value.trim():"";
+  const tid=g("mt"),t=towns[tid],s=suppliers[c.rid];
+  if(!t||!s)return alert("Choose a town and a restaurant.");
+  if(!c.lines.length)return alert("Enter a quantity for at least one item.");
+  if(c.food<FEE.minFood)return alert("The food total must be at least "+K(FEE.minFood)+".");
+  const customer=g("mc"),phone=g("mp"),address=g("ma");
+  if(!customer||!phone||!address)return alert("Enter the customer's name, phone number and delivery address.");
+  if(!/^[0-9+\s()-]{7,20}$/.test(phone))return alert("Enter a valid phone number.");
+  const ref="MFC-"+Date.now().toString().slice(-8)+Math.random().toString(36).slice(2,4).toUpperCase();
+  const rec={ref,uid:auth.currentUser.uid,email:"manual entry",source:"manual",restaurantId:c.rid,town:t.name,townId:tid,restaurant:s.name,
+    items:c.lines.map(l=>`${l.qty} x ${l.name} @ ${K(l.price)} = ${K(l.qty*l.price)}`),lines:c.lines,
+    food:c.food,service:c.service,delivery:c.delivery,total:c.total,customer,phone,address,payment:g("mpay"),notes:g("mn"),status:"confirmed",createdAt:firebase.database.ServerValue.TIMESTAMP};
+  db.ref("orders/"+ref).set(rec).then(()=>{
+    clr(["mc","mp","ma","mn"]);document.querySelectorAll('[id^="mq_"]').forEach(e=>{e.value=""});
+    ofilter="all";setTab("orders");
+  }).catch(fail);
 }
 </script>
 </body>
