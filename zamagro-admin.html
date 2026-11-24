@@ -778,6 +778,7 @@
     <div class="modal-title">Manage Subscription</div>
     <div style="font-size:.9375rem;color:var(--muted);margin-bottom:1.2rem;" id="modal-sub-biz"></div>
     <div id="modal-sub-reqinfo" style="display:none;font-size:.9375rem;line-height:1.5;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;"></div>
+    <div id="modal-sub-refinfo" style="display:none;font-size:.9375rem;line-height:1.5;border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;"></div>
     <input type="hidden" id="modal-sub-uid"/>
     <div class="form-row">
       <label>Plan</label>
@@ -854,6 +855,7 @@ async function loadPlanPrices() {
 let authToken = null;
 let authEmail = null;
 let allBusinesses = [];   // cached list
+let allReferrals = [];    // referrals/{newUid} = { referrerUid, code, ts, qualifiedAt?, bonusDays?, note? } (see REFERRALS below)
 
 /* ── CLOCK ───────────────────────────────────────────────────── */
 setInterval(() => {
@@ -1066,10 +1068,13 @@ async function loadBusinesses() {
       suspended: pub ? pub.suspended === true : (s.suspended || false),
       archived: s.archived || false,
       goal: s.lifetimeGoal === true,                                           // owner chose the optional Lifetime goal in the app
-      paymentLog: old.paymentLog || []
+      paymentLog: old.paymentLog || [],
+      // Free months already given for referrals. Kept in licenseData (and mirrored in the app copy) so a licence save carries it over.
+      referral: { granted: Math.max(Number(old.referral && old.referral.granted) || 0, Number(pubs[uid] && pubs[uid].pub && pubs[uid].pub.referral && pubs[uid].pub.referral.granted) || 0) }
     };
   });
   allBusinesses.sort((a,b) => (b.activatedAt||0) - (a.activatedAt||0));
+  try { await refreshReferralsCache(); } catch (e) { console.warn('Referrals read failed (publish the new database rules first):', e); allReferrals = []; }
   hideDataError();
 }
 
@@ -1341,13 +1346,14 @@ function renderSubTable(list) {
         <div style="font-weight:600;font-size:1rem">${b.companyName}</div>
         <div class="mono" style="color:var(--muted);font-size:.8125rem">${b.adminUsername}</div>
         ${goalTagHtml(b)}
+        ${referralTagHtml(b)}
         ${shopsSummaryHtml(b)}
       </td>
       <td>${tierBadge(b.tier)}</td>
       <td>${statusBadge(st)}</td>
       <td class="mono" style="font-size:.9375rem">${fmtDate(b.activatedAt)}</td>
       <td class="mono" style="font-size:.9375rem">${b.tier==='lifetime'?'∞':fmtDate(b.expiry)}</td>
-      <td><button class="action-btn primary" onclick="openSubModal('${b.uid}')">Manage</button></td>
+      <td><button class="action-btn primary" onclick="openSubModal('${b.uid}')">Manage</button>${referralGrantBtn(b)}</td>
     </tr>`;
   }).join('');
 }
@@ -1500,6 +1506,7 @@ function openSubModal(uid) {
   { const am = document.getElementById('modal-sub-automatch'); if (am) am.checked = true; }
   window._pendingDismissUid = null; window._pendingDismissReqId = null; window._pendingReqAmount = null; window._pendingMainAmount = null;   // a plain open is not an approval
   { const ri = document.getElementById('modal-sub-reqinfo'); if (ri) { ri.style.display = 'none'; ri.innerHTML = ''; } }
+  { const rf = document.getElementById('modal-sub-refinfo'); if (rf) { rf.style.display = 'none'; rf.innerHTML = ''; } }
   toggleExpiryRow();
   document.getElementById('modal-sub').classList.add('open');
 }
@@ -1620,10 +1627,191 @@ async function publishLicensePub(uid, licData, suspended) {
   if (licData.tier === 'trial') { pub.trialStart = licData.activatedAt; pub.trialEnd = licData.expiry; }
   if (licData.shops && Object.keys(licData.shops).length) pub.shops = licData.shops;
   if (Array.isArray(licData.paymentLog) && licData.tier !== 'lifetime') pub.paidTotal = goalPaidTotal(licData.paymentLog);
+  // fbSet replaces the whole app copy, so the referral counts must be written again here or they would be lost.
+  const _rp = referralPubFor(uid, Number(licData.referral && licData.referral.granted) || 0);
+  if (_rp) pub.referral = _rp;
   await fbSet(`licenses/${uid}/pub`, pub);
 }
 async function publishSuspendedFlag(uid, flag) {
   await fbPatch(`licenses/${uid}/pub`, { suspended: !!flag });
+}
+
+/* ── REFERRALS ───────────────────────────────────────────────── */
+/* A business that signs up with a referral code gets referrals/{its uid} = { referrerUid, code, ts } from the app.
+   Approving its FIRST payment from a request adds REFEREE_BONUS_DAYS to its Main plan and stamps that record
+   qualifiedAt, so approving again cannot count twice. The referrer's count is not "+1": it is recounted from those
+   stamps each time and published as licenses/{referrerUid}/pub/referral = { qualified, granted } for the app's card.
+   Once a referrer has REFERRALS_NEEDED qualified, "Grant 1 free month" adds REFERRER_REWARD_DAYS to the Main plan,
+   raises granted by 1 and so takes REFERRALS_NEEDED off the count. Main plan only: extra shops are never touched.
+   Keep these three numbers the same in index.html. */
+const REFERRALS_NEEDED = 2;
+const REFERRER_REWARD_DAYS = 30;
+const REFEREE_BONUS_DAYS = 7;
+const REF_DAY_MS = 86400000;
+
+async function refreshReferralsCache() {
+  const raw = await fbGet('referrals');
+  allReferrals = (raw && typeof raw === 'object')
+    ? Object.entries(raw).filter(([, v]) => v && typeof v === 'object' && typeof v.referrerUid === 'string').map(([uid, v]) => ({ ...v, uid }))
+    : [];
+  return allReferrals;
+}
+// granted comes from the business (licenseData.referral.granted); the rest is counted from the qualified stamps.
+function referralStatsFor(uid) {
+  const list = allReferrals.filter(r => r.referrerUid === uid);
+  const qualifiedTotal = list.filter(r => r.qualifiedAt).length;
+  const biz = allBusinesses.find(b => b.uid === uid);
+  const granted = Number(biz && biz.referral && biz.referral.granted) || 0;
+  return { total: list.length, qualifiedTotal, waiting: list.length - qualifiedTotal, granted, unspent: Math.max(0, qualifiedTotal - granted * REFERRALS_NEEDED) };
+}
+// What goes into licenses/{uid}/pub/referral, or null when this business has no referrals at all.
+function referralPubFor(uid, granted) {
+  const list = allReferrals.filter(r => r.referrerUid === uid);
+  if (!list.length && !granted) return null;
+  const qualifiedTotal = list.filter(r => r.qualifiedAt).length;
+  return { qualified: Math.max(0, qualifiedTotal - granted * REFERRALS_NEEDED), granted, updatedAt: Date.now() };
+}
+// PATCH, not set: it adds the counts without touching the plan fields, and works even when the owner has no plan copy yet
+// (the app ignores a copy with no tier and then reads only the counts from it).
+async function publishReferrerStats(referrerUid) {
+  await refreshReferralsCache();
+  const st = referralStatsFor(referrerUid);
+  await fbPatch(`licenses/${referrerUid}/pub`, { referral: { qualified: st.unspent, granted: st.granted, updatedAt: Date.now() } });
+  return st;
+}
+
+function normPhone(p) { const d = String(p == null ? '' : p).replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : ''; }
+function normTxn(t) { return String(t == null ? '' : t).trim().toUpperCase(); }
+// A match is only a flag for the admin to look at: the same phone number or the same transaction ID on both sides.
+function referralFlags(refereeUid, req, referrerUid) {
+  const flags = [];
+  const referee = allBusinesses.find(b => b.uid === refereeUid) || {};
+  const referrer = allBusinesses.find(b => b.uid === referrerUid) || {};
+  const refereePhones = new Set([req && req.phone, referee.phone].map(normPhone).filter(Boolean));
+  const referrerPhones = new Set([referrer.phone].concat(allRequests.filter(r => r.uid === referrerUid).map(r => r.phone)).map(normPhone).filter(Boolean));
+  const samePhone = [...refereePhones].find(p => referrerPhones.has(p));
+  if (samePhone) flags.push('same phone number (ends ' + samePhone.slice(-4) + ')');
+  const txn = normTxn(req && req.txnId);
+  if (txn) {
+    const referrerTxns = new Set((referrer.paymentLog || []).map(p => normTxn(p && p.txnId)).concat(allRequests.filter(r => r.uid === referrerUid).map(r => normTxn(r.txnId))).filter(Boolean));
+    if (referrerTxns.has(txn)) flags.push('same transaction ID (' + txn + ')');
+  }
+  return flags;
+}
+
+/* Decides, from fresh reads, whether approving this request should apply the referral. Used to show the panel
+   when the request is opened and again at save time, so a second approval finds qualifiedAt already set. */
+async function decideReferral(uid, tier, reqId) {
+  const out = { has: false, apply: false, flags: [], reason: '', days: 0 };
+  const req = allRequests.find(r => r.uid === uid && r.reqId === reqId);
+  if (!req || req.status !== 'pending') return out;
+  const ref = await fbGet(`referrals/${uid}`);
+  if (!ref || typeof ref.referrerUid !== 'string') return out;
+  out.has = true; out.referrerUid = ref.referrerUid; out.code = ref.code || '';
+  const referrer = allBusinesses.find(b => b.uid === ref.referrerUid);
+  out.referrerName = referrer ? (referrer.companyName || referrer.adminUsername) : '';
+  if (ref.qualifiedAt) { out.reason = 'Referral already counted on ' + fmtDate(ref.qualifiedAt) + '. Nothing more is added.'; return out; }
+  if (!referrer) { out.reason = 'The referrer account was not found, so nothing is applied. Check it by hand.'; return out; }
+  if (tier === 'trial') { out.reason = 'A trial is not a payment. The referral waits for the first paid plan.'; return out; }
+  const lines = quoteLinesOf(req.quote);
+  if (lines.length && !lines.some(l => l.kind === 'main')) { out.reason = 'This payment is for extra shops only. The referral waits for a Main-plan payment.'; return out; }
+  // First approved payment = no payment with an amount recorded for this business yet (read fresh, not from the cache).
+  const log = await fbGet(`businesses/${uid}/settings/licenseData/paymentLog`);
+  const prior = (Array.isArray(log) ? log : Object.values(log || {})).filter(p => p && Number(p.amount) > 0);
+  if (prior.length) { out.reason = 'Not the first approved payment, so no referral bonus.'; return out; }
+  out.flags = referralFlags(uid, req, ref.referrerUid);
+  out.apply = true;
+  out.days = tier === 'lifetime' ? 0 : REFEREE_BONUS_DAYS;
+  out.noteText = ('Req ' + String(reqId).slice(-6) + ' · txn ' + (req.txnId || '-') + ' · +' + out.days + ' days').slice(0, 200);
+  return out;
+}
+
+// The panel in the Manage Subscription window when it was opened from a request.
+async function showReferralPanel(uid, reqId) {
+  const el = document.getElementById('modal-sub-refinfo');
+  if (!el) return;
+  const req = allRequests.find(r => r.uid === uid && r.reqId === reqId);
+  let d;
+  try { d = await decideReferral(uid, req ? req.tier : '', reqId); } catch (e) { console.warn('Referral panel failed', e); return; }
+  if (window._pendingDismissReqId !== reqId) return;   // another window was opened meanwhile
+  if (!d.has) { el.style.display = 'none'; return; }
+  const who = escH(d.referrerName || 'the referrer');
+  let bg = 'var(--surface2)', bd = 'var(--border)', html;
+  if (d.apply && d.flags.length) {
+    bg = '#fdecea'; bd = '#f5c2c0';
+    html = '⚠ <strong>Possible self-referral:</strong> ' + d.flags.map(escH).join(' and ') + ' on both sides. Referred by ' + who + ' (' + escH(d.code) + '). If you save, you will be asked whether to apply the referral anyway.';
+  } else if (d.apply) {
+    bg = '#e8f5e9'; bd = '#c8e6c9';
+    const st = referralStatsFor(d.referrerUid);
+    html = '🎁 <strong>Referred by ' + who + '</strong> (' + escH(d.code) + '). This is their first approved payment: ' +
+      (d.days ? '<strong>+' + d.days + ' days</strong> will be added to the Main plan date when you save, and ' : 'no bonus days (Lifetime has no end date), but ') +
+      who + '’s qualified count goes from ' + st.unspent + ' to ' + (st.unspent + 1) + '.';
+  } else {
+    html = '🎁 Referred by ' + who + ' (' + escH(d.code) + '). ' + escH(d.reason);
+  }
+  el.style.background = bg; el.style.border = '1px solid ' + bd;
+  el.innerHTML = html; el.style.display = '';
+}
+
+// Under "Requesting" in the requests table.
+function referralReqTag(r) {
+  const ref = r && r.referral;
+  if (!ref || typeof ref !== 'object' || !ref.referrerUid) return '';
+  const referrer = allBusinesses.find(b => b.uid === ref.referrerUid);
+  let flags = [];
+  try { flags = referralFlags(r.uid, r, ref.referrerUid); } catch (e) {}
+  return `<div style="font-size:.8125rem;margin-top:.3rem;color:#1E6B35;font-weight:600">🎁 Referred by ${escH(referrer ? (referrer.companyName || referrer.adminUsername) : 'unknown account')} (${escH(ref.code || '')})</div>` +
+    (flags.length ? `<div style="font-size:.8125rem;color:var(--red);font-weight:700">⚠ Possible self-referral: ${escH(flags.join(' and '))}</div>` : '');
+}
+
+// Under the business name in the Subscriptions table.
+function referralTagHtml(b) {
+  const st = referralStatsFor(b.uid);
+  if (!st.total && !st.granted) return '';
+  const ready = st.unspent >= REFERRALS_NEEDED;
+  const parts = [`${st.unspent} of ${REFERRALS_NEEDED} qualified`];
+  if (st.waiting) parts.push(`${st.waiting} waiting for a first payment`);
+  if (st.granted) parts.push(`${st.granted} free month${st.granted === 1 ? '' : 's'} given`);
+  return `<div style="font-size:.78rem;margin-top:.2rem;font-weight:600;color:${ready ? '#1E6B35' : 'var(--muted)'};">🎁 Referrals: ${parts.join(' · ')}${ready ? ' · reward ready' : ''}</div>`;
+}
+function referralGrantBtn(b) {
+  return referralStatsFor(b.uid).unspent >= REFERRALS_NEEDED
+    ? ` <button class="action-btn primary" onclick="grantReferralMonth('${b.uid}')">🎁 Grant 1 free month</button>` : '';
+}
+
+/* Adds REFERRER_REWARD_DAYS to the Main plan, from the later of today and the current end date, then takes
+   REFERRALS_NEEDED off the count. The licence is saved first; the count only goes down once that has worked. */
+let _grantBusy = false;
+async function grantReferralMonth(uid) {
+  if (_grantBusy) return;
+  const biz = allBusinesses.find(b => b.uid === uid);
+  if (!biz) return;
+  _grantBusy = true;
+  try {
+    await refreshReferralsCache();
+    const st = referralStatsFor(uid);
+    if (st.unspent < REFERRALS_NEEDED) { toast(`${biz.companyName} has ${st.unspent} qualified referral${st.unspent === 1 ? '' : 's'}. ${REFERRALS_NEEDED} are needed.`, 'err'); renderSubTable(allBusinesses); return; }
+    if (biz.tier === 'lifetime') { toast('Lifetime accounts never end, so there is nothing to extend.', 'err'); return; }
+    if (!['starter', 'standard', 'pro'].includes(biz.tier)) { toast(`${biz.companyName} has no paid Main plan yet. The reward is free days on a paid plan, so grant it after their first payment.`, 'err'); return; }
+    const newExpiry = Math.max(Date.now(), Number(biz.expiry) || 0) + REFERRER_REWARD_DAYS * REF_DAY_MS;
+    if (!confirm(`Add ${REFERRER_REWARD_DAYS} free days to ${biz.companyName}'s ${tierBadgeLabel(biz.tier)} plan?\n\nNew end date: ${fmtDate(newExpiry)}\nThis uses ${REFERRALS_NEEDED} of their ${st.unspent} qualified referrals. Extra shops are not changed.`)) return;
+    const granted = st.granted + 1;
+    const licData = {
+      tier: biz.tier, expiry: newExpiry, activatedAt: biz.activatedAt || Date.now(), note: biz.note || '',
+      paymentLog: [ ...(biz.paymentLog || []), { ts: Date.now(), tier: biz.tier, amount: 0, mainAmount: 0, txnId: 'REFERRAL-REWARD', note: `Referral reward: +${REFERRER_REWARD_DAYS} days` } ],
+      referral: { granted }
+    };
+    if (biz.shopLic && Object.keys(biz.shopLic).length) licData.shops = biz.shopLic;
+    await fbPatch(`businesses/${uid}/settings`, { licenseData: licData });
+    biz.expiry = newExpiry; biz.paymentLog = licData.paymentLog; biz.referral = { granted };
+    let pubErr = null;
+    try { await publishLicensePub(uid, licData, biz.suspended); } catch (e) { pubErr = e; }
+    renderBusinessTable(allBusinesses); renderSubTable(allBusinesses); renderOverview();
+    if (pubErr) toast(`Granted, but the app copy was NOT updated: ${pubErr.message}. Save this business's subscription again to publish it.`, 'err');
+    else toast(`+${REFERRER_REWARD_DAYS} days granted to ${biz.companyName}. New end date ${fmtDate(newExpiry)}. Qualified count is now ${referralStatsFor(uid).unspent}.`, 'ok');
+  } catch (e) {
+    toast('Could not grant the free month: ' + e.message, 'err');
+  } finally { _grantBusy = false; }
 }
 
 async function saveSubscription() {
@@ -1653,9 +1841,26 @@ async function saveSubscription() {
   const biz = allBusinesses.find(b => b.uid === uid);
   // Lifetime goal: a customer whose logged Main-plan payments already reach the Lifetime price is upgraded at no charge.
   const fromReq = window._pendingDismissUid === uid;
+
+  // Referral: the referred business's FIRST approved payment (approved from a request) gets +REFEREE_BONUS_DAYS on the Main plan.
+  // Shop dates are read from their own inputs later, so only the Main plan date moves.
+  let refDecision = null;
+  if (fromReq && biz) {
+    try { refDecision = await decideReferral(uid, tier, window._pendingDismissReqId); }
+    catch (e) { console.warn('Referral check failed', e); toast('Could not check the referral (' + e.message + '). Saving without it.', 'err'); }
+    if (refDecision && refDecision.apply && refDecision.flags.length) {
+      const go = confirm('⚠ Possible self-referral: ' + refDecision.flags.join(' and ') + '.\n\nOK = apply the referral anyway (+' + refDecision.days + ' days, and it counts for the referrer).\nCancel = save the plan without the referral.');
+      if (!go) {
+        refDecision.apply = false;
+        try { await fbPatch(`referrals/${uid}`, { note: ('Not applied: possible self-referral (' + refDecision.flags.join(', ') + ')').slice(0, 200) }); } catch (e) {}
+      }
+    }
+    if (refDecision && refDecision.apply && refDecision.days && expiry != null) expiry += refDecision.days * REF_DAY_MS;
+  }
   const goalDone = tier === 'lifetime' && (prices.lifetime || 0) > 0 && goalPaidTotal(biz && biz.paymentLog) >= prices.lifetime && !(fromReq && Number(window._pendingReqAmount) > 0);
   const payEntry = { ts: Date.now(), tier, amount: goalDone ? 0 : ((fromReq && Number(window._pendingReqAmount) > 0) ? Number(window._pendingReqAmount) : (prices[tier]||0)), txnId, note: goalDone ? ('Lifetime goal reached. ' + (note || '')).trim() : note };
   if (fromReq && window._pendingMainAmount != null) payEntry.mainAmount = window._pendingMainAmount;
+  if (refDecision && refDecision.apply) payEntry.note = ((payEntry.note || '') + ' Referral bonus +' + refDecision.days + ' days.').trim();
   const licData = {
     tier, expiry, activatedAt: Date.now(), txnId, note,
     paymentLog: [
@@ -1663,6 +1868,7 @@ async function saveSubscription() {
       payEntry
     ]
   };
+  if (biz && biz.referral && biz.referral.granted > 0) licData.referral = { granted: biz.referral.granted };   // keep the free months already given
 
   // Each extra shop's paid-until date. This whole licenseData object is replaced on save, so the existing
   // shop dates are carried over; only the rows shown in the modal are changed. On a trial nothing is edited.
@@ -1700,8 +1906,16 @@ async function saveSubscription() {
   }
   if (Object.keys(shopsOut).length) licData.shops = shopsOut;
 
+  let refRollback = false;
   try {
+    // Stamp the referral qualified BEFORE saving the licence: if the licence save fails it is undone, and a second
+    // approval can never find the referral still open.
+    if (refDecision && refDecision.apply) {
+      await fbPatch(`referrals/${uid}`, { qualifiedAt: Date.now(), bonusDays: refDecision.days, note: refDecision.noteText });
+      refRollback = true;
+    }
     await fbPatch(`businesses/${uid}/settings`, { licenseData: licData });
+    refRollback = false;
     let pubErr = null;
     try { await publishLicensePub(uid, licData, biz && biz.suspended); } catch (e) { pubErr = e; }
     if (pubErr) toast('Saved, but the app copy (licenses/' + uid + '/pub) was NOT updated: ' + pubErr.message + '. The owner may still see old dates. Check the database rules allow admin writes to licenses.', 'err');
@@ -1727,6 +1941,16 @@ async function saveSubscription() {
     renderOverview();
     renderFinancials();
     toast(`Subscription updated for "${biz?.companyName}".` + pubMsg, 'ok');
+    // Referral: recount the referrer from the qualified stamps and publish it. A failure here is reported, not hidden.
+    if (refDecision && refDecision.apply) {
+      try {
+        const st = await publishReferrerStats(refDecision.referrerUid);
+        renderSubTable(allBusinesses);
+        toast(`Referral counted${refDecision.days ? ': +' + refDecision.days + ' days for ' + biz.companyName : ' for ' + biz.companyName}. ${refDecision.referrerName || 'The referrer'} now has ${st.unspent} qualified referral${st.unspent === 1 ? '' : 's'}${st.unspent >= REFERRALS_NEEDED ? ' (reward ready)' : ''}.`, 'ok');
+      } catch (e) {
+        toast(`Referral stamped, but ${refDecision.referrerName || 'the referrer'}'s count was not published: ${e.message}. Open their Manage window and save, or press Grant, to publish it again.`, 'err');
+      }
+    }
     // If activated from a request, mark it as done
     if (window._pendingDismissUid && window._pendingDismissReqId) {
       try {
@@ -1766,7 +1990,10 @@ async function saveSubscription() {
         toast('Subscription saved, but points balance update failed: ' + e.message, 'err');
       }
     }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+  } catch(e) {
+    if (refRollback) { try { await fbPatch(`referrals/${uid}`, { qualifiedAt: null, bonusDays: null, note: null }); } catch (_) {} }
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  }
 }
 
 /* ── PRICING (extra shops) ───────────────────────────────────── */
@@ -1989,7 +2216,7 @@ function renderRequestsTable(list) {
     const requestingCell = isBundle
       ? `<span class="badge badge-bundle">Points Bundle</span>
          <div style="font-size:.8125rem;color:var(--muted);margin-top:.2rem">${r.bundle.points||0} pts @ ${tierBadgeLabel(r.bundle.tierPerShop)} · ${K(r.bundle.totalPrice||0)}${r.bundle.discountPct?` (${r.bundle.discountPct}% off)`:''}</div>`
-      : tierBadge(r.tier||'trial') + quoteLine(r.quote);
+      : tierBadge(r.tier||'trial') + quoteLine(r.quote) + referralReqTag(r);
     const actionCell = isBundle
       ? `<button class="action-btn primary" onclick="issuePointsFromRequest('${r.uid}','${r.reqId}')">Issue ${r.bundle.points||0} Points</button>
          <button class="action-btn" onclick="dismissRequest('${r.uid}','${r.reqId}')">Dismiss</button>`
@@ -2101,6 +2328,7 @@ function activateFromRequest(uid, reqId) {
   // Mark as done after save (hook into saveSubscription success)
   window._pendingDismissUid = uid;
   window._pendingDismissReqId = reqId;
+  showReferralPanel(uid, reqId);
 }
 
 function isMailerConfigured() { return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(MAILER_URL); }
