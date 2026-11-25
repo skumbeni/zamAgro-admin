@@ -131,7 +131,8 @@ function orderCard(o){
   return `<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div>
 <div class="muted">${new Date(o.createdAt).toLocaleString()} · ${o.town?esc(o.town)+" · ":""}${esc(o.payment)} · food ${K(o.food)}, service ${K(o.service)}, delivery ${K(o.delivery)}</div>
 <div>${badges}</div>
-${o.paidAt?`<div class="muted">Paid ${esc(new Date(o.paidAt).toLocaleString())}${o.txn?" · Txn "+esc(o.txn):""}</div>`:""}
+${o.paidAt?`<div class="muted">Paid ${esc(new Date(o.paidAt).toLocaleString())}${o.txn?" · Txn "+esc(o.txn):""}</div>`:(o.txn?`<div><span class="badge">💳 Customer txn ${esc(o.txn)} · check it in your mobile money, then mark paid</span></div>`:"")}
+${o.txn&&Object.entries(orders).some(([k,x])=>k!==o.key&&x.txn===o.txn)?`<div class="warnbox">⚠ This transaction ID is also on another order.</div>`:""}
 <pre>${esc((o.items||[]).join("\n"))}</pre>
 <div>${esc(o.customer)} · ${esc(o.phone)}<br>${esc(o.address)}${o.notes?"<br><em>"+esc(o.notes)+"</em>":""}</div>
 ${verdict}
@@ -155,7 +156,8 @@ function setPFilter(f){pfilter=f;render()}
 function setStatus(k,s){
   const v={status:s};
   if(s==="paid"){
-    const t=prompt("Mobile money transaction ID (optional, leave blank to skip):");
+    const cur=(orders[k]&&orders[k].txn)||"";
+    const t=prompt("Mobile money transaction ID (the customer's is filled in; check it first):",cur);
     if(t===null){render();return}
     const id=t.trim().slice(0,40);
     if(id&&Object.entries(orders).some(([ok,o])=>ok!==k&&o.txn===id)&&!confirm("This transaction ID is already on another order. Save it anyway?")){render();return}
