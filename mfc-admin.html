@@ -23,6 +23,19 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .chip{border-radius:999px}.chip.on{background:var(--brand2);color:var(--brand);border-color:#cfe3d5;font-weight:700}
 .badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;background:#fff3cd;color:#72501d;margin:4px 4px 0 0}.badge.ok{background:var(--brand2);color:var(--brand)}
 .logo{width:36px;height:36px;border-radius:9px;object-fit:contain;background:#fff;border:1px solid var(--line);vertical-align:middle;margin-right:4px}
+.ov{position:fixed;inset:0;background:rgba(24,37,31,.55);display:flex;align-items:center;justify-content:center;padding:14px;z-index:50}
+.ovbox{background:#fff;border-radius:14px;width:100%;max-width:560px;max-height:92vh;max-height:92dvh;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:14px}
+.ovbox textarea{width:100%;flex:1 0 160px;resize:none;padding:10px;border:1px solid var(--line);border-radius:9px;background:#fbfcfa;color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.ovbox textarea:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+.ovbox.big{height:92vh;height:92dvh}
+#impRev{flex:1 1 0;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:9px;background:#fbfcfa;padding:0 10px 8px}
+.rv{border-top:1px solid var(--line);padding:8px 0}#impRev datalist+.rv{border-top:0}
+.rvt{display:flex;gap:6px;align-items:center;margin-bottom:6px}.rvt input{min-width:0;font-size:15px}
+.rvt input[type=checkbox]{flex:none;width:22px;height:22px;padding:0}
+.rvn,.rvd{flex:1}.rvp{width:84px;flex:none}.rvc{flex:0 0 38%}
+.rv.off{opacity:.5}.rv.bad{border-left:3px solid var(--danger);padding-left:8px}
+.rvf{display:flex;gap:4px;flex-wrap:wrap;align-items:center}.rvf .badge{margin:0}
 .warnbox{background:#fff7e9;border:1px solid #f3dfb9;color:#72501d;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px}
 </style>
 </head>
@@ -40,6 +53,18 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <div id="body"></div>
   </div>
 </main>
+<div id="impBox" class="ov hidden" role="dialog" aria-modal="true" aria-labelledby="impTitle" onclick="if(event.target===this&&imp.mode!=='review')closeImport()">
+  <div class="ovbox" id="impDlg">
+    <div class="row sp"><strong id="impTitle">Import menu</strong><button onclick="askCloseImport()" aria-label="Close">✕</button></div>
+    <div class="muted" id="impFor"></div>
+    <textarea id="impText" oninput="impInput()" aria-label="Menu text" spellcheck="false"></textarea>
+    <div class="muted" id="impCount"></div>
+    <div class="row sp hidden" id="impBar"><span class="muted" id="impSum"></span><button class="chip" id="impOnly" onclick="rvOnly()">Flagged only</button></div>
+    <div id="impRev" class="hidden"></div>
+    <div class="row sp" id="impBtnsText"><button onclick="closeImport()">Cancel</button><button class="pri" onclick="importNext()">Review items</button></div>
+    <div class="row sp hidden" id="impBtnsRev"><button onclick="importMode('text')">← Edit text</button><button class="pri" id="impPub" onclick="importPublish()">Publish</button></div>
+  </div>
+</div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -60,7 +85,7 @@ $("out").onclick=()=>auth.signOut();
 
 auth.onAuthStateChanged(async u=>{
   subs.forEach(r=>r.off());subs=[];
-  if(!u){show(false);return}
+  if(!u){imp.drafts={};closeImport();show(false);return}
   let ok=false;
   try{ok=(await db.ref("admins/"+u.uid).get()).val()===true}catch(e){}
   if(!ok){$("err").textContent="This account is not an admin yet. Add this UID under admins in the database: "+u.uid;await auth.signOut();return}
@@ -297,7 +322,7 @@ function renderSuppliers(){
   const list=Object.entries(suppliers).map(([id,s])=>{
     const items=Object.entries(s.items||{}),hid=s.active===false,tid=townOf(s),tname=tid?towns[tid].name:(s.area||"No town");
     return `<div class="card ${hid?"off":""}"><div class="row sp"><strong>${logoOf(s)?`<img class="logo" src="${logoOf(s)}" alt="">`:esc(s.icon||"🏪")} ${esc(s.name)}</strong><div class="row">
-<button onclick="toggleOpen('${id}')">${open===id?"Close menu":"Menu ("+items.length+")"}</button><button onclick="editSup('${id}')">Edit</button><button onclick="pickLogo('${id}')">${logoOf(s)?"Change logo":"Logo"}</button>${logoOf(s)?`<button onclick="upd('suppliers/${id}',{logo:null})">Remove logo</button>`:""}<button onclick="moveSup('${id}')">Town</button>
+<button onclick="toggleOpen('${id}')">${open===id?"Close menu":"Menu ("+items.length+")"}</button><button onclick="openImport('${id}')">Import menu</button><button onclick="editSup('${id}')">Edit</button><button onclick="pickLogo('${id}')">${logoOf(s)?"Change logo":"Logo"}</button>${logoOf(s)?`<button onclick="upd('suppliers/${id}',{logo:null})">Remove logo</button>`:""}<button onclick="moveSup('${id}')">Town</button>
 <button onclick="upd('suppliers/${id}',{active:${hid}})">${hid?"Show to customers":"Hide"}</button><button class="del" onclick="delSup('${id}')">Delete</button></div></div>
 <div class="muted">📍 ${esc(tname)} · ${esc(s.category)} · ${esc(s.eta)}${hid?" · hidden from customers":""}</div>${open===id?menu(id,items):""}</div>`;
   }).join("");
@@ -353,6 +378,287 @@ function moveSup(id){
   if(!(n>=1&&n<=ids.length))return;
   upd("suppliers/"+id,{townId:ids[n-1],area:towns[ids[n-1]].name});
 }
+/* ---------- Import menu: paste box -> parser -> editable review. Nothing is saved to the menu yet (publishing is the next step). ---------- */
+const imp={sid:null,mode:"text",rows:[],skipped:[],warnings:[],onlyFlagged:false,final:[],busy:false,drafts:{}}; // drafts keep what was pasted per supplier, so closing the box by accident loses nothing
+const IMP_HINT="Paste one restaurant's menu here.\n\nA line with no price is a category:\nBurgers\n\nA line ending in a price is an item:\nQuarter chicken + chips - 65\n\nSizes on one line:\nChicken pizza S 80 / M 110 / L 140";
+function importMode(m){
+  imp.mode=m;const rv=m==="review";
+  [["impText",!rv],["impCount",!rv],["impBtnsText",!rv],["impRev",rv],["impBar",rv],["impBtnsRev",rv]].forEach(([id,on])=>$(id).classList.toggle("hidden",!on));
+  $("impTitle").textContent=rv?"Review menu":"Import menu";
+  $("impDlg").classList.toggle("big",rv);
+}
+function openImport(sid){
+  const s=suppliers[sid];if(!s)return;
+  imp.sid=sid;imp.rows=[];
+  const n=Object.keys(s.items||{}).length;
+  $("impFor").textContent="Importing into "+s.name+" ("+n+" item"+(n===1?"":"s")+" now). Nothing is saved to the menu until you publish."+(n?" Items already on the menu are matched by name and updated. Any not in your list are hidden, never deleted.":"");
+  $("impText").placeholder=IMP_HINT;
+  $("impText").value=imp.drafts[sid]||"";
+  importMode("text");impCount();
+  $("impBox").classList.remove("hidden");
+  $("impText").focus();
+}
+function closeImport(){imp.sid=null;imp.rows=[];$("impBox").classList.add("hidden")}
+function askCloseImport(){if(imp.mode==="review"&&!confirm("Close the review? Your changes to this list will be lost."))return;closeImport()}
+function impCount(){const n=$("impText").value.split(/\r?\n/).filter(l=>l.trim()).length;$("impCount").textContent=n?n+" line"+(n===1?"":"s")+" pasted":""}
+function impInput(){if(imp.sid)imp.drafts[imp.sid]=$("impText").value;impCount()}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&imp.sid)askCloseImport()});
+
+function importNext(){
+  const s=suppliers[imp.sid];
+  if(!s){closeImport();return alert("That supplier no longer exists.")}
+  const text=$("impText").value;
+  if(!text.trim())return alert("Paste the menu text first.");
+  const r=parseMenu(text);
+  imp.rows=r.rows.map(x=>({keep:true,category:x.category,name:x.name,description:x.description,price:x.price,line:x.line}));
+  imp.skipped=r.skipped;imp.warnings=r.warnings;imp.onlyFlagged=false;
+  importMode("review");importRender();
+}
+const rvRow=(r,i)=>`<div class="rv" id="rv${i}">
+<div class="rvt"><input type="checkbox" ${r.keep?"checked":""} onchange="rvKeep(${i},this.checked)" aria-label="Keep this item"><input class="rvn" value="${esc(r.name)}" placeholder="Item name" oninput="rvSet(${i},'name',this.value)" aria-label="Item name"><input class="rvp" type="number" inputmode="decimal" min="0" step="0.5" value="${r.price==null?"":esc(r.price)}" placeholder="Price K" oninput="rvSet(${i},'price',this.value)" aria-label="Price in kwacha"></div>
+<div class="rvt"><input class="rvc" list="impCats" value="${esc(r.category)}" placeholder="Category" oninput="rvSet(${i},'category',this.value)" aria-label="Category"><input class="rvd" value="${esc(r.description)}" placeholder="Description (optional)" oninput="rvSet(${i},'description',this.value)" aria-label="Description"></div>
+<div class="rvf" id="rvf${i}"></div></div>`;
+function importRender(){
+  const seen={},cats=[],add=c=>{c=String(c||"").trim();const k=c.toLowerCase();if(c&&!seen[k]){seen[k]=1;cats.push(c)}};
+  Object.values((suppliers[imp.sid]&&suppliers[imp.sid].items)||{}).forEach(i=>add(catOf(i)));
+  imp.rows.forEach(r=>add(r.category));
+  const note=(t,list)=>list.length?`<div class="warnbox">${t}<br>${list.map(w=>"Line "+w.line+": "+esc(w.text)+" — "+esc(w.msg)).join("<br>")}</div>`:"";
+  $("impRev").innerHTML=`<datalist id="impCats">${cats.map(c=>`<option value="${esc(c)}">`).join("")}</datalist>`
+    +(imp.rows.length?imp.rows.map(rvRow).join(""):`<div class="muted" style="padding:10px 0">No items found in that text. Tap "Edit text" and check it.</div>`)
+    +note("Not imported (add these by hand if you need them):",imp.skipped)
+    +note("Check these headings:",imp.warnings);
+  $("impRev").scrollTop=0;
+  importRefresh(true);
+}
+// Redraws only the flags, counts and button, never the inputs, so typing is never interrupted.
+function importRefresh(applyFilter){
+  const fl=menuFlags(imp.rows);let kept=0,flagged=0;
+  imp.rows.forEach((r,i)=>{
+    const row=$("rv"+i);if(!row)return;
+    if(r.keep){kept++;if(fl[i].length)flagged++}
+    row.classList.toggle("off",!r.keep);
+    $("rvf"+i).innerHTML=`<span class="muted">line ${r.line}</span>`+fl[i].map(x=>`<span class="badge">${esc(x)}</span>`).join("");
+    if(applyFilter)row.classList.toggle("hidden",imp.onlyFlagged&&!fl[i].length);
+  });
+  $("impSum").textContent=kept+" of "+imp.rows.length+" kept · "+flagged+" flagged";
+  $("impOnly").classList.toggle("on",imp.onlyFlagged);
+  $("impPub").textContent="Publish "+kept+" item"+(kept===1?"":"s");
+  $("impPub").disabled=!kept;
+}
+function rvSet(i,k,v){
+  const r=imp.rows[i];if(!r)return;
+  if(k==="price"){const n=parseFloat(v);r.price=String(v).trim()===""||!isFinite(n)?null:n}else r[k]=v;
+  const el=$("rv"+i);if(el)el.classList.remove("bad");
+  importRefresh();
+}
+function rvKeep(i,on){const r=imp.rows[i];if(!r)return;r.keep=!!on;importRefresh()}
+function rvOnly(){imp.onlyFlagged=!imp.onlyFlagged;importRefresh(true)}
+// The ticked rows, cleaned up and ready to save; categories reuse the spelling already on the menu. `bad` lists ticked rows that cannot be saved.
+function importFinal(){
+  const out=[],bad=[],spelling={};
+  imp.rows.forEach((r,i)=>{
+    if(!r.keep)return;
+    const name=String(r.name||"").replace(/\s+/g," ").trim();
+    const price=typeof r.price==="number"&&isFinite(r.price)?Math.round(r.price*100)/100:null;
+    if(!name)return bad.push({i,name,msg:"has no name"});
+    if(price==null||price<0)return bad.push({i,name,msg:"has no valid price"});
+    let cat=canonCat(imp.sid,r.category);
+    if(cat){const k=cat.toLowerCase();cat=spelling[k]||(spelling[k]=cat)}
+    out.push({category:cat,name,description:String(r.description||"").replace(/\s+/g," ").trim(),price});
+  });
+  return {items:out,bad};
+}
+const nameKey=n=>String(n||"").toLowerCase().replace(/\s+/g," ").trim();
+// Works out what publishing would change on one menu. It only reads: it writes nothing to the database or the page.
+// Items are matched by name (case and spacing ignored). Each existing item is claimed by at most one imported row,
+// preferring the same category, so two rows with one name never fight over one item. Existing items missing from the
+// list are set to available:false and never deleted, because old orders still point at their ids.
+function planImport(cur,rows,newKey){
+  const byName={},claimed={},u={},p={added:[],price:[],back:[],other:0,same:0,hidden:[]};
+  Object.keys(cur).forEach(k=>{const n=nameKey((cur[k]||{}).name);(byName[n]=byName[n]||[]).push(k)});
+  rows.forEach(r=>{
+    const list=(byName[nameKey(r.name)]||[]).filter(k=>!claimed[k]);
+    const k=list.find(x=>catOf(cur[x]).toLowerCase()===r.category.toLowerCase())||list[0];
+    if(k===undefined){
+      const id=newKey();
+      u[id]={name:r.name,description:r.description,price:r.price,available:true};
+      if(r.category)u[id].category=r.category;
+      p.added.push(r.name);return;
+    }
+    claimed[k]=1;
+    const c=cur[k],ch={};
+    if(Number(c.price)!==r.price)ch.price=r.price;
+    if(r.category&&catOf(c)!==r.category)ch.category=r.category;
+    if(r.description&&String(c.description||"")!==r.description)ch.description=r.description;
+    if(c.available===false)ch.available=true;
+    const f=Object.keys(ch);
+    if(!f.length){p.same++;return}
+    f.forEach(x=>u[k+"/"+x]=ch[x]);
+    if("price" in ch)p.price.push((c.name||r.name)+": "+K(c.price)+" → "+K(r.price));
+    if("available" in ch)p.back.push(c.name||r.name);
+    if(!("price" in ch)&&!("available" in ch))p.other++;
+  });
+  Object.keys(cur).forEach(k=>{if(!claimed[k]&&(cur[k]||{}).available!==false){u[k+"/available"]=false;p.hidden.push(cur[k].name||"Item")}});
+  return {u,p};
+}
+async function importPublish(){
+  if(imp.busy)return;
+  const sid=imp.sid,s=suppliers[sid];
+  if(!s){closeImport();return alert("That supplier no longer exists.")}
+  const f=importFinal();
+  imp.rows.forEach((r,i)=>{const el=$("rv"+i);if(el)el.classList.remove("bad")});
+  if(f.bad.length){
+    f.bad.forEach(b=>{const el=$("rv"+b.i);if(el)el.classList.add("bad")});
+    const first=$("rv"+f.bad[0].i);if(first){first.classList.remove("hidden");first.scrollIntoView({block:"center"})}
+    return alert((f.bad[0].name?'"'+f.bad[0].name+'"':"An item")+" "+f.bad[0].msg+". Fix it or untick it."+(f.bad.length>1?" ("+(f.bad.length-1)+" more need fixing.)":""));
+  }
+  imp.final=f.items;
+  imp.busy=true;$("impPub").disabled=true;$("impPub").textContent="Checking…";
+  try{
+    const ref=db.ref("suppliers/"+sid+"/items");
+    const cur=(await ref.get()).val()||{}; // read fresh, so the plan is built from what is really saved
+    if(imp.sid!==sid)return; // the box was closed while we waited
+    const {u,p}=planImport(cur,f.items,()=>ref.push().key);
+    if(!Object.keys(u).length)return alert("Nothing to change: this menu already matches your list.");
+    const live=Object.values(cur).filter(i=>i&&i.available!==false).length;
+    const lst=(a,n=6)=>"  "+a.slice(0,n).join("\n  ")+(a.length>n?"\n  +"+(a.length-n)+" more":"");
+    const parts=[];
+    if(p.added.length)parts.push("New items: "+p.added.length);
+    if(p.price.length)parts.push("Price changes: "+p.price.length+"\n"+lst(p.price));
+    if(p.back.length)parts.push("Back in stock: "+p.back.length+"\n"+lst(p.back));
+    if(p.other)parts.push("Category or description updated: "+p.other);
+    if(p.hidden.length)parts.push("Hidden from customers (not in your list): "+p.hidden.length+"\n"+lst(p.hidden));
+    parts.push("Unchanged: "+p.same);
+    const warn=p.hidden.length>=3&&p.hidden.length>live/2?"⚠ This hides more than half of the current menu. Is this the right restaurant?\n\n":"";
+    if(!confirm(warn+"Publish to "+s.name+"?\n\n"+parts.join("\n\n")+(p.hidden.length?"\n\nHidden items are kept, so old orders still work.":"")))return;
+    $("impPub").textContent="Publishing…";
+    await ref.update(u); // one multi-path write: it all saves or none of it does
+    delete imp.drafts[sid];
+    open=sid;
+    if(imp.sid===sid)closeImport();
+    render();
+    alert("Published to "+s.name+": "+p.added.length+" new, "+p.price.length+" price change"+(p.price.length===1?"":"s")+", "+p.hidden.length+" hidden.");
+  }catch(e){fail(e)}
+  finally{imp.busy=false;if(imp.sid)importRefresh()}
+}
+/* PARSER START — parseMenu(text) returns {rows, skipped, warnings}. It only reads text: it never touches the database or the page. menuFlags is shared with the review screen. */
+const PRICE_LOW=5,PRICE_HIGH=1000; // prices outside this range get flagged for a second look
+const MP={
+  cur:"(?:zmw|zk|kw|k)",
+  num:"\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d{1,5}(?:[.,]\\d{1,2})?",
+  size:"(?:xxl|xl|small|medium|large|regular|family|half|full|single|double|mini|jumbo|big|med|reg|s|m|l)",
+  trail:/[\s.\-–—:=_@·|…,]+$/,
+  names:{s:"Small",m:"Medium",l:"Large",xl:"Extra large",xxl:"Extra large",small:"Small",medium:"Medium",med:"Medium",large:"Large",regular:"Regular",reg:"Regular",family:"Family",half:"Half",full:"Full",single:"Single",double:"Double",mini:"Mini",jumbo:"Jumbo",big:"Big"}
+};
+// A price at the very end of a line: "- 65", "K65", "65K", "......65", "65/-", "ZMW 65", "1,200"
+MP.end=new RegExp("(?:^|[\\s.\\-–—:=_@·|…])(?:"+MP.cur+"\\s*)?("+MP.num+")\\s*(?:\\/[-=]|"+MP.cur+"|kwacha)?\\s*$","i");
+// One size and its price: "S 80", "Small K75", "Large: 140"
+MP.pairs=new RegExp("\\b("+MP.size+")\\b\\.?\\s*[:=\\-–]?\\s*(?:"+MP.cur+"\\s*)?("+MP.num+")","gi");
+function mpNum(t){t=String(t);return /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)?Number(t.replace(/,/g,"")):Number(t.replace(",","."))}
+function mpCase(t){ // ALL CAPS becomes Title Case; anything else is left as typed
+  t=t.replace(/\s+/g," ").trim();
+  if(t.length>=3&&/[A-Z]/.test(t)&&t===t.toUpperCase())t=t.toLowerCase().replace(/(^|[\s\/&(-])([a-z])/g,(m,a,b)=>a+b.toUpperCase()).replace(/\bBbq\b/g,"BBQ");
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+// Size variants running to the end of a line: "S 80 / M 110 / L 140", "Small K75, Large K135" (two or more).
+// Done by scanning for pairs and checking that nothing but separators sits between them, so long lines stay fast.
+function mpVariants(t){
+  const ms=[...t.matchAll(MP.pairs)];
+  let i=ms.length-1;
+  if(i<1||t.slice(ms[i].index+ms[i][0].length).trim())return null; // fewer than two pairs, or other text after the last one
+  while(i>0&&/^[\s\/,;|·]*$/.test(t.slice(ms[i-1].index+ms[i-1][0].length,ms[i].index)))i--;
+  const run=ms.slice(i);
+  return run.length<2?null:{base:t.slice(0,run[0].index),pairs:run};
+}
+// Flags for each row, from what the row says right now (so the review screen can re-run it as you edit). Unticked rows get none.
+function menuFlags(rows){
+  const seen={};
+  return rows.map(r=>{
+    const f=[];
+    if(r.keep===false)return f;
+    const name=String(r.name||"").replace(/\s+/g," ").trim(),price=r.price;
+    if(!name||/^\(/.test(name))f.push("no item name");
+    if(price==null||!isFinite(price))f.push("no price");
+    else if(price<=0)f.push("price is zero");
+    else if(price<PRICE_LOW)f.push("price looks low");
+    else if(price>PRICE_HIGH)f.push("price looks high");
+    if(/^\d+\s*(pcs|pc|pieces|ml|l|g|kg)\b/i.test(name))f.push("name starts with a quantity, check it");
+    if(name){
+      const key=String(r.category||"").trim().toLowerCase()+"|"+name.toLowerCase();
+      if(seen[key]!==undefined)f.push("duplicate of line "+seen[key]);else seen[key]=r.line;
+    }
+    return f;
+  });
+}
+function mpName(t){return mpCase(t.replace(/^[\s•·▪●○◦*+>\-–—]+/,"").replace(MP.trail,""))}
+function mpPrice(t){ // {name, price} when the text ends in a price, else null
+  const m=MP.end.exec(t);if(!m)return null;
+  const price=mpNum(m[1]);
+  return isFinite(price)?{name:t.slice(0,m.index).replace(MP.trail,"").trim(),price:Math.round(price*100)/100}:null;
+}
+function parseMenu(text){
+  const rows=[],skipped=[],warnings=[],heads=[],catSpelling={};
+  let cat="",head=null,prev=null; // prev = the rows made by the line just before (or null after a blank line or heading)
+  const add=(ln,name,price,description)=>{
+    const r={category:cat,name,description:description||"",price,flags:[],line:ln};
+    rows.push(r);if(head)head.count++;return r;
+  };
+  String(text||"").replace(/\r/g,"").replace(/\u00a0/g," ").split("\n").forEach((raw,ix)=>{
+    const ln=ix+1;
+    let t=raw.replace(/\s+/g," ").trim();
+    if(!t){prev=null;return}
+    t=t.replace(/^[•·▪●○◦*+>\-–—]+\s*/,"").replace(/^\d{1,2}[.)]\s+(?=\D)/,"");
+    if(!/[A-Za-z0-9]/.test(t)){prev=null;return} // a line of ----- or ===== is just decoration
+    const skip=msg=>{skipped.push({line:ln,text:t.slice(0,60),msg});prev=null};
+    if(t.length>200)return skip("line is too long to be a menu item");
+    if(/(?:\+?\d[ -]?){9,}/.test(t))return skip("looks like a phone number");
+    if(/https?:\/\/|www\.|\S@\S+\.\S/i.test(t))return skip("looks like a web or email address");
+    if(/^(tel|phone|call|whatsapp|contact|email|e-mail|address|location|located|opening hours|open (daily|every|mon|tue|wed|thu|fri|sat|sun|\d)|hours|follow us)\b/i.test(t)||/^(menu|our menu|price list)$/i.test(t))return skip("looks like contact or opening-hours information");
+
+    // 1. Size variants on one line: "Chicken pizza S 80 / M 110 / L 140" -> "Chicken pizza (Small)", "(Medium)", "(Large)"
+    const v=mpVariants(t);
+    if(v){
+      const base=mpName(v.base);
+      prev=v.pairs.map(m=>{
+        const label=MP.names[m[1].toLowerCase()],price=Math.round(mpNum(m[2])*100)/100;
+        return add(ln,base?base+" ("+label+")":"("+label+")",price); // with no item name the row reads "(Small)" and is flagged
+      });
+      return;
+    }
+    // 2. Several items on one line: "Half chicken 60 / Full chicken 110"
+    const parts=t.split(/\s+[\/|]\s+/);
+    if(parts.length>1){
+      const ps=parts.map(mpPrice);
+      if(ps.every(x=>x&&/[A-Za-z]/.test(x.name))){prev=ps.map(x=>add(ln,mpName(x.name),x.price));return}
+    }
+    // 3. One item: a line ending in a price
+    const p=mpPrice(t);
+    if(p){
+      if(!/[A-Za-z]/.test(p.name))return skip("a price with no item name");
+      let name=p.name,desc="";
+      const d=name.match(/^(.{2,}?)\s+[-–—]\s+(.+)$/); // "Burger - beef, cheese, salad - 45": the middle part is the description
+      if(d){name=d[1];desc=d[2]}
+      prev=[add(ln,mpName(name),p.price,desc)];return;
+    }
+    // 4. No price. Right after an item it is usually that item's description ("Served with coleslaw.")
+    if(prev&&(/[.;]$/.test(t)||/^(served|comes|with|includes|choice of|add)\b/i.test(t)||(t.split(" ").length>=3&&(/^[a-z(]/.test(t)||t.includes(","))))){
+      prev.forEach(r=>{r.description=(r.description?r.description+" ":"")+t});return;
+    }
+    // 5. No price, contains a digit ("Fanta 500ml"): probably an item whose price is missing
+    if(/\d/.test(t)&&t.length<=60){prev=[add(ln,mpName(t),null)];return}
+    // 6. No price: a category heading
+    if(t.length>40)return skip("no price and too long to be a heading");
+    if(/[.;]$/.test(t)||(t.includes(",")&&t.split(" ").length>=3))return skip("looks like a sentence, not a heading");
+    const h=mpCase(t.replace(/^[\s#*=_\-–—~:•·|]+|[\s#*=_\-–—~:•·|]+$/g,"")).slice(0,40).trim();
+    if(!h){prev=null;return}
+    cat=catSpelling[h.toLowerCase()]||(catSpelling[h.toLowerCase()]=h); // "burgers" and "BURGERS" share the first spelling
+    head={name:cat,line:ln,count:0};heads.push(head);prev=null;
+  });
+  heads.forEach(h=>{if(!h.count)warnings.push({line:h.line,text:h.name,msg:"heading with no items under it (is it an item missing a price?)"})});
+  const fl=menuFlags(rows);rows.forEach((r,i)=>{r.flags=fl[i]});
+  return {rows,skipped,warnings};
+}
+/* PARSER END */
 function delSup(id){rm("suppliers/"+id,"Delete "+suppliers[id].name+" and its whole menu?")}
 const catOf=i=>String((i&&i.category)||"").trim();
 const lastCat={}; // last category typed per supplier, so a run of items in one category needs it only once
