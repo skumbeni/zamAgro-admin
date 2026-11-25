@@ -22,6 +22,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .err{color:var(--danger);font-size:13px;margin:8px 0 0}pre{white-space:pre-wrap;margin:6px 0;font:inherit}
 .chip{border-radius:999px}.chip.on{background:var(--brand2);color:var(--brand);border-color:#cfe3d5;font-weight:700}
 .badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;background:#fff3cd;color:#72501d;margin:4px 4px 0 0}.badge.ok{background:var(--brand2);color:var(--brand)}
+.logo{width:36px;height:36px;border-radius:9px;object-fit:contain;background:#fff;border:1px solid var(--line);vertical-align:middle;margin-right:4px}
 .warnbox{background:#fff7e9;border:1px solid #f3dfb9;color:#72501d;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px}
 </style>
 </head>
@@ -35,7 +36,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
     <p id="err" class="err"></p>
   </div>
   <div id="app" class="hidden">
-    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button><button id="t-pay" onclick="setTab('pay')">Payments</button><button id="t-prices" onclick="setTab('prices')">Prices</button><button id="t-manual" onclick="setTab('manual')">Add order</button></div>
+    <div class="tabs row"><button id="t-orders" class="on" onclick="setTab('orders')">Orders</button><button id="t-suppliers" onclick="setTab('suppliers')">Suppliers and menus</button><button id="t-towns" onclick="setTab('towns')">Towns</button><button id="t-pay" onclick="setTab('pay')">Payments</button><button id="t-customers" onclick="setTab('customers')">Customers</button><button id="t-prices" onclick="setTab('prices')">Prices</button><button id="t-manual" onclick="setTab('manual')">Add order</button></div>
     <div id="body"></div>
   </div>
 </main>
@@ -50,7 +51,7 @@ const auth=firebase.auth(),db=firebase.database(),$=id=>document.getElementById(
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const K=n=>"K"+(Number(n)||0).toFixed(2);
 const STATUSES=["new","confirmed","paid","purchased","delivering","delivered","cancelled"];
-let suppliers={},orders={},towns={},tab="orders",open=null,subs=[],ofilter="all",formKeep={};
+let users={},blocked={},cfilter="all",suppliers={},orders={},towns={},tab="orders",open=null,subs=[],ofilter="all",formKeep={};
 
 const show=on=>{$("login").classList.toggle("hidden",on);$("app").classList.toggle("hidden",!on);$("out").classList.toggle("hidden",!on)};
 $("loginBtn").onclick=()=>{$("err").textContent="";auth.signInWithEmailAndPassword($("email").value.trim(),$("pass").value).catch(e=>$("err").textContent="Sign-in failed ("+e.code+"). Check your email and password.")};
@@ -64,21 +65,23 @@ auth.onAuthStateChanged(async u=>{
   try{ok=(await db.ref("admins/"+u.uid).get()).val()===true}catch(e){}
   if(!ok){$("err").textContent="This account is not an admin yet. Add this UID under admins in the database: "+u.uid;await auth.signOut();return}
   show(true);
-  const s=db.ref("suppliers"),o=db.ref("orders").orderByChild("createdAt").limitToLast(100),t=db.ref("towns");
+  const s=db.ref("suppliers"),o=db.ref("orders").orderByChild("createdAt").limitToLast(100),t=db.ref("towns"),pr=db.ref("settings/pricing"),us=db.ref("users"),bl=db.ref("blocked");
   s.on("value",x=>{suppliers=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
-  db.ref("settings/pricing").on("value",x=>{const p=x.val();if(p){const n=(v,d)=>isFinite(Number(v))&&v!==null&&v!==""?Number(v):d;FEE.pct=n(p.servicePct,FEE.pct);FEE.min=n(p.serviceMin,FEE.min);FEE.minFood=n(p.minFood,FEE.minFood);FEE.zones=[n(p.d1,FEE.zones[0]),n(p.d2,FEE.zones[1]),n(p.d3,FEE.zones[2])];FEE.updatedAt=Number(p.updatedAt)||0}if(tab==="prices"||tab==="manual")render()},fail);
+  pr.on("value",x=>{const p=x.val();if(p){const n=(v,d)=>isFinite(Number(v))&&v!==null&&v!==""?Number(v):d;FEE.pct=n(p.servicePct,FEE.pct);FEE.min=n(p.serviceMin,FEE.min);FEE.minFood=n(p.minFood,FEE.minFood);FEE.zones=[n(p.d1,FEE.zones[0]),n(p.d2,FEE.zones[1]),n(p.d3,FEE.zones[2])];FEE.updatedAt=Number(p.updatedAt)||0}if(tab==="prices"||tab==="manual")render()},fail);
+  us.on("value",x=>{users=x.val()||{};if(tab==="customers")render()},fail);
+  bl.on("value",x=>{blocked=x.val()||{};if(tab==="customers")render()},fail);
   t.on("value",x=>{towns=x.val()||{};if(tab==="suppliers"||tab==="towns"||tab==="manual")render()},fail);
   o.on("value",x=>{orders=x.val()||{};if(tab==="orders"||tab==="pay")render()},fail);
-  subs=[s,o,t];render();
+  subs=[s,o,t,pr,us,bl];render();
 });
 
-function setTab(t){tab=t;["orders","suppliers","towns","pay","prices","manual"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
+function setTab(t){tab=t;["orders","suppliers","towns","pay","customers","prices","manual"].forEach(x=>$("t-"+x).classList.toggle("on",x===t));render()}
 // Redraws the tab but keeps anything being typed, so a live update never wipes a half-filled form.
 function render(){
   const b=$("body"),ae=document.activeElement;
   formKeep={};b.querySelectorAll("input[id],select[id],textarea[id]").forEach(e=>{formKeep[e.id]=e.value});
   const fid=ae&&ae.id&&b.contains(ae)?ae.id:"",pos=fid&&ae.selectionStart!=null?ae.selectionStart:null;
-  b.innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():tab==="towns"?renderTowns():tab==="pay"?renderPayments():tab==="prices"?renderPrices():renderManual();
+  b.innerHTML=tab==="orders"?renderOrders():tab==="suppliers"?renderSuppliers():tab==="towns"?renderTowns():tab==="pay"?renderPayments():tab==="prices"?renderPrices():tab==="customers"?renderCustomers():renderManual();
   Object.keys(formKeep).forEach(id=>{const e=$(id);if(!e)return;if(e.tagName==="SELECT"){if(Array.from(e.options).some(o=>o.value===formKeep[id]))e.value=formKeep[id]}else e.value=formKeep[id]});
   if(fid&&$(fid)){$(fid).focus();try{if(pos!=null)$(fid).setSelectionRange(pos,pos)}catch(e){}}
   if(tab==="manual")mCalc();
@@ -174,6 +177,49 @@ ${Object.keys(byM).map(m=>`<div class="row sp muted"><span>${esc(m)}</span><span
   +(list.map(o=>`<div class="card"><div class="row sp"><strong>${esc(o.ref)} · ${esc(o.restaurant)}</strong><strong>${K(o.total)}</strong></div><div class="muted">${esc(new Date(when(o)).toLocaleString())} · ${esc(o.payment)}${o.txn?" · Txn "+esc(o.txn):""} · ${esc(o.customer)}</div></div>`).join("")||'<div class="card muted">No payments in this period.</div>');
 }
 
+/* ---------- Customers (find, block and clean up accounts) ---------- */
+const PHONE_DOMAIN="phone.nexlitedigitalsolutionslimited.digital",AUTH_URL="https://console.firebase.google.com/project/food-connect-7625e/authentication/users";
+function setCFilter(f){cfilter=f;render()}
+function custList(){
+  const phoneCount={},ordN={};
+  Object.values(users).forEach(u=>{const d=waDigits(u&&u.phone);if(d)phoneCount[d]=(phoneCount[d]||0)+1});
+  Object.values(orders).forEach(o=>{if(o.uid)ordN[o.uid]=(ordN[o.uid]||0)+1});
+  return Object.entries(users).map(([uid,u])=>{u=u||{};const d=waDigits(u.phone),issues=[];
+    if(!u.phone)issues.push("No phone saved");else if(phoneCount[d]>1)issues.push("Same phone as another account");
+    if(!u.email)issues.push("No sign-in email recorded");
+    return {uid,...u,orders:ordN[uid]||0,isBlocked:!!blocked[uid],issues};
+  }).sort((a,b)=>(Number(b.createdAt)||0)-(Number(a.createdAt)||0));
+}
+function renderCustomers(){
+  const all=custList(),q=($("cq")?$("cq").value:(formKeep.cq||"")).trim().toLowerCase();
+  const inF=c=>cfilter==="all"||(cfilter==="blocked"?c.isBlocked:c.issues.length>0);
+  const hit=c=>!q||[c.name,c.phone,c.email,c.uid].some(x=>String(x||"").toLowerCase().includes(q));
+  const chip=(g,l,n)=>`<button class="chip ${cfilter===g?"on":""}" onclick="setCFilter('${g}')">${l} (${n})</button>`;
+  const list=all.filter(c=>inF(c)&&hit(c));
+  const rows=list.map(c=>`<div class="card"><div class="row sp"><strong>${esc(c.name||"No name")} · ${esc(c.phone||"no phone")}</strong><span class="muted">${c.orders} recent order${c.orders===1?"":"s"}</span></div>
+<div class="muted">${c.createdAt?"Joined "+esc(new Date(c.createdAt).toLocaleDateString())+" · ":""}Sign-in: ${esc(c.email||"unknown")}</div>
+<div>${c.isBlocked?'<span class="badge">⛔ Blocked, cannot place orders</span>':""}${c.issues.map(i=>`<span class="badge">⚠ ${esc(i)}</span>`).join("")}</div>
+<div class="row" style="margin-top:10px"><button data-u="${esc(c.uid)}" onclick="blockUser(this.dataset.u,${c.isBlocked?"false":"true"})">${c.isBlocked?"Unblock":"Block"}</button>
+<button data-e="${esc(c.email||"")}" onclick="copyText(this.dataset.e)">Copy sign-in email</button>
+<a href="${AUTH_URL}" target="_blank" rel="noopener"><button>Open Firebase users</button></a>
+<button class="del" data-u="${esc(c.uid)}" onclick="removeProfile(this.dataset.u)">Remove profile</button></div></div>`).join("");
+  return `<div class="card muted" style="margin-bottom:10px">Block stops a customer ordering straight away. Remove profile deletes their saved details. To free up a phone number completely, copy the sign-in email, open Firebase users, search for it and delete that sign-in. The customer can then register again.</div>
+<div class="row" style="margin-bottom:10px"><input id="cq" placeholder="Search name, phone or email" oninput="render()" style="flex:1;min-width:200px"></div>
+<div class="row" style="margin-bottom:12px">${chip("all","All",all.length)}${chip("issues","With issues",all.filter(c=>c.issues.length).length)}${chip("blocked","Blocked",all.filter(c=>c.isBlocked).length)}</div>`+(rows||'<div class="card muted">No accounts match.</div>');
+}
+function blockUser(uid,on){
+  if(on&&!confirm("Block this customer from placing orders?"))return;
+  (on?db.ref("blocked/"+uid).set(true):db.ref("blocked/"+uid).remove()).catch(fail);
+}
+function removeProfile(uid){
+  if(!confirm("Remove this customer's saved profile (name and phone)? Their orders are kept. Their sign-in stays until you delete it in Firebase users."))return;
+  db.ref("users/"+uid).remove().catch(fail);
+}
+function copyText(t){
+  if(!t)return alert("No sign-in email recorded for this account.");
+  (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert("Copied: "+t)).catch(()=>prompt("Copy this:",t));
+}
+
 /* ---------- Prices (fees and minimum order; menu item prices are edited per item under Suppliers and menus) ---------- */
 function renderPrices(){
   const f=(id,l,v,st)=>`<div><label class="muted" for="${id}" style="display:block;font-size:12px">${l}</label><input id="${id}" type="number" min="0" step="${st||1}" inputmode="decimal" value="${v}" style="width:130px"></div>`;
@@ -248,8 +294,8 @@ function renderSuppliers(){
     :`<div class="card muted">Add a town in the Towns tab first, then you can add suppliers to it.</div>`;
   const list=Object.entries(suppliers).map(([id,s])=>{
     const items=Object.entries(s.items||{}),hid=s.active===false,tid=townOf(s),tname=tid?towns[tid].name:(s.area||"No town");
-    return `<div class="card ${hid?"off":""}"><div class="row sp"><strong>${esc(s.icon||"🏪")} ${esc(s.name)}</strong><div class="row">
-<button onclick="toggleOpen('${id}')">${open===id?"Close menu":"Menu ("+items.length+")"}</button><button onclick="editSup('${id}')">Edit</button><button onclick="moveSup('${id}')">Town</button>
+    return `<div class="card ${hid?"off":""}"><div class="row sp"><strong>${logoOf(s)?`<img class="logo" src="${logoOf(s)}" alt="">`:esc(s.icon||"🏪")} ${esc(s.name)}</strong><div class="row">
+<button onclick="toggleOpen('${id}')">${open===id?"Close menu":"Menu ("+items.length+")"}</button><button onclick="editSup('${id}')">Edit</button><button onclick="pickLogo('${id}')">${logoOf(s)?"Change logo":"Logo"}</button>${logoOf(s)?`<button onclick="upd('suppliers/${id}',{logo:null})">Remove logo</button>`:""}<button onclick="moveSup('${id}')">Town</button>
 <button onclick="upd('suppliers/${id}',{active:${hid}})">${hid?"Show to customers":"Hide"}</button><button class="del" onclick="delSup('${id}')">Delete</button></div></div>
 <div class="muted">📍 ${esc(tname)} · ${esc(s.category)} · ${esc(s.eta)}${hid?" · hidden from customers":""}</div>${open===id?menu(id,items):""}</div>`;
   }).join("");
@@ -260,6 +306,24 @@ function menu(id,items){
 <button onclick="editItem('${id}','${k}')">Edit</button><button onclick="upd('suppliers/${id}/items/${k}',{available:${i.available===false}})">${i.available===false?"Back in stock":"Sold out"}</button>
 <button class="del" onclick="rm('suppliers/${id}/items/${k}','Delete this item?')">Delete</button></span></div>`).join("")
   +`<div class="row" style="margin-top:10px"><input id="in_${id}" placeholder="Item name"><input id="id_${id}" placeholder="Description"><input id="ip_${id}" type="number" min="0" step="0.5" placeholder="Price (K)" style="width:110px"><button class="pri" onclick="addItem('${id}')">Add item</button></div>`;
+}
+/* Logo upload: resized in the browser and saved as a small image inside the supplier record (no Storage needed). */
+const logoOf=s=>/^data:image\/(png|jpeg|webp);base64,/.test(s.logo||"")?s.logo:"";
+function pickLogo(id){
+  const f=document.createElement("input");f.type="file";f.accept="image/*";
+  f.onchange=async()=>{
+    const file=f.files[0];if(!file)return;
+    if(!file.type.startsWith("image/"))return alert("Choose an image file.");
+    try{
+      const bmp=await createImageBitmap(file),S=192,k=Math.min(S/bmp.width,S/bmp.height,1);
+      const w=Math.max(1,Math.round(bmp.width*k)),h=Math.max(1,Math.round(bmp.height*k));
+      const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(bmp,0,0,w,h);
+      let u=c.toDataURL("image/webp",.85);if(!u.startsWith("data:image/webp"))u=c.toDataURL("image/png");
+      if(u.length>120000)return alert("That logo is too detailed. Try a simpler or smaller image.");
+      upd("suppliers/"+id,{logo:u});
+    }catch(e){alert("Could not read that image. Try a PNG or JPG.")}
+  };
+  f.click();
 }
 function toggleOpen(id){open=open===id?null:id;render()}
 function addSup(){
