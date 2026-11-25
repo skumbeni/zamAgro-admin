@@ -304,10 +304,19 @@ function renderSuppliers(){
   return add+(list||'<div class="card muted">No suppliers yet. Add your first supplier above, then open its menu to add items.</div>');
 }
 function menu(id,items){
-  return items.map(([k,i])=>`<div class="item ${i.available===false?"off":""}"><span>${esc(i.name)}<br><span class="muted">${esc(i.description)}</span></span><span class="row"><strong>${K(i.price)}</strong>
-<button onclick="editItem('${id}','${k}')">Edit</button><button onclick="upd('suppliers/${id}/items/${k}',{available:${i.available===false}})">${i.available===false?"Back in stock":"Sold out"}</button>
-<button class="del" onclick="rm('suppliers/${id}/items/${k}','Delete this item?')">Delete</button></span></div>`).join("")
-  +`<div class="row" style="margin-top:10px"><input id="in_${id}" placeholder="Item name"><input id="id_${id}" placeholder="Description"><input id="ip_${id}" type="number" min="0" step="0.5" placeholder="Price (K)" style="width:110px"><button class="pri" onclick="addItem('${id}')">Add item</button></div>`;
+  const row=([k,i])=>`<div class="item ${i.available===false?"off":""}"><span>${esc(i.name)}<br><span class="muted">${esc(i.description)}</span></span><span class="row"><strong>${K(i.price)}</strong>
+<button onclick="editItem('${id}','${k}')">Edit</button><button onclick="setCat('${id}','${k}')">Category</button><button onclick="upd('suppliers/${id}/items/${k}',{available:${i.available===false}})">${i.available===false?"Back in stock":"Sold out"}</button>
+<button class="del" onclick="rm('suppliers/${id}/items/${k}','Delete this item?')">Delete</button></span></div>`;
+  // Group by category (case-insensitive) in order of first appearance; items with no category go last.
+  const groups=[],seen={},none=[];
+  items.forEach(e=>{const c=catOf(e[1]);if(!c){none.push(e);return}const key=c.toLowerCase();if(!seen[key]){seen[key]={name:c,list:[]};groups.push(seen[key])}seen[key].list.push(e)});
+  const head=(t,n)=>`<div class="muted" style="margin:14px 0 2px;font-weight:700">${esc(t)} (${n})</div>`;
+  const list=groups.length
+    ?groups.map(g=>head(g.name,g.list.length)+g.list.map(row).join("")).join("")+(none.length?head("No category",none.length)+none.map(row).join(""):"")
+    :none.map(row).join("");
+  const dl=`<datalist id="cl_${id}">${groups.map(g=>`<option value="${esc(g.name)}">`).join("")}</datalist>`;
+  return list+dl
+  +`<div class="row" style="margin-top:10px"><input id="in_${id}" placeholder="Item name"><input id="id_${id}" placeholder="Description"><input id="ic_${id}" list="cl_${id}" value="${esc(lastCat[id]||"")}" placeholder="Category, e.g. Burgers"><input id="ip_${id}" type="number" min="0" step="0.5" placeholder="Price (K)" style="width:110px"><button class="pri" onclick="addItem('${id}')">Add item</button></div>`;
 }
 /* Logo upload: resized in the browser and saved as a small image inside the supplier record (no Storage needed). */
 const logoOf=s=>/^data:image\/(png|jpeg|webp);base64,/.test(s.logo||"")?s.logo:"";
@@ -345,15 +354,32 @@ function moveSup(id){
   upd("suppliers/"+id,{townId:ids[n-1],area:towns[ids[n-1]].name});
 }
 function delSup(id){rm("suppliers/"+id,"Delete "+suppliers[id].name+" and its whole menu?")}
+const catOf=i=>String((i&&i.category)||"").trim();
+const lastCat={}; // last category typed per supplier, so a run of items in one category needs it only once
+// Reuses the spelling of an existing category (so "burgers" and "Burgers" never become two groups).
+function canonCat(sid,raw){
+  const c=String(raw||"").trim().replace(/\s+/g," ").slice(0,40);
+  if(!c)return "";
+  const hit=Object.values((suppliers[sid]&&suppliers[sid].items)||{}).map(catOf).find(x=>x&&x.toLowerCase()===c.toLowerCase());
+  return hit||c;
+}
 function addItem(sid){
   const name=$("in_"+sid).value.trim(),price=parseFloat($("ip_"+sid).value);
   if(!name||!(price>=0))return alert("Enter an item name and a price.");
-  db.ref(`suppliers/${sid}/items`).push({name,description:$("id_"+sid).value.trim(),price,available:true}).then(()=>clr(["in_"+sid,"id_"+sid,"ip_"+sid])).catch(fail);
+  const rec={name,description:$("id_"+sid).value.trim(),price,available:true},cat=canonCat(sid,$("ic_"+sid).value);
+  if(cat)rec.category=cat;
+  lastCat[sid]=cat;
+  db.ref(`suppliers/${sid}/items`).push(rec).then(()=>clr(["in_"+sid,"id_"+sid,"ip_"+sid])).catch(fail);
 }
 function editItem(sid,k){
   const i=suppliers[sid].items[k],name=ask("Item name:",i.name),price=parseFloat(ask("Price (K):",i.price));
   if(!name||!(price>=0))return alert("Enter an item name and a valid price.");
-  upd(`suppliers/${sid}/items/${k}`,{name,description:ask("Description:",i.description),price});
+  const description=ask("Description:",i.description),cat=canonCat(sid,ask("Category (leave empty for none):",catOf(i)));
+  upd(`suppliers/${sid}/items/${k}`,{name,description,price,category:cat||null});
+}
+function setCat(sid,k){
+  const i=suppliers[sid].items[k],cat=canonCat(sid,ask("Category (leave empty for none):",catOf(i)));
+  upd(`suppliers/${sid}/items/${k}`,{category:cat||null});
 }
 
 /* ---------- Add order (for orders that reached you only on WhatsApp) ---------- */
