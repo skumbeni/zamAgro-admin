@@ -36,10 +36,6 @@ button:disabled{opacity:.5;cursor:default}
 .rvn,.rvd{flex:1}.rvp{width:84px;flex:none}.rvc{flex:0 0 38%}
 .rv.off{opacity:.5}.rv.bad{border-left:3px solid var(--danger);padding-left:8px}
 .rvf{display:flex;gap:4px;flex-wrap:wrap;align-items:center}.rvf .badge{margin:0}
-.impai{border:1px dashed var(--line);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:8px}
-.fl{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:13px;border-top:1px solid var(--line);padding-top:6px}.fl>span{min-width:0;overflow-wrap:anywhere}.fl button{padding:2px 8px;flex:none}
-#impFl:empty,#impMsg:empty{display:none}
-.badge.ai{border:1px solid #cdd8f2;background:#e8eefb;color:#2a4a8a;cursor:pointer;font:inherit;font-size:11px;font-weight:700;line-height:1.4}
 .warnbox{background:#fff7e9;border:1px solid #f3dfb9;color:#72501d;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px}
 </style>
 </head>
@@ -57,23 +53,16 @@ button:disabled{opacity:.5;cursor:default}
     <div id="body"></div>
   </div>
 </main>
-<div id="impBox" class="ov hidden" role="dialog" aria-modal="true" aria-labelledby="impTitle" onclick="if(event.target===this&&imp.mode!=='review'&&!imp.files.length)closeImport()">
+<div id="impBox" class="ov hidden" role="dialog" aria-modal="true" aria-labelledby="impTitle" onclick="if(event.target===this&&imp.mode!=='review')closeImport()">
   <div class="ovbox" id="impDlg">
     <div class="row sp"><strong id="impTitle">Import menu</strong><button onclick="askCloseImport()" aria-label="Close">✕</button></div>
     <div class="muted" id="impFor"></div>
+    <div class="row" id="impRead"><input type="file" id="impFiles" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple hidden onchange="readMenuFiles()"><button onclick="$('impFiles').click()" id="impReadBtn">📷 Read from photo or PDF</button><span class="muted" id="impReadMsg">Up to 8 photos, or a PDF. Or paste text below.</span></div>
     <textarea id="impText" oninput="impInput()" aria-label="Menu text" spellcheck="false"></textarea>
     <div class="muted" id="impCount"></div>
-    <div class="impai" id="impAI">
-      <div class="muted">Or let AI read a menu photo, PDF or Word file. It also reads any text pasted above. You check every item before anything is saved.</div>
-      <button id="impResume" type="button" class="hidden" onclick="impResume()">← Back to the list I just read</button>
-      <div class="row"><button id="impAdd" type="button" onclick="$('impFile').click()">📷 Add photo, PDF or Word file</button><button id="impRead" type="button" class="pri" onclick="impReadAI()" disabled>Read with AI</button></div>
-      <input id="impFile" type="file" class="hidden" multiple accept="image/*,application/pdf,.pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="impFiles(this)" aria-label="Menu photos, PDF or Word files">
-      <div id="impFl"></div>
-      <div class="muted" id="impMsg" role="status"></div>
-    </div>
     <div class="row sp hidden" id="impBar"><span class="muted" id="impSum"></span><button class="chip" id="impOnly" onclick="rvOnly()">Flagged only</button></div>
     <div id="impRev" class="hidden"></div>
-    <div class="row sp" id="impBtnsText"><button onclick="askCloseImport()">Cancel</button><button class="pri" onclick="importNext()">Review items</button></div>
+    <div class="row sp" id="impBtnsText"><button onclick="closeImport()">Cancel</button><button class="pri" onclick="importNext()">Review items</button></div>
     <div class="row sp hidden" id="impBtnsRev"><button onclick="importMode('text')">← Edit text</button><button class="pri" id="impPub" onclick="importPublish()">Publish</button></div>
   </div>
 </div>
@@ -84,6 +73,8 @@ button:disabled{opacity:.5;cursor:default}
 // Firebase web app config (public identifiers; access is controlled by the database rules)
 const FIREBASE_CONFIG={apiKey:"AIzaSyCwCTU875jLcFYba0-fVO5aVQPMsYFClzY",authDomain:"food-connect-7625e.firebaseapp.com",databaseURL:"https://food-connect-7625e-default-rtdb.firebaseio.com",projectId:"food-connect-7625e",appId:"1:328514573103:web:6dfda1f65c6bb390e487da"};
 firebase.initializeApp(FIREBASE_CONFIG);
+// Paste your Worker address here, e.g. "https://food-connect-menu-reader.YOURNAME.workers.dev/extract"
+const MENU_READER_URL="https://ancient-salad-1def.chongos909.workers.dev/extract";
 const auth=firebase.auth(),db=firebase.database(),$=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const K=n=>"K"+(Number(n)||0).toFixed(2);
@@ -391,164 +382,71 @@ function moveSup(id){
   upd("suppliers/"+id,{townId:ids[n-1],area:towns[ids[n-1]].name});
 }
 /* ---------- Import menu: paste box -> parser -> editable review. Nothing is saved to the menu yet (publishing is the next step). ---------- */
-const imp={sid:null,mode:"text",rows:[],skipped:[],warnings:[],onlyFlagged:false,final:[],busy:false,files:[],ai:null,aiBusy:false,run:0,src:"text",drafts:{}}; // drafts keep what was pasted per supplier, so closing the box by accident loses nothing
-const MENU_AI_URL=""; // the menu reader Worker, e.g. "https://food-connect-menu-ai.YOURNAME.workers.dev/extract". Empty = photo reading switched off.
+const imp={sid:null,mode:"text",rows:[],skipped:[],warnings:[],onlyFlagged:false,final:[],drafts:{}}; // drafts keep what was pasted per supplier, so closing the box by accident loses nothing
 const IMP_HINT="Paste one restaurant's menu here.\n\nA line with no price is a category:\nBurgers\n\nA line ending in a price is an item:\nQuarter chicken + chips - 65\n\nSizes on one line:\nChicken pizza S 80 / M 110 / L 140";
 function importMode(m){
   imp.mode=m;const rv=m==="review";
-  [["impText",!rv],["impCount",!rv],["impAI",!rv],["impBtnsText",!rv],["impRev",rv],["impBar",rv],["impBtnsRev",rv]].forEach(([id,on])=>$(id).classList.toggle("hidden",!on));
+  [["impRead",!rv],["impText",!rv],["impCount",!rv],["impBtnsText",!rv],["impRev",rv],["impBar",rv],["impBtnsRev",rv]].forEach(([id,on])=>$(id).classList.toggle("hidden",!on));
   $("impTitle").textContent=rv?"Review menu":"Import menu";
   $("impDlg").classList.toggle("big",rv);
-  if(!rv)impAiButtons();
 }
 function openImport(sid){
   const s=suppliers[sid];if(!s)return;
-  imp.sid=sid;imp.rows=[];imp.run++;imp.files=[];imp.ai=null;imp.aiBusy=false;imp.src="text";
+  imp.sid=sid;imp.rows=[];imp.aiNotes=[];
   const n=Object.keys(s.items||{}).length;
-  $("impFor").textContent="Importing into "+s.name+" ("+n+" item"+(n===1?"":"s")+" now). Nothing is saved to the menu until you publish."+(n?" Items already on the menu are matched by name and updated. Any not in your list are hidden, never deleted.":"");
+  $("impFor").textContent="Importing into "+s.name+" ("+n+" item"+(n===1?"":"s")+" now). Nothing is saved to the menu yet.";
   $("impText").placeholder=IMP_HINT;
   $("impText").value=imp.drafts[sid]||"";
-  importMode("text");impCount();impFilesRender();impSay("");
+  importMode("text");impCount();
   $("impBox").classList.remove("hidden");
   $("impText").focus();
 }
-function closeImport(){imp.sid=null;imp.rows=[];imp.files=[];imp.ai=null;imp.aiBusy=false;imp.src="text";imp.run++;$("impBox").classList.add("hidden")}
-function askCloseImport(){if(imp.mode==="review"&&!confirm("Close the review? Your changes to this list will be lost."))return;if(imp.mode!=="review"&&imp.files.length&&!confirm("Close? The photos and files you added will be removed."))return;closeImport()}
+function closeImport(){imp.sid=null;imp.rows=[];$("impBox").classList.add("hidden")}
+function askCloseImport(){if(imp.mode==="review"&&!confirm("Close the review? Your changes to this list will be lost."))return;closeImport()}
 function impCount(){const n=$("impText").value.split(/\r?\n/).filter(l=>l.trim()).length;$("impCount").textContent=n?n+" line"+(n===1?"":"s")+" pasted":""}
-function impInput(){if(imp.sid)imp.drafts[imp.sid]=$("impText").value;impCount();impAiButtons()}
+function impInput(){if(imp.sid)imp.drafts[imp.sid]=$("impText").value;impCount()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&imp.sid)askCloseImport()});
 
-
-/* ---------- Read a menu from photos, PDFs and Word files (calls the menu reader Worker, see MENU_AI_URL) ---------- */
-const IMG_MAX=1600,IMP_MAX_FILES=8,PDF_MAX=10*1024*1024,B64_TOTAL=19e6; // photo long edge in px; files per read; PDF bytes; all base64 together (the Worker allows about 20 MB)
-const MAMMOTH_URL="https://cdn.jsdelivr.net/npm/mammoth@1.12.3/mammoth.browser.min.js"; // loaded only when a Word file is picked
-const bad=m=>Object.assign(new Error(m),{user:true}); // an error whose text is fit to show the admin
-const kb=n=>n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
-function impSay(m,isBad){const e=$("impMsg");e.textContent=m||"";e.style.color=isBad?"var(--danger)":""}
-function impKind(f){ // "pdf", "docx", "doc", "image", or "" when it is none of those
-  const n=String(f.name||"").toLowerCase(),t=String(f.type||"").toLowerCase();
-  if(t==="application/pdf"||/\.pdf$/.test(n))return "pdf";
-  if(/\.docx$/.test(n)||t==="application/vnd.openxmlformats-officedocument.wordprocessingml.document")return "docx";
-  if(/\.doc$/.test(n)||t==="application/msword")return "doc";
-  if(t.indexOf("image/")===0||/\.(jpe?g|png|webp|gif|heic|heif)$/.test(n))return "image";
-  return "";
-}
-const impB64=f=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]||"");r.onerror=()=>no(r.error);r.readAsDataURL(f)});
-// Photos are shrunk to IMG_MAX on the long edge and saved as JPEG: a phone photo of several MB becomes a few hundred KB.
-async function impShrink(f){
-  const url=URL.createObjectURL(f);
+/* ---------- Read a menu from photos or a PDF through the Worker (the admin still reviews everything before anything is saved) ---------- */
+const fileB64=f=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]||"");r.onerror=()=>no(new Error("read"));r.readAsDataURL(f)});
+function photoB64(f){return new Promise((ok,no)=>{const u=URL.createObjectURL(f),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);const k=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",0.85).split(",")[1])};im.onerror=()=>{URL.revokeObjectURL(u);no(new Error("img"))};im.src=u})}
+async function readMenuFiles(){
+  const inp=$("impFiles"),list=[...inp.files];inp.value="";
+  const msg=t=>$("impReadMsg").textContent=t,btn=$("impReadBtn");
+  if(!list.length)return;
+  if(!MENU_READER_URL)return alert("The menu reader address is not set yet. Paste your Worker address into MENU_READER_URL in this file.");
+  if(!auth.currentUser)return alert("Sign in again.");
+  if(list.length>8)return alert("Choose at most 8 files.");
+  const sid=imp.sid;if(!sid)return;
+  btn.disabled=true;msg("Reading the menu… this can take up to a minute.");
   try{
-    const img=new Image();img.src=url;
-    try{await img.decode()}catch(_){throw bad("could not be opened. If it is an iPhone HEIC photo, take it as JPEG or send a screenshot")}
-    const w0=img.naturalWidth,h0=img.naturalHeight;if(!w0||!h0)throw bad("could not be opened");
-    const k=Math.min(1,IMG_MAX/Math.max(w0,h0)),w=Math.max(1,Math.round(w0*k)),h=Math.max(1,Math.round(h0*k)); // never enlarge a small photo
-    const c=document.createElement("canvas");c.width=w;c.height=h;
-    const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,w,h);g.drawImage(img,0,0,w,h); // white behind transparent PNGs
-    return {data:c.toDataURL("image/jpeg",0.85).split(",")[1],w,h};
-  }finally{URL.revokeObjectURL(url)}
+    const files=[];
+    for(const f of list){
+      if(f.type==="application/pdf")files.push({mediaType:f.type,data:await fileB64(f)});
+      else if(/^image\//.test(f.type))files.push({mediaType:"image/jpeg",data:await photoB64(f)});
+      else throw new Error(f.name+" is not a photo or PDF. For Word files, copy the text and paste it below.");
+    }
+    const token=await auth.currentUser.getIdToken();
+    const r=await fetch(MENU_READER_URL,{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({files,restaurant:(suppliers[sid]&&suppliers[sid].name)||""})});
+    let j;try{j=await r.json()}catch(_){throw new Error("The menu reader gave no usable answer. Try again.")}
+    if(!j.ok)throw new Error(j.error||"The menu reader failed. Try again.");
+    if(imp.sid!==sid)return; // the box was closed or switched while reading
+    if(!j.rows.length){msg("No items found. "+((j.notes||[])[0]||"Try a clearer photo."));return}
+    imp.rows=j.rows.map((x,i)=>({keep:true,category:x.category,name:x.name,description:x.description,price:x.price,line:i+1,aiFlags:x.flags||[]}));
+    imp.skipped=[];imp.warnings=[];imp.aiNotes=j.notes||[];imp.onlyFlagged=false;
+    msg("Up to 8 photos, or a PDF. Or paste text below.");
+    importMode("review");importRender();
+  }catch(e){msg(e.message||"Something went wrong. Try again.");alert(e.message||"Something went wrong. Try again.")}
+  finally{btn.disabled=false}
 }
-let mammothLoad=null;
-function loadMammoth(){
-  if(window.mammoth)return Promise.resolve();
-  return mammothLoad||(mammothLoad=new Promise((ok,no)=>{
-    const s=document.createElement("script");s.src=MAMMOTH_URL;s.crossOrigin="anonymous";
-    s.onload=()=>window.mammoth?ok():(mammothLoad=null,no(new Error("no global")));
-    s.onerror=()=>{mammothLoad=null;s.remove();no(new Error("load"))};
-    document.head.appendChild(s);
-  }));
-}
-function impAiButtons(){
-  $("impAdd").disabled=imp.aiBusy;
-  $("impRead").disabled=imp.aiBusy||(!imp.files.length&&!$("impText").value.trim());
-  $("impRead").textContent=imp.aiBusy?"Reading…":"Read with AI";
-  $("impResume").classList.toggle("hidden",!(imp.src==="ai"&&imp.rows.length>0));
-}
-function impFilesRender(){
-  $("impFl").innerHTML=imp.files.map((f,i)=>`<div class="fl"><span>${f.kind==="pdf"?"📄":"🖼️"} ${esc(f.name)} <span class="muted">${f.kind==="pdf"?kb(f.size):f.w+"×"+f.h+" · "+kb(f.size)}</span></span><button type="button" onclick="impDrop(${i})" aria-label="Remove ${esc(f.name)}">✕</button></div>`).join("");
-  impAiButtons();
-}
-function impDrop(i){if(imp.aiBusy)return;imp.files.splice(i,1);impFilesRender();impSay("")}
-async function impFiles(inp){
-  const list=Array.from(inp.files||[]);inp.value=""; // so the same file can be picked again
-  if(!imp.sid||imp.aiBusy||!list.length)return;
-  const run=imp.run,problems=[];let added=0,texts=0;
-  for(let i=0;i<list.length;i++){
-    const f=list[i],kind=impKind(f),label=f.name||"file";
-    impSay("Preparing "+(i+1)+" of "+list.length+": "+label+"…");
-    try{
-      if(kind==="doc")throw bad("is an old .doc file. Open it in Word and save it as .docx, or as a PDF");
-      if(!kind)throw bad("is not a photo, PDF or Word file");
-      if(kind==="docx"){
-        try{await loadMammoth()}catch(_){throw bad("could not be read because the Word reader did not load. Check your connection, or save the file as a PDF")}
-        const r=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()});
-        if(run!==imp.run)return;
-        // mammoth puts a blank line after every paragraph; one newline per paragraph is closer to how a menu is typed
-        const txt=String(r.value||"").replace(/\r/g,"").replace(/\n\n/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
-        if(!txt)throw bad("has no text in it (maybe only pictures). Save its pages as photos or a PDF instead");
-        const ta=$("impText");ta.value=(ta.value.trim()?ta.value.replace(/\s+$/,"")+"\n\n":"")+txt;impInput();texts++;
-      }else{
-        if(imp.files.length>=IMP_MAX_FILES)throw bad("was not added: the limit is "+IMP_MAX_FILES+" files at a time");
-        let rec;
-        if(kind==="pdf"){
-          if(f.size>PDF_MAX)throw bad("is over 10 MB, which is too big. Send fewer pages");
-          rec={kind,mediaType:"application/pdf",data:await impB64(f)}; // sent exactly as it is
-        }else{const sh=await impShrink(f);rec={kind,mediaType:"image/jpeg",data:sh.data,w:sh.w,h:sh.h}}
-        if(run!==imp.run)return;
-        if(imp.files.reduce((a,x)=>a+x.data.length,0)+rec.data.length>B64_TOTAL)throw bad("was not added: that is too much to send at once");
-        rec.name=label;rec.size=Math.round(rec.data.length*3/4);imp.files.push(rec);added++;impFilesRender();
-      }
-    }catch(e){problems.push('"'+label+'" '+(e&&e.user?e.message:"could not be opened"))}
-  }
-  if(run!==imp.run)return;
-  const ok=[added?added+" file"+(added===1?"":"s")+" added.":"",texts?"Text from the Word file was added to the box above, so you can check it.":""].filter(Boolean).join(" ");
-  impSay([ok].concat(problems).filter(Boolean).join(" "),problems.length>0);
-}
-// The reader's rows become ordinary review rows, so the checks, matching and Publish are exactly the ones used for pasted text.
-function importFromAI(){
-  const a=imp.ai;if(!a)return;
-  const str=v=>String(v==null?"":v);
-  imp.rows=a.rows.map((r,i)=>({keep:true,ai:true,line:i+1,category:str(r.category),name:str(r.name),description:str(r.description),
-    price:typeof r.price==="number"&&isFinite(r.price)&&r.price>=0?r.price:null,
-    aiFlags:(Array.isArray(r.flags)?r.flags:[]).map(str).filter(x=>x&&x.toLowerCase()!=="no price")})); // "no price" is already flagged by the review screen itself
-  imp.skipped=a.notes.map(t=>({text:str(t)}));imp.warnings=[];imp.onlyFlagged=false;imp.src="ai";
-  impSay("");importMode("review");importRender();
-}
-function impResume(){if(imp.src==="ai"&&imp.rows.length){importMode("review");importRender()}} // back to the list without reading again
-async function impReadAI(){
-  if(imp.aiBusy||!imp.sid)return;
-  const sid=imp.sid,s=suppliers[sid],run=imp.run,text=$("impText").value.trim();
-  if(!s){closeImport();return alert("That supplier no longer exists.")}
-  if(!MENU_AI_URL)return impSay("Photo reading is not switched on yet. Put the menu reader address in MENU_AI_URL in this file.",true);
-  if(!imp.files.length&&!text)return impSay("Add a photo, PDF or Word file, or paste the menu text first.",true);
-  if(imp.src==="ai"&&imp.rows.length&&!confirm("Reading again replaces the list you already have. Continue?"))return;
-  imp.aiBusy=true;imp.ai=null;impAiButtons();impSay("Reading the menu. This can take up to a minute…");
-  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),120000);
-  try{
-    const u=auth.currentUser;if(!u)throw bad("Sign in again.");
-    const token=await u.getIdToken(); // refreshed automatically when it is old
-    const res=await fetch(MENU_AI_URL,{method:"POST",signal:ctl.signal,headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-      body:JSON.stringify({files:imp.files.map(f=>({mediaType:f.mediaType,data:f.data})),text,restaurant:s.name})});
-    const j=await res.json().catch(()=>null);
-    if(!res.ok||!j||!j.ok||!Array.isArray(j.rows))throw bad((j&&j.error)||"The menu reader did not answer properly ("+res.status+"). Try again.");
-    if(run!==imp.run)return; // the box was closed or reopened while we waited
-    imp.ai={rows:j.rows,notes:Array.isArray(j.notes)?j.notes:[]};
-    if(!j.rows.length)return impSay("The reader found no items. "+(imp.ai.notes[0]||"Try a clearer photo."),true);
-    importFromAI(); // the same review screen as pasted text; nothing is saved until Publish
-  }catch(e){
-    if(run!==imp.run)return;
-    impSay(e&&e.user?e.message:e&&e.name==="AbortError"?"The menu reader took too long. Try again, or send fewer pages.":"Could not reach the menu reader. Check your connection and try again.",true);
-  }finally{clearTimeout(timer);if(run===imp.run){imp.aiBusy=false;impAiButtons()}}
-}
-
 function importNext(){
   const s=suppliers[imp.sid];
   if(!s){closeImport();return alert("That supplier no longer exists.")}
   const text=$("impText").value;
   if(!text.trim())return alert("Paste the menu text first.");
-  if(imp.src==="ai"&&imp.rows.length&&!confirm("Reviewing the text replaces the list the AI read. Continue?"))return;
   const r=parseMenu(text);
   imp.rows=r.rows.map(x=>({keep:true,category:x.category,name:x.name,description:x.description,price:x.price,line:x.line}));
-  imp.skipped=r.skipped;imp.warnings=r.warnings;imp.onlyFlagged=false;imp.src="text";
+  imp.skipped=r.skipped;imp.warnings=r.warnings;imp.aiNotes=[];imp.onlyFlagged=false;
   importMode("review");importRender();
 }
 const rvRow=(r,i)=>`<div class="rv" id="rv${i}">
@@ -559,13 +457,12 @@ function importRender(){
   const seen={},cats=[],add=c=>{c=String(c||"").trim();const k=c.toLowerCase();if(c&&!seen[k]){seen[k]=1;cats.push(c)}};
   Object.values((suppliers[imp.sid]&&suppliers[imp.sid].items)||{}).forEach(i=>add(catOf(i)));
   imp.rows.forEach(r=>add(r.category));
-  const note=(t,list)=>list.length?`<div class="warnbox">${t}<br>${list.map(w=>(w.line?"Line "+w.line+": ":"")+esc(w.text)+(w.msg?" — "+esc(w.msg):"")).join("<br>")}</div>`:"";
-  const fromAI=imp.src==="ai";
-  $("impRev").innerHTML=(fromAI?`<div class="warnbox" style="margin:8px 0">Read by AI. Check every name and price against the menu before you publish. Blue notes are the reader's doubts: tap one to dismiss it once you have checked.</div>`+note("Notes from the reader (look at the menu for anything it missed):",imp.skipped):"")
-    +`<datalist id="impCats">${cats.map(c=>`<option value="${esc(c)}">`).join("")}</datalist>`
+  const note=(t,list)=>list.length?`<div class="warnbox">${t}<br>${list.map(w=>"Line "+w.line+": "+esc(w.text)+" — "+esc(w.msg)).join("<br>")}</div>`:"";
+  $("impRev").innerHTML=`<datalist id="impCats">${cats.map(c=>`<option value="${esc(c)}">`).join("")}</datalist>`
     +(imp.rows.length?imp.rows.map(rvRow).join(""):`<div class="muted" style="padding:10px 0">No items found in that text. Tap "Edit text" and check it.</div>`)
-    +(fromAI?"":note("Not imported (add these by hand if you need them):",imp.skipped)+note("Check these headings:",imp.warnings));
-  $("impBtnsRev").firstElementChild.textContent=fromAI?"← Back":"← Edit text";
+    +note("Not imported (add these by hand if you need them):",imp.skipped)
+    +note("Check these headings:",imp.warnings)
+    +((imp.aiNotes||[]).length?`<div class="warnbox">The menu reader says:<br>${imp.aiNotes.map(n=>"• "+esc(n)).join("<br>")}</div>`:"");
   $("impRev").scrollTop=0;
   importRefresh(true);
 }
@@ -574,14 +471,10 @@ function importRefresh(applyFilter){
   const fl=menuFlags(imp.rows);let kept=0,flagged=0;
   imp.rows.forEach((r,i)=>{
     const row=$("rv"+i);if(!row)return;
-    // the reader's own doubts; one that repeats a built-in flag is not shown twice
-    const af=r.keep&&r.aiFlags?r.aiFlags.map((x,k)=>[x,k]).filter(([x])=>!fl[i].some(y=>y.toLowerCase()===String(x).toLowerCase())):[];
-    const any=fl[i].length+af.length>0;
-    if(r.keep){kept++;if(any)flagged++}
+    if(r.keep){kept++;if(fl[i].length)flagged++}
     row.classList.toggle("off",!r.keep);
-    $("rvf"+i).innerHTML=`<span class="muted">${r.ai?"item":"line"} ${r.line}</span>`+fl[i].map(x=>`<span class="badge">${esc(x)}</span>`).join("")
-      +af.map(([x,k])=>`<button type="button" class="badge ai" onclick="rvDismiss(${i},${k})" aria-label="Dismiss: ${esc(x)}">🤖 ${esc(x)} ✕</button>`).join("");
-    if(applyFilter)row.classList.toggle("hidden",imp.onlyFlagged&&!any);
+    $("rvf"+i).innerHTML=`<span class="muted">line ${r.line}</span>`+fl[i].concat(r.keep?(r.aiFlags||[]):[]).map(x=>`<span class="badge">${esc(x)}</span>`).join("");
+    if(applyFilter)row.classList.toggle("hidden",imp.onlyFlagged&&!fl[i].length);
   });
   $("impSum").textContent=kept+" of "+imp.rows.length+" kept · "+flagged+" flagged";
   $("impOnly").classList.toggle("on",imp.onlyFlagged);
@@ -594,7 +487,6 @@ function rvSet(i,k,v){
   const el=$("rv"+i);if(el)el.classList.remove("bad");
   importRefresh();
 }
-function rvDismiss(i,k){const r=imp.rows[i];if(!r||!r.aiFlags)return;r.aiFlags.splice(k,1);importRefresh(true)}
 function rvKeep(i,on){const r=imp.rows[i];if(!r)return;r.keep=!!on;importRefresh()}
 function rvOnly(){imp.onlyFlagged=!imp.onlyFlagged;importRefresh(true)}
 // The ticked rows, cleaned up and ready to save; categories reuse the spelling already on the menu. `bad` lists ticked rows that cannot be saved.
@@ -612,42 +504,8 @@ function importFinal(){
   });
   return {items:out,bad};
 }
-const nameKey=n=>String(n||"").toLowerCase().replace(/\s+/g," ").trim();
-// Works out what publishing would change on one menu. It only reads: it writes nothing to the database or the page.
-// Items are matched by name (case and spacing ignored). Each existing item is claimed by at most one imported row,
-// preferring the same category, so two rows with one name never fight over one item. Existing items missing from the
-// list are set to available:false and never deleted, because old orders still point at their ids.
-function planImport(cur,rows,newKey){
-  const byName={},claimed={},u={},p={added:[],price:[],back:[],other:0,same:0,hidden:[]};
-  Object.keys(cur).forEach(k=>{const n=nameKey((cur[k]||{}).name);(byName[n]=byName[n]||[]).push(k)});
-  rows.forEach(r=>{
-    const list=(byName[nameKey(r.name)]||[]).filter(k=>!claimed[k]);
-    const k=list.find(x=>catOf(cur[x]).toLowerCase()===r.category.toLowerCase())||list[0];
-    if(k===undefined){
-      const id=newKey();
-      u[id]={name:r.name,description:r.description,price:r.price,available:true};
-      if(r.category)u[id].category=r.category;
-      p.added.push(r.name);return;
-    }
-    claimed[k]=1;
-    const c=cur[k],ch={};
-    if(Number(c.price)!==r.price)ch.price=r.price;
-    if(r.category&&catOf(c)!==r.category)ch.category=r.category;
-    if(r.description&&String(c.description||"")!==r.description)ch.description=r.description;
-    if(c.available===false)ch.available=true;
-    const f=Object.keys(ch);
-    if(!f.length){p.same++;return}
-    f.forEach(x=>u[k+"/"+x]=ch[x]);
-    if("price" in ch)p.price.push((c.name||r.name)+": "+K(c.price)+" → "+K(r.price));
-    if("available" in ch)p.back.push(c.name||r.name);
-    if(!("price" in ch)&&!("available" in ch))p.other++;
-  });
-  Object.keys(cur).forEach(k=>{if(!claimed[k]&&(cur[k]||{}).available!==false){u[k+"/available"]=false;p.hidden.push(cur[k].name||"Item")}});
-  return {u,p};
-}
-async function importPublish(){
-  if(imp.busy)return;
-  const sid=imp.sid,s=suppliers[sid];
+function importPublish(){
+  const s=suppliers[imp.sid];
   if(!s){closeImport();return alert("That supplier no longer exists.")}
   const f=importFinal();
   imp.rows.forEach((r,i)=>{const el=$("rv"+i);if(el)el.classList.remove("bad")});
@@ -656,34 +514,8 @@ async function importPublish(){
     const first=$("rv"+f.bad[0].i);if(first){first.classList.remove("hidden");first.scrollIntoView({block:"center"})}
     return alert((f.bad[0].name?'"'+f.bad[0].name+'"':"An item")+" "+f.bad[0].msg+". Fix it or untick it."+(f.bad.length>1?" ("+(f.bad.length-1)+" more need fixing.)":""));
   }
-  imp.final=f.items;
-  imp.busy=true;$("impPub").disabled=true;$("impPub").textContent="Checking…";
-  try{
-    const ref=db.ref("suppliers/"+sid+"/items");
-    const cur=(await ref.get()).val()||{}; // read fresh, so the plan is built from what is really saved
-    if(imp.sid!==sid)return; // the box was closed while we waited
-    const {u,p}=planImport(cur,f.items,()=>ref.push().key);
-    if(!Object.keys(u).length)return alert("Nothing to change: this menu already matches your list.");
-    const live=Object.values(cur).filter(i=>i&&i.available!==false).length;
-    const lst=(a,n=6)=>"  "+a.slice(0,n).join("\n  ")+(a.length>n?"\n  +"+(a.length-n)+" more":"");
-    const parts=[];
-    if(p.added.length)parts.push("New items: "+p.added.length);
-    if(p.price.length)parts.push("Price changes: "+p.price.length+"\n"+lst(p.price));
-    if(p.back.length)parts.push("Back in stock: "+p.back.length+"\n"+lst(p.back));
-    if(p.other)parts.push("Category or description updated: "+p.other);
-    if(p.hidden.length)parts.push("Hidden from customers (not in your list): "+p.hidden.length+"\n"+lst(p.hidden));
-    parts.push("Unchanged: "+p.same);
-    const warn=p.hidden.length>=3&&p.hidden.length>live/2?"⚠ This hides more than half of the current menu. Is this the right restaurant?\n\n":"";
-    if(!confirm(warn+"Publish to "+s.name+"?\n\n"+parts.join("\n\n")+(p.hidden.length?"\n\nHidden items are kept, so old orders still work.":"")))return;
-    $("impPub").textContent="Publishing…";
-    await ref.update(u); // one multi-path write: it all saves or none of it does
-    delete imp.drafts[sid];
-    open=sid;
-    if(imp.sid===sid)closeImport();
-    render();
-    alert("Published to "+s.name+": "+p.added.length+" new, "+p.price.length+" price change"+(p.price.length===1?"":"s")+", "+p.hidden.length+" hidden.");
-  }catch(e){fail(e)}
-  finally{imp.busy=false;if(imp.sid)importRefresh()}
+  imp.final=f.items; // the next step writes imp.final to suppliers/{id}/items
+  alert("Checked: "+f.items.length+" item"+(f.items.length===1?"":"s")+" in "+new Set(f.items.map(x=>x.category.toLowerCase())).size+" categor"+(new Set(f.items.map(x=>x.category.toLowerCase())).size===1?"y":"ies")+" are ready. Publishing is the next step, so nothing was saved.");
 }
 /* PARSER START — parseMenu(text) returns {rows, skipped, warnings}. It only reads text: it never touches the database or the page. menuFlags is shared with the review screen. */
 const PRICE_LOW=5,PRICE_HIGH=1000; // prices outside this range get flagged for a second look
@@ -695,9 +527,9 @@ const MP={
   names:{s:"Small",m:"Medium",l:"Large",xl:"Extra large",xxl:"Extra large",small:"Small",medium:"Medium",med:"Medium",large:"Large",regular:"Regular",reg:"Regular",family:"Family",half:"Half",full:"Full",single:"Single",double:"Double",mini:"Mini",jumbo:"Jumbo",big:"Big"}
 };
 // A price at the very end of a line: "- 65", "K65", "65K", "......65", "65/-", "ZMW 65", "1,200"
-MP.end=new RegExp("(?:^|[\\s.\\-–—:=_@·|…+])(?:"+MP.cur+"\\s*)?("+MP.num+")\\s*(?:\\/[-=]|"+MP.cur+"|kwacha)?(?:\\s*(?:each|ea|pp|per\\s+[a-z]+))?\\s*$","i");
+MP.end=new RegExp("(?:^|[\\s.\\-–—:=_@·|…])(?:"+MP.cur+"\\s*)?("+MP.num+")\\s*(?:\\/[-=]|"+MP.cur+"|kwacha)?\\s*$","i");
 // One size and its price: "S 80", "Small K75", "Large: 140"
-MP.pairs=new RegExp("\\b("+MP.size+")(?![a-z])\\.?\\s*[:=\\-–]?\\s*(?:"+MP.cur+"\\s*)?("+MP.num+")","gi");
+MP.pairs=new RegExp("\\b("+MP.size+")\\b\\.?\\s*[:=\\-–]?\\s*(?:"+MP.cur+"\\s*)?("+MP.num+")","gi");
 function mpNum(t){t=String(t);return /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)?Number(t.replace(/,/g,"")):Number(t.replace(",","."))}
 function mpCase(t){ // ALL CAPS becomes Title Case; anything else is left as typed
   t=t.replace(/\s+/g," ").trim();
@@ -727,10 +559,9 @@ function menuFlags(rows){
     else if(price<PRICE_LOW)f.push("price looks low");
     else if(price>PRICE_HIGH)f.push("price looks high");
     if(/^\d+\s*(pcs|pc|pieces|ml|l|g|kg)\b/i.test(name))f.push("name starts with a quantity, check it");
-    if(/(?:^|[\s(\/])(?:zmw|zk|k)\s?\d/i.test(name))f.push("name contains a price, check it");
     if(name){
       const key=String(r.category||"").trim().toLowerCase()+"|"+name.toLowerCase();
-      if(seen[key]!==undefined)f.push("duplicate of "+(r.ai?"item ":"line ")+seen[key]);else seen[key]=r.line;
+      if(seen[key]!==undefined)f.push("duplicate of line "+seen[key]);else seen[key]=r.line;
     }
     return f;
   });
@@ -739,18 +570,11 @@ function mpName(t){return mpCase(t.replace(/^[\s•·▪●○◦*+>\-–—]+/,
 function mpPrice(t){ // {name, price} when the text ends in a price, else null
   const m=MP.end.exec(t);if(!m)return null;
   const price=mpNum(m[1]);
-  return isFinite(price)?{name:t.slice(0,m.index).replace(MP.trail,"").replace(/\s+(?:from|only|just|at|now)$/i,"").trim(),price:Math.round(price*100)/100}:null;
+  return isFinite(price)?{name:t.slice(0,m.index).replace(MP.trail,"").trim(),price:Math.round(price*100)/100}:null;
 }
 function parseMenu(text){
   const rows=[],skipped=[],warnings=[],heads=[],catSpelling={};
-  let cat="",head=null,prev=null,pend=null; // prev = the rows made by the line just before (or null after a blank line or heading)
-  // A heading-looking line right before a price or sizes line was really an item's name: undo the heading and hand back its text.
-  const claim=pd=>{
-    if(!pd||pd.head.count)return null;
-    heads.splice(heads.indexOf(pd.head),1);cat=pd.prevCat;head=pd.prevHead;
-    if(pd.sk&&skipped[skipped.length-1]===pd.sk)skipped.pop(); // its description line is no longer "not imported"
-    return pd;
-  };
+  let cat="",head=null,prev=null; // prev = the rows made by the line just before (or null after a blank line or heading)
   const add=(ln,name,price,description)=>{
     const r={category:cat,name,description:description||"",price,flags:[],line:ln};
     rows.push(r);if(head)head.count++;return r;
@@ -758,26 +582,22 @@ function parseMenu(text){
   String(text||"").replace(/\r/g,"").replace(/\u00a0/g," ").split("\n").forEach((raw,ix)=>{
     const ln=ix+1;
     let t=raw.replace(/\s+/g," ").trim();
-    if(!t){prev=null;pend=null;return}
+    if(!t){prev=null;return}
     t=t.replace(/^[•·▪●○◦*+>\-–—]+\s*/,"").replace(/^\d{1,2}[.)]\s+(?=\D)/,"");
     if(!/[A-Za-z0-9]/.test(t)){prev=null;return} // a line of ----- or ===== is just decoration
-    const pd=pend;pend=null; // kept for one line only
     const skip=msg=>{skipped.push({line:ln,text:t.slice(0,60),msg});prev=null};
     if(t.length>200)return skip("line is too long to be a menu item");
     if(/(?:\+?\d[ -]?){9,}/.test(t))return skip("looks like a phone number");
     if(/https?:\/\/|www\.|\S@\S+\.\S/i.test(t))return skip("looks like a web or email address");
     if(/^(tel|phone|call|whatsapp|contact|email|e-mail|address|location|located|opening hours|open (daily|every|mon|tue|wed|thu|fri|sat|sun|\d)|hours|follow us)\b/i.test(t)||/^(menu|our menu|price list)$/i.test(t))return skip("looks like contact or opening-hours information");
-    if(/\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b.*\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*(?:am|pm)?\s*(?:-|–|—|to)\s*\d{1,2}:\d{2}/i.test(t))return skip("looks like opening hours");
-    if(/^(free )?deliver(y|ies)\b|^(all )?prices\b|^terms\b|^we (accept|deliver|are|also)\b|^notes?\b|^thank/i.test(t))return skip("looks like a note, not a menu line");
 
     // 1. Size variants on one line: "Chicken pizza S 80 / M 110 / L 140" -> "Chicken pizza (Small)", "(Medium)", "(Large)"
     const v=mpVariants(t);
     if(v){
-      let base=mpName(v.base),vd="";
-      if(!base){const c=claim(pd);if(c){base=c.head.name;vd=c.desc||""}} // "Hawaiian" on one line, "Small 85, Large 150" on the next
+      const base=mpName(v.base);
       prev=v.pairs.map(m=>{
         const label=MP.names[m[1].toLowerCase()],price=Math.round(mpNum(m[2])*100)/100;
-        return add(ln,base?base+" ("+label+")":"("+label+")",price,vd); // with no item name the row reads "(Small)" and is flagged
+        return add(ln,base?base+" ("+label+")":"("+label+")",price); // with no item name the row reads "(Small)" and is flagged
       });
       return;
     }
@@ -785,19 +605,12 @@ function parseMenu(text){
     const parts=t.split(/\s+[\/|]\s+/);
     if(parts.length>1){
       const ps=parts.map(mpPrice);
-      if(ps.every(x=>x&&/[A-Za-z]/.test(x.name))){
-        // "Chips (small) K20 / (large) K35", "Wings 6pcs K45 | 12pcs K80": a part that is only a size or quantity borrows the first part's name
-        const stem=ps[0].name.replace(/\s*\([^)]*\)\s*$/,"").replace(/\s+\d+\s*[a-z]*$/i,"").trim();
-        prev=ps.map((x,i)=>add(ln,mpName(i>0&&stem&&(/^\(.*\)$/.test(x.name)||/^\d+\s*[a-z]*$/i.test(x.name))?stem+" "+x.name:x.name),x.price));return;
-      }
+      if(ps.every(x=>x&&/[A-Za-z]/.test(x.name))){prev=ps.map(x=>add(ln,mpName(x.name),x.price));return}
     }
     // 3. One item: a line ending in a price
     const p=mpPrice(t);
     if(p){
-      if(!/[A-Za-z]/.test(p.name)){
-        const c=claim(pd);if(!c)return skip("a price with no item name"); // name (and maybe a description) on the lines above, price alone here
-        prev=[add(ln,c.head.name,p.price,c.desc||"")];return;
-      }
+      if(!/[A-Za-z]/.test(p.name))return skip("a price with no item name");
       let name=p.name,desc="";
       const d=name.match(/^(.{2,}?)\s+[-–—]\s+(.+)$/); // "Burger - beef, cheese, salad - 45": the middle part is the description
       if(d){name=d[1];desc=d[2]}
@@ -810,17 +623,12 @@ function parseMenu(text){
     // 5. No price, contains a digit ("Fanta 500ml"): probably an item whose price is missing
     if(/\d/.test(t)&&t.length<=60){prev=[add(ln,mpName(t),null)];return}
     // 6. No price: a category heading
-    if(t.length>40||/[.;]$/.test(t)||(t.includes(",")&&t.split(" ").length>=3)){
-      skip(t.length>40?"no price and too long to be a heading":"looks like a sentence, not a heading");
-      if(pd&&!pd.desc){pd.desc=t;pd.sk=skipped[skipped.length-1];pend=pd} // may turn out to be the description of the name line above
-      return;
-    }
+    if(t.length>40)return skip("no price and too long to be a heading");
+    if(/[.;]$/.test(t)||(t.includes(",")&&t.split(" ").length>=3))return skip("looks like a sentence, not a heading");
     const h=mpCase(t.replace(/^[\s#*=_\-–—~:•·|]+|[\s#*=_\-–—~:•·|]+$/g,"")).slice(0,40).trim();
     if(!h){prev=null;return}
-    const prevCat=cat,prevHead=head;
     cat=catSpelling[h.toLowerCase()]||(catSpelling[h.toLowerCase()]=h); // "burgers" and "BURGERS" share the first spelling
     head={name:cat,line:ln,count:0};heads.push(head);prev=null;
-    pend={head,prevCat,prevHead,desc:null,sk:null};
   });
   heads.forEach(h=>{if(!h.count)warnings.push({line:h.line,text:h.name,msg:"heading with no items under it (is it an item missing a price?)"})});
   const fl=menuFlags(rows);rows.forEach((r,i)=>{r.flags=fl[i]});
